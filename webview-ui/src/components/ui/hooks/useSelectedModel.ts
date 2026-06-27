@@ -374,6 +374,12 @@ function getSelectedModel({
 			const id = apiConfiguration.apiModelId ?? defaultModelId
 			const baseInfo = anthropicModels[id as keyof typeof anthropicModels]
 
+			// Start from the model's built-in info and progressively apply, in order:
+			// (1) the 1M context beta tier, then (2) user-provided overrides. This
+			// mirrors the backend AnthropicHandler.getModel() flow so the displayed
+			// context window/pricing matches what the request actually uses.
+			let info: ModelInfo | undefined = baseInfo
+
 			// Apply 1M context beta tier pricing for supported Claude 4 models
 			if (
 				provider === "anthropic" &&
@@ -397,7 +403,7 @@ function getSelectedModel({
 				const tier = modelWithTiers.tiers?.[0]
 				if (tier) {
 					// Create a new ModelInfo object with updated values
-					const info: ModelInfo = {
+					info = {
 						...baseInfo,
 						contextWindow: tier.contextWindow,
 						inputPrice: tier.inputPrice ?? baseInfo.inputPrice,
@@ -405,11 +411,55 @@ function getSelectedModel({
 						cacheWritesPrice: tier.cacheWritesPrice ?? baseInfo.cacheWritesPrice,
 						cacheReadsPrice: tier.cacheReadsPrice ?? baseInfo.cacheReadsPrice,
 					}
-					return { id, info }
 				}
 			}
 
-			return { id, info: baseInfo }
+			// Apply user-provided overrides for context window and pricing. These
+			// mirror the backend AnthropicHandler.getModel() logic and are primarily
+			// intended for unofficial/self-hosted endpoints (custom base URL) where
+			// these values can differ from the official Anthropic defaults. Applied
+			// last so user overrides take precedence over the 1M context tier values
+			// above. Only valid (finite) numbers override the defaults; leaving a
+			// field undefined keeps the model's built-in value.
+			if (provider === "anthropic" && info) {
+				const {
+					anthropicCustomContextWindow,
+					anthropicCustomInputPrice,
+					anthropicCustomOutputPrice,
+					anthropicCustomCacheWritesPrice,
+					anthropicCustomCacheReadsPrice,
+				} = apiConfiguration
+
+				const isValidNumber = (value: unknown): value is number =>
+					typeof value === "number" && Number.isFinite(value)
+
+				if (
+					isValidNumber(anthropicCustomContextWindow) ||
+					isValidNumber(anthropicCustomInputPrice) ||
+					isValidNumber(anthropicCustomOutputPrice) ||
+					isValidNumber(anthropicCustomCacheWritesPrice) ||
+					isValidNumber(anthropicCustomCacheReadsPrice)
+				) {
+					info = {
+						...info,
+						...(isValidNumber(anthropicCustomContextWindow)
+							? { contextWindow: anthropicCustomContextWindow }
+							: {}),
+						...(isValidNumber(anthropicCustomInputPrice) ? { inputPrice: anthropicCustomInputPrice } : {}),
+						...(isValidNumber(anthropicCustomOutputPrice)
+							? { outputPrice: anthropicCustomOutputPrice }
+							: {}),
+						...(isValidNumber(anthropicCustomCacheWritesPrice)
+							? { cacheWritesPrice: anthropicCustomCacheWritesPrice }
+							: {}),
+						...(isValidNumber(anthropicCustomCacheReadsPrice)
+							? { cacheReadsPrice: anthropicCustomCacheReadsPrice }
+							: {}),
+					}
+				}
+			}
+
+			return { id, info }
 		}
 	}
 }

@@ -434,6 +434,90 @@ describe("useSelectedModel", () => {
 		})
 	})
 
+	describe("anthropic provider with custom context window and pricing overrides", () => {
+		beforeEach(() => {
+			mockUseRouterModels.mockReturnValue({
+				data: undefined,
+				isLoading: false,
+				isError: false,
+			} as any)
+
+			mockUseOpenRouterModelProviders.mockReturnValue({
+				data: undefined,
+				isLoading: false,
+				isError: false,
+			} as any)
+		})
+
+		it("overrides context window and pricing when custom values are provided", () => {
+			const apiConfiguration: ProviderSettings = {
+				apiProvider: "anthropic",
+				apiModelId: "claude-sonnet-4-5",
+				anthropicCustomContextWindow: 64_000,
+				anthropicCustomInputPrice: 1.5,
+				anthropicCustomOutputPrice: 7.5,
+				anthropicCustomCacheWritesPrice: 2,
+				anthropicCustomCacheReadsPrice: 0.2,
+			}
+
+			const wrapper = createWrapper()
+			const { result } = renderHook(() => useSelectedModel(apiConfiguration), { wrapper })
+
+			expect(result.current.id).toBe("claude-sonnet-4-5")
+			expect(result.current.info?.contextWindow).toBe(64_000)
+			expect(result.current.info?.inputPrice).toBe(1.5)
+			expect(result.current.info?.outputPrice).toBe(7.5)
+			expect(result.current.info?.cacheWritesPrice).toBe(2)
+			expect(result.current.info?.cacheReadsPrice).toBe(0.2)
+		})
+
+		it("falls back to model defaults when no overrides are provided", () => {
+			const apiConfiguration: ProviderSettings = {
+				apiProvider: "anthropic",
+				apiModelId: "claude-sonnet-4-5",
+			}
+
+			const wrapper = createWrapper()
+			const { result } = renderHook(() => useSelectedModel(apiConfiguration), { wrapper })
+
+			expect(result.current.id).toBe("claude-sonnet-4-5")
+			expect(result.current.info?.contextWindow).toBe(200_000)
+		})
+
+		it("only overrides the fields that are provided, leaving others at defaults", () => {
+			const apiConfiguration: ProviderSettings = {
+				apiProvider: "anthropic",
+				apiModelId: "claude-sonnet-4-5",
+				anthropicCustomContextWindow: 32_000,
+			}
+
+			const wrapper = createWrapper()
+			const { result } = renderHook(() => useSelectedModel(apiConfiguration), { wrapper })
+
+			expect(result.current.info?.contextWindow).toBe(32_000)
+			// Pricing should remain at the model defaults.
+			expect(result.current.info?.inputPrice).toBe(3.0)
+			expect(result.current.info?.outputPrice).toBe(15.0)
+		})
+
+		it("takes precedence over the 1M context beta tier values", () => {
+			const apiConfiguration: ProviderSettings = {
+				apiProvider: "anthropic",
+				apiModelId: "claude-sonnet-4-6",
+				anthropicBeta1MContext: true,
+				anthropicCustomContextWindow: 50_000,
+				anthropicCustomInputPrice: 2,
+			}
+
+			const wrapper = createWrapper()
+			const { result } = renderHook(() => useSelectedModel(apiConfiguration), { wrapper })
+
+			// Custom overrides win over the 1M tier (1_000_000 / 6.0).
+			expect(result.current.info?.contextWindow).toBe(50_000)
+			expect(result.current.info?.inputPrice).toBe(2)
+		})
+	})
+
 	describe("bedrock provider with 1M context", () => {
 		beforeEach(() => {
 			mockUseRouterModels.mockReturnValue({
