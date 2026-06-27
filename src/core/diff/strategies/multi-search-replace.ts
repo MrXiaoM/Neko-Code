@@ -309,9 +309,10 @@ export class MultiSearchReplaceDiffStrategy implements DiffStrategy {
 
 				// Peel off any leading Grok header directives (:start_line:, :end_line:, -------)
 				// so the "first line is SEARCH" heuristic sees real content, not metadata. The
-				// directives are preserved as a header on the SEARCH section.
+				// directives are preserved as a header on the SEARCH section. A trailing '>' on
+				// the separator (e.g. DeepSeek's '------->') is tolerated here as well.
 				let header = ""
-				const directiveLine = /^(?::start_line:\s*\d+|:end_line:\s*\d+|-------)\s*$/
+				const directiveLine = /^(?::start_line:\s*\d+|:end_line:\s*\d+|------->?)\s*$/
 				let nlIdx: number
 				while ((nlIdx = content.indexOf("\n")) !== -1 && directiveLine.test(content.slice(0, nlIdx))) {
 					header += content.slice(0, nlIdx + 1)
@@ -378,8 +379,10 @@ export class MultiSearchReplaceDiffStrategy implements DiffStrategy {
 			4. ((?:\:end_line:\s*(\d+)\s*\n))?  
 			  Optionally matches a ":end_line:" line. Group 3 is the whole match and group 4 is the digits.
 
-			5. ((?<!\\)-------\s*\n)?  
-			  Optionally matches the "-------" marker line (group 5).
+			5. ((?<!\\)------->?\s*\n)?
+			  Optionally matches the "-------" marker line (group 5). A trailing '>' is
+			  tolerated (e.g. DeepSeek sometimes emits '------->') so the malformed marker
+			  line isn't absorbed into the SEARCH content.
 
 			6. ([\s\S]*?)(?:\n)?  
 			  Non‐greedy match for the "search content" (group 6) up to the next marker.
@@ -396,7 +399,7 @@ export class MultiSearchReplaceDiffStrategy implements DiffStrategy {
 
 		const matches = [
 			...repairedDiff.matchAll(
-				/(?:^|\n)(?<!\\)<<<<<<< SEARCH>?\s*\n((?:\:start_line:\s*(\d+)\s*\n))?((?:\:end_line:\s*(\d+)\s*\n))?((?<!\\)-------\s*\n)?([\s\S]*?)(?:\n)?(?:(?<=\n)(?<!\\)=======\s*\n)([\s\S]*?)(?:\n)?(?:(?<=\n)(?<!\\)>>>>>>> REPLACE)(?=\n|$)/g,
+				/(?:^|\n)(?<!\\)<<<<<<< SEARCH>?\s*\n((?:\:start_line:\s*(\d+)\s*\n))?((?:\:end_line:\s*(\d+)\s*\n))?((?<!\\)------->?\s*\n)?([\s\S]*?)(?:\n)?(?:(?<=\n)(?<!\\)=======\s*\n)([\s\S]*?)(?:\n)?(?:(?<=\n)(?<!\\)>>>>>>> REPLACE)(?=\n|$)/g,
 			),
 		]
 
