@@ -13,9 +13,23 @@ interface ThoughtSignatureBlock {
 	type: "thoughtSignature"
 }
 
+// These types were removed/changed in @anthropic-ai/sdk 0.37.0
+interface ToolReferenceBlockParam {
+	type: "tool_reference"
+	tool_name?: string
+}
+
+interface SearchResultBlockParam {
+	type: "search_result"
+	source?: string
+	title?: string
+	content?: Array<{ type: "text"; text: string }>
+}
+
 export type ExtendedContentBlock =
 	| Anthropic.Messages.ContentBlockParam
-	| Anthropic.Messages.ToolReferenceBlockParam
+	| ToolReferenceBlockParam
+	| SearchResultBlockParam
 	| ReasoningBlock
 	| ThoughtSignatureBlock
 
@@ -104,7 +118,9 @@ export function formatContentBlockToMarkdown(block: ExtendedContentBlock): strin
 				return `[${toolName}${block.is_error ? " (Error)" : ""}]\n${block.content}`
 			} else if (Array.isArray(block.content)) {
 				return `[${toolName}${block.is_error ? " (Error)" : ""}]\n${block.content
-					.map((contentBlock) => formatContentBlockToMarkdown(contentBlock))
+					.map((contentBlock: Anthropic.TextBlockParam | Anthropic.ImageBlockParam) =>
+						formatContentBlockToMarkdown(contentBlock),
+					)
 					.join("\n")}`
 			} else {
 				return `[${toolName}${block.is_error ? " (Error)" : ""}]`

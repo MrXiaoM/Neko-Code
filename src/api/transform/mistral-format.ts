@@ -112,10 +112,10 @@ export function convertToMistralMessages(anthropicMessages: Anthropic.Messages.M
 										},
 									}
 								}
-								if (part.source.type === "url") {
+								if ((part.source as any).type === "url") {
 									return {
 										type: "image_url",
-										imageUrl: { url: part.source.url },
+										imageUrl: { url: (part.source as any).url },
 									}
 								}
 								return { type: "text", text: "[Image]" }
