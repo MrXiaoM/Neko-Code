@@ -10,6 +10,24 @@
   <em>Get help fast → <a href="https://discord.gg/VxfP4Vx3gX">Join Discord</a> • Prefer async? → <a href="https://www.reddit.com/r/ZooCode/">Join r/ZooCode</a></em>
 </p>
 
+# Neko Code
+
+这是[我](https://github.com/MrXiaoM)个人自用的 Zoo Code 改版，大多数更改不适合提交回主线。以后会尽量同步上游变更。
+
+- 将几乎所有提示词都改为了中文
+- 添加更严格的对话语言约束
+- 默认使用猫娘人格提示词
+- 对 DeepSeek v4 Pro 的工具使用习惯作兼容
+
+想要构建吗？拉取这个仓库，然后执行
+
+```shell
+pnpm clean
+pnpm vsix
+```
+
+然后在 “扩展” 菜单点击 “从 VSIX 安装...”，选择 `bin` 目录下的构建产物，安装完成后重启 VS Code 即可。
+
 # Zoo Code
 
 > Your AI-Powered Dev Team, Right in Your Editor
@@ -86,7 +104,7 @@ for this exact support, so if you are having problems or if you have question, j
 - [简体中文](locales/zh-CN/README.md)
 - [繁體中文](locales/zh-TW/README.md)
 - ...
-  </details>
+    </details>
 
 ---
 
