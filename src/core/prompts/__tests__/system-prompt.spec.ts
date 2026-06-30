@@ -41,7 +41,7 @@ vi.mock("fs/promises")
 
 import * as vscode from "vscode"
 
-import { ModeConfig } from "@roo-code/types"
+import { ModeConfig, AGENT_ROLE } from "@roo-code/types"
 
 import { SYSTEM_PROMPT } from "../system"
 import { McpHub } from "../../../services/mcp/McpHub"
@@ -579,8 +579,10 @@ describe("SYSTEM_PROMPT", () => {
 		expect(prompt).not.toContain("Examples:")
 
 		// Should still contain role definition and other non-XML sections
-		// modes[0].roleDefinition uses {{agentName}} placeholder; runtime replaces it with "Mirai"
-		expect(prompt).toContain(modes[0].roleDefinition.replace("{{agentName}}", "Mirai"))
+		// modes[0].roleDefinition uses {{agentName}} and {{defaultRole}} placeholders; runtime replaces them
+		expect(prompt).toContain(
+			modes[0].roleDefinition.replace("{{agentName}}", "Mirai").replace("{{defaultRole}}", AGENT_ROLE),
+		)
 		expect(prompt).toContain("能力")
 		expect(prompt).toContain("规则")
 		expect(prompt).toContain("系统信息")

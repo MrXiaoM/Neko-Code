@@ -611,7 +611,7 @@ describe("FileRestrictionError", () => {
 			expect(debugMode).toMatchObject({
 				slug: "debug",
 				name: "🪲 调试",
-				roleDefinition: expect.stringContaining("{{agentName}}"),
+				roleDefinition: expect.stringMatching(/.*\{\{agentName\}\}.*\{\{defaultRole\}\}.*/s),
 				groups: ["read", "edit", "command", "mcp"],
 			})
 			expect(debugMode?.customInstructions).toContain(
@@ -631,7 +631,7 @@ describe("FileRestrictionError", () => {
 			expect(result).toMatchObject({
 				slug: "debug",
 				name: "🪲 调试",
-				roleDefinition: expect.stringContaining("{{agentName}}"),
+				roleDefinition: expect.stringMatching(/.*\{\{agentName\}\}.*\{\{defaultRole\}\}.*/s),
 			})
 		})
 

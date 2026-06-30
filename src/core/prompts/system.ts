@@ -1,6 +1,12 @@
 import * as vscode from "vscode"
 
-import { type ModeConfig, type PromptComponent, type CustomModePrompts, type TodoItem } from "@roo-code/types"
+import {
+	type ModeConfig,
+	type PromptComponent,
+	type CustomModePrompts,
+	type TodoItem,
+	AGENT_ROLE,
+} from "@roo-code/types"
 
 import { Mode, modes, defaultModeSlug, getModeBySlug, getGroupName, getModeSelection } from "../../shared/modes"
 import { DiffStrategy } from "../../shared/tools"
@@ -133,7 +139,10 @@ ${await addCustomInstructions(baseInstructions, globalCustomInstructions || "", 
 })}`
 
 	// Replace {{agentName}} placeholder with the configured agent name, falling back to the built-in default "Mirai".
-	const resolvedPrompt = basePrompt.replace(/\{\{agentName\}\}/g, agentName || "Mirai")
+	const withAgentName = basePrompt.replace(/\{\{agentName\}\}/g, agentName || "Mirai")
+
+	// Replace {{defaultRole}} placeholder with the AGENT_ROLE constant.
+	const resolvedPrompt = withAgentName.replace(/\{\{defaultRole\}\}/g, AGENT_ROLE)
 
 	return resolvedPrompt
 }

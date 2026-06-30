@@ -21,6 +21,8 @@ import { Section } from "./Section"
 import { SearchableSetting } from "./SearchableSetting"
 
 interface PromptsSettingsProps {
+	agentName?: string
+	setAgentName: (value: string) => void
 	customSupportPrompts: Record<string, string | undefined>
 	setCustomSupportPrompts: (prompts: Record<string, string | undefined>) => void
 	includeTaskHistoryInEnhance?: boolean
@@ -28,6 +30,8 @@ interface PromptsSettingsProps {
 }
 
 const PromptsSettings = ({
+	agentName,
+	setAgentName,
 	customSupportPrompts,
 	setCustomSupportPrompts,
 	includeTaskHistoryInEnhance: propsIncludeTaskHistoryInEnhance,
@@ -40,8 +44,6 @@ const PromptsSettings = ({
 		setEnhancementApiConfigId,
 		includeTaskHistoryInEnhance: contextIncludeTaskHistoryInEnhance,
 		setIncludeTaskHistoryInEnhance: contextSetIncludeTaskHistoryInEnhance,
-		agentName,
-		setAgentName,
 	} = useExtensionState()
 
 	// Use props if provided, otherwise fall back to context
@@ -111,16 +113,12 @@ const PromptsSettings = ({
 				<div className="mb-4">
 					<label className="block font-medium mb-1">{t("prompts:agentName.title")}</label>
 					<VSCodeTextArea
-						value={agentName || "Mirai"}
+						value={agentName ?? "Mirai"}
 						onInput={(e) => {
 							const value =
 								(e as unknown as CustomEvent)?.detail?.target?.value ??
 								((e as any).target as HTMLTextAreaElement).value
 							setAgentName(value)
-							vscode.postMessage({
-								type: "updateSettings",
-								updatedSettings: { agentName: value },
-							})
 						}}
 						rows={1}
 						className="w-full"

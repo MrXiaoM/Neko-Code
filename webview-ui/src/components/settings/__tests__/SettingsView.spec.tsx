@@ -266,6 +266,16 @@ vi.mock("@/components/ui", () => ({
 	),
 }))
 
+let _capturedPromptsAgentName: string | undefined
+let capturedPromptsSetAgentName: ((value: string) => void) | undefined
+vi.mock("../PromptsSettings", () => ({
+	default: (props: any) => {
+		_capturedPromptsAgentName = props.agentName
+		capturedPromptsSetAgentName = props.setAgentName
+		return <div data-testid="prompts-settings">PromptsSettings</div>
+	},
+}))
+
 // Mock window.postMessage to trigger state hydration
 const mockPostMessage = (state: any) => {
 	window.postMessage(
@@ -775,5 +785,58 @@ describe("SettingsView - Duplicate Commands", () => {
 				}),
 			}),
 		)
+	})
+})
+
+describe("SettingsView - agentName", () => {
+	beforeEach(() => {
+		vi.clearAllMocks()
+		_capturedPromptsAgentName = undefined
+		capturedPromptsSetAgentName = undefined
+	})
+
+	it("includes agentName in save payload via handleSubmit", () => {
+		const { activateTab } = renderSettingsView()
+
+		// Activate prompts tab so PromptsSettings renders and captures setAgentName
+		activateTab("prompts")
+
+		// Simulate changing agentName via the setter passed from SettingsView to PromptsSettings
+		act(() => {
+			capturedPromptsSetAgentName?.("UpdatedCat")
+		})
+
+		// Click Save button
+		const saveButton = screen.getByTestId("save-button")
+		fireEvent.click(saveButton)
+
+		// Verify agentName is included in the saved settings
+		expect(vscode.postMessage).toHaveBeenCalledWith(
+			expect.objectContaining({
+				type: "updateSettings",
+				updatedSettings: expect.objectContaining({
+					agentName: "UpdatedCat",
+				}),
+			}),
+		)
+	})
+
+	it("triggers change detection when agentName is modified", () => {
+		const { activateTab } = renderSettingsView()
+
+		// Activate prompts tab
+		activateTab("prompts")
+
+		// Modify agentName via the captured setter
+		act(() => {
+			capturedPromptsSetAgentName?.("ModifiedCat")
+		})
+
+		// Click Done — should show unsaved changes dialog
+		const doneButton = screen.getByText("settings:common.done")
+		fireEvent.click(doneButton)
+
+		// Verify unsaved changes dialog appears
+		expect(screen.getByText("settings:unsavedChangesDialog.title")).toBeInTheDocument()
 	})
 })
