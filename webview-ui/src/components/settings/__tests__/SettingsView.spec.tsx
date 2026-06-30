@@ -903,7 +903,9 @@ describe("SettingsView - profile isolation", () => {
 	})
 
 	it("saves with editingProfileName and activate=false for non-active profile", () => {
-		renderSettingsView({ currentApiConfigName: "active-profile" })
+		const { activateTab } = renderSettingsView({
+			currentApiConfigName: "active-profile",
+		})
 
 		// Navigate to providers tab
 		const providersTab = screen.getByTestId("tab-providers")
@@ -913,9 +915,15 @@ describe("SettingsView - profile isolation", () => {
 		const switchBtn = screen.getByTestId("switch-config-btn")
 		fireEvent.click(switchBtn)
 
-		// Click Save
+		// Profile switch alone does NOT trigger change detection (no dirty state).
+		// We need an actual setting change to enable Save.
+		activateTab("prompts")
+		act(() => {
+			capturedPromptsSetAgentName?.("SomeAgent")
+		})
+
+		// Now Save should be enabled
 		const saveButton = screen.getByTestId("save-button")
-		// First clear resetCalls from initial setup
 		vi.clearAllMocks()
 		fireEvent.click(saveButton)
 
@@ -930,13 +938,21 @@ describe("SettingsView - profile isolation", () => {
 	})
 
 	it("saves with activate=true when editing the active profile", () => {
-		renderSettingsView({ currentApiConfigName: "default" })
+		const { activateTab } = renderSettingsView({
+			currentApiConfigName: "default",
+		})
 
 		// Navigate to providers tab
 		const providersTab = screen.getByTestId("tab-providers")
 		fireEvent.click(providersTab)
 
-		// Click Save directly (editingProfileName === currentApiConfigName === "default")
+		// Need an actual change to enable Save
+		activateTab("prompts")
+		act(() => {
+			capturedPromptsSetAgentName?.("AnotherAgent")
+		})
+
+		// Click Save (editingProfileName === currentApiConfigName === "default")
 		const saveButton = screen.getByTestId("save-button")
 		vi.clearAllMocks()
 		fireEvent.click(saveButton)

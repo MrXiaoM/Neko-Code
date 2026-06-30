@@ -800,7 +800,6 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 										listApiConfigMeta={listApiConfigMeta}
 										onSelectConfig={(configName: string) => {
 											setEditingProfileName(configName)
-											setChangeDetected(true)
 											vscode.postMessage({ type: "loadApiConfigForEdit", text: configName })
 										}}
 										onDeleteConfig={(configName: string) =>
