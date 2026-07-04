@@ -1,6 +1,8 @@
 import { t } from "i18next"
 import { ArrowRight, Check, ListChecks, SquareDashed } from "lucide-react"
 
+import MarkdownBlock from "../common/MarkdownBlock"
+
 type TodoStatus = "completed" | "in_progress" | "pending"
 
 interface TodoItem {
@@ -75,7 +77,9 @@ export function TodoChangeDisplay({ previousTodos, newTodos }: TodoChangeDisplay
 									status === "in_progress" ? "text-vscode-charts-yellow" : ""
 								}`}>
 								{icon}
-								<span>{todo.content}</span>
+								<div className="flex-1 min-w-0 [&_p]:m-0">
+									<MarkdownBlock markdown={todo.content} />
+								</div>
 							</li>
 						)
 					})}

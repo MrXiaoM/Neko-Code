@@ -266,7 +266,8 @@
 		"wantsToSwitch": "即将切换至{{mode}}模式",
 		"wantsToSwitchWithReason": "即将切换至{{mode}}模式（原因：{{reason}}）",
 		"didSwitch": "已切换至{{mode}}模式",
-		"didSwitchWithReason": "已切换至{{mode}}模式（原因：{{reason}}）"
+		"didSwitchWithReason": "已切换至{{mode}}模式（原因：{{reason}}）",
+		"reasonLabel": "原因"
 	},
 	"subtasks": {
 		"wantsToCreate": "{{agentName}} 想在<code>{{mode}}</code>模式下创建新子任务",

@@ -308,7 +308,8 @@
 		"wantsToSwitch": "Zoo wants to switch to {{mode}} mode",
 		"wantsToSwitchWithReason": "Zoo wants to switch to {{mode}} mode because: {{reason}}",
 		"didSwitch": "Zoo switched to {{mode}} mode",
-		"didSwitchWithReason": "Zoo switched to {{mode}} mode because: {{reason}}"
+		"didSwitchWithReason": "Zoo switched to {{mode}} mode because: {{reason}}",
+		"reasonLabel": "Reason"
 	},
 	"subtasks": {
 		"wantsToCreate": "Zoo wants to create a new subtask in {{mode}} mode",

@@ -3,6 +3,8 @@ import { t } from "i18next"
 import { ArrowRight, Check, ListChecks, SquareDashed } from "lucide-react"
 import { useState, useRef, useMemo, useEffect } from "react"
 
+import MarkdownBlock from "../common/MarkdownBlock"
+
 type TodoStatus = "completed" | "in_progress" | "pending"
 
 function getTodoIcon(status: TodoStatus | null) {
@@ -92,7 +94,9 @@ export function TodoListDisplay({ todos }: { todos: any[] }) {
 									todo.status !== "in_progress" && todo.status !== "completed" && "opacity-60",
 								)}>
 								{icon}
-								<span>{todo.content}</span>
+								<div className="flex-1 min-w-0 [&_p]:m-0">
+									<MarkdownBlock markdown={todo.content} />
+								</div>
 							</li>
 						)
 					})}

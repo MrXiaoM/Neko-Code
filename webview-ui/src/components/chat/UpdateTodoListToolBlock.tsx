@@ -291,7 +291,8 @@ const UpdateTodoListToolBlock: React.FC<UpdateTodoListToolBlockProps> = ({
 												}}
 											/>
 										) : (
-											<span
+											<div
+												className="[&_p]:m-0"
 												style={{
 													flex: 1,
 													minWidth: 0,
@@ -307,8 +308,8 @@ const UpdateTodoListToolBlock: React.FC<UpdateTodoListToolBlockProps> = ({
 													padding: "1px 3px",
 													lineHeight: "1.4",
 												}}>
-												{todo.content}
-											</span>
+												<MarkdownBlock markdown={todo.content} />
+											</div>
 										)}
 										{isEditing && (
 											<select
