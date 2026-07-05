@@ -88,6 +88,83 @@ describe("TerminalProcess", () => {
 			}
 		})
 
+		it("rejects multiline commands with an error message", async () => {
+			let completedOutput: string | undefined
+
+			terminalProcess.once("completed", (output) => {
+				completedOutput = output
+			})
+
+			terminalProcess.once("continue", () => {})
+
+			await terminalProcess.run('PR_SHA=abc123\nfor f in one two; do\n  echo "$f @ $PR_SHA"\ndone')
+
+			expect(completedOutput).toContain("multiline commands are not supported")
+			expect(completedOutput).toContain("write_to_file")
+			expect(mockTerminal.shellIntegration?.executeCommand).not.toHaveBeenCalled()
+		})
+
+		it("rejects PowerShell multiline commands with error", async () => {
+			const psSpy = vi.spyOn(Terminal, "isActiveShellPowerShell").mockReturnValue(true)
+			let completedOutput: string | undefined
+
+			try {
+				terminalProcess.once("completed", (output) => {
+					completedOutput = output
+				})
+
+				terminalProcess.once("continue", () => {})
+
+				await terminalProcess.run("echo one\necho two")
+
+				expect(completedOutput).toContain("multiline commands are not supported")
+				expect(completedOutput).toContain("write_to_file")
+				expect(mockTerminal.shellIntegration?.executeCommand).not.toHaveBeenCalled()
+			} finally {
+				psSpy.mockRestore()
+			}
+		})
+
+		it("rejects fish multiline commands with error", async () => {
+			const fishSpy = vi.spyOn(Terminal, "isActiveShellFish").mockReturnValue(true)
+			let completedOutput: string | undefined
+
+			try {
+				terminalProcess.once("completed", (output) => {
+					completedOutput = output
+				})
+
+				terminalProcess.once("continue", () => {})
+
+				await terminalProcess.run("echo one\necho two")
+
+				expect(completedOutput).toContain("multiline commands are not supported")
+				expect(completedOutput).toContain("write_to_file")
+				expect(mockTerminal.shellIntegration?.executeCommand).not.toHaveBeenCalled()
+			} finally {
+				fishSpy.mockRestore()
+			}
+		})
+
+		it("accepts single-line commands without rejection", async () => {
+			mockStream = (async function* () {
+				yield "\x1b]633;C\x07"
+				yield "Initial output\n"
+				yield "\x1b]633;D\x07"
+				terminalProcess.emit("shell_execution_complete", { exitCode: 0 })
+			})()
+
+			mockTerminal.shellIntegration.executeCommand.mockReturnValue({
+				read: vi.fn().mockReturnValue(mockStream),
+			})
+
+			const runPromise = terminalProcess.run("test command")
+			terminalProcess.emit("stream_available", mockStream)
+			await runPromise
+
+			expect(mockTerminal.shellIntegration.executeCommand).toHaveBeenCalled()
+		})
+
 		it("handles shell integration commands correctly", async () => {
 			let lines: string[] = []
 
@@ -119,57 +196,6 @@ describe("TerminalProcess", () => {
 
 			expect(lines).toEqual(["Initial output", "More output", "Final output"])
 			expect(terminalProcess.isHot).toBe(false)
-		})
-
-		it("wraps multiline POSIX scripts so VS Code tracks them as one shell execution", async () => {
-			const command = 'PR_SHA=abc123\nfor f in one two; do\n  echo "$f @ $PR_SHA"\ndone'
-
-			mockStream = (async function* () {
-				yield "\x1b]633;C\x07"
-				yield "one @ abc123\ntwo @ abc123\n"
-				yield "\x1b]633;D\x07"
-				terminalProcess.emit("shell_execution_complete", { exitCode: 0 })
-			})()
-
-			mockTerminal.shellIntegration.executeCommand.mockReturnValue({
-				read: vi.fn().mockReturnValue(mockStream),
-			})
-
-			const runPromise = terminalProcess.run(command)
-			terminalProcess.emit("stream_available", mockStream)
-			await runPromise
-
-			expect(mockTerminal.shellIntegration.executeCommand).toHaveBeenCalledWith(`{\n${command}\n}`)
-		})
-
-		it.each([
-			["PowerShell", true, false, ". {\necho one\necho two\n}"],
-			["fish", false, true, "begin\necho one\necho two\nend"],
-		])("uses the %s multiline wrapper", async (_profile, isPowerShell, isFish, expectedCommand) => {
-			const psSpy = vi.spyOn(Terminal, "isActiveShellPowerShell").mockReturnValue(isPowerShell)
-			const fishSpy = vi.spyOn(Terminal, "isActiveShellFish").mockReturnValue(isFish)
-
-			try {
-				mockStream = (async function* () {
-					yield "\x1b]633;C\x07"
-					yield "one\ntwo\n"
-					yield "\x1b]633;D\x07"
-					terminalProcess.emit("shell_execution_complete", { exitCode: 0 })
-				})()
-
-				mockTerminal.shellIntegration.executeCommand.mockReturnValue({
-					read: vi.fn().mockReturnValue(mockStream),
-				})
-
-				const runPromise = terminalProcess.run("echo one\necho two")
-				terminalProcess.emit("stream_available", mockStream)
-				await runPromise
-
-				expect(mockTerminal.shellIntegration.executeCommand).toHaveBeenCalledWith(expectedCommand)
-			} finally {
-				psSpy.mockRestore()
-				fishSpy.mockRestore()
-			}
 		})
 
 		it("handles terminals without shell integration", async () => {

@@ -60,6 +60,21 @@ export class TerminalProcess extends BaseTerminalProcess {
 	public override async run(command: string) {
 		this.command = command
 
+		// Reject multiline commands — they cause VS Code shell integration
+		// markers (OSC 633) to corrupt on Windows + Git Bash, resulting in
+		// the end event never firing and the tool call hanging forever.
+		// Agents should use write_to_file to create temp scripts instead.
+		if (command.includes("\n")) {
+			this.emit(
+				"completed",
+				"<error: multiline commands are not supported. Use write_to_file to create a temporary script file, then execute it with a single-line command (e.g. `python /tmp/script.py`).>",
+			)
+			this.terminal.busy = false
+			this.terminal.setActiveStream(undefined)
+			this.continue()
+			return
+		}
+
 		const terminal = this.terminal.terminal
 
 		const isShellIntegrationAvailable = terminal.shellIntegration && terminal.shellIntegration.executeCommand

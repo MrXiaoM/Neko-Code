@@ -1,6 +1,8 @@
 import type OpenAI from "openai"
 
-const EXECUTE_COMMAND_DESCRIPTION = `请求在系统上执行 CLI 命令。当你需要执行系统操作或运行特定命令来完成用户任务的任何步骤时使用此工具。你必须根据系统信息中的“命令执行 Shell”“命令 Shell 类型”“Shell 路径风格”和“Shell 命令链接符”定制命令，并清楚地解释该命令的作用。不要只根据操作系统猜测 Shell：Windows 上可能使用 Git Bash/MSYS/WSL，非 Windows 上也可能使用 PowerShell。对于命令链，请使用适合当前命令 Shell 的链接语法。除非用户明确要求跨 Shell 执行，否则不要用 \`cmd /c\`、\`powershell -Command\`、\`pwsh -Command\`、\`bash -lc\` 等包装普通命令。优先通过 cwd 参数表达命令工作目录；如果 cwd 已经是目标目录，或者将要复用/新建的终端工作目录已经是目标目录，不要在 command 中再次 \`cd\` 到同一目录（例如 cwd 已是 \`src\` 时不要执行 \`cd src && ...\`）。优先执行复杂的 CLI 命令而不是创建可执行脚本，因为它们更灵活且更容易运行。优先使用相对命令和路径，以避免位置敏感性，保持终端一致性。
+const EXECUTE_COMMAND_DESCRIPTION = `请求在系统上执行 CLI 命令。当你需要执行系统操作或运行特定命令来完成用户任务的任何步骤时使用此工具。你必须根据系统信息中的"命令执行 Shell""命令 Shell 类型""Shell 路径风格"和"Shell 命令链接符"定制命令，并清楚地解释该命令的作用。不要只根据操作系统猜测 Shell：Windows 上可能使用 Git Bash/MSYS/WSL，非 Windows 上也可能使用 PowerShell。对于命令链，请使用适合当前命令 Shell 的链接语法。除非用户明确要求跨 Shell 执行，否则不要用 \`cmd /c\`、\`powershell -Command\`、\`pwsh -Command\`、\`bash -lc\` 等包装普通命令。优先通过 cwd 参数表达命令工作目录；如果 cwd 已经是目标目录，或者将要复用/新建的终端工作目录已经是目标目录，不要在 command 中再次 \`cd\` 到同一目录（例如 cwd 已是 \`src\` 时不要执行 \`cd src && ...\`）。优先使用相对命令和路径，以避免位置敏感性，保持终端一致性。
+
+不能使用 python -c、node -e 等工具以多行内联脚本的方式执行命令。所有多行脚本必须先用 write_to_file 创建临时文件，再通过 execute_command 执行该文件。如果命令中包含多行（即包含换行符 \\n），系统将直接拒绝执行并报错。请谨记：多行命令 = 拒绝执行。
 
 参数：
 - command：（必需）要执行的 CLI 命令。此命令应对当前操作系统有效。确保命令格式正确且不包含任何有害指令。
