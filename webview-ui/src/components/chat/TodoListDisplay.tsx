@@ -94,7 +94,7 @@ export function TodoListDisplay({ todos }: { todos: any[] }) {
 									todo.status !== "in_progress" && todo.status !== "completed" && "opacity-60",
 								)}>
 								{icon}
-								<div className="flex-1 min-w-0 [&_p]:m-0">
+								<div className="flex-1 min-w-0 [&_p]:m-0 [&_p]:inline">
 									<MarkdownBlock markdown={todo.content} />
 								</div>
 							</li>

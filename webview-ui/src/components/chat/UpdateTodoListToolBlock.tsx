@@ -292,7 +292,7 @@ const UpdateTodoListToolBlock: React.FC<UpdateTodoListToolBlockProps> = ({
 											/>
 										) : (
 											<div
-												className="[&_p]:m-0"
+												className="[&_p]:m-0 [&_p]:inline"
 												style={{
 													flex: 1,
 													minWidth: 0,
