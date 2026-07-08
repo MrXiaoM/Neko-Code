@@ -188,7 +188,7 @@ describe("ChatRow - inline diff stats and actions", () => {
 		expect(container.querySelector(".codicon-lock")).toBeInTheDocument()
 	})
 
-	it("keeps batch diff handling for unified edit tools", () => {
+	it("keeps batch diff handling for unified edit tools and opens each file", () => {
 		const message = createToolAskMessage({
 			tool: "searchAndReplace",
 			batchDiffs: [
@@ -199,12 +199,30 @@ describe("ChatRow - inline diff stats and actions", () => {
 					content: "@@ -1,1 +1,1 @@\n-a\n+b\n",
 					diffStats: { added: 1, removed: 1 },
 				},
+				{
+					path: "src/b.ts",
+					changeCount: 1,
+					key: "b",
+					content: "@@ -2,1 +2,1 @@\n-c\n+d\n",
+					diffStats: { added: 1, removed: 1 },
+				},
 			],
 		})
 
-		renderChatRow(message)
+		const { container } = renderChatRow(message)
 
 		expect(screen.getByText("Roo wants to apply batch changes")).toBeInTheDocument()
 		expect(screen.getByText((text) => text.includes("src/a.ts"))).toBeInTheDocument()
+		expect(screen.getByText((text) => text.includes("src/b.ts"))).toBeInTheDocument()
+
+		const openFileIcons = container.querySelectorAll(".codicon-link-external")
+		expect(openFileIcons).toHaveLength(2)
+
+		fireEvent.click(openFileIcons[1])
+
+		expect(mockPostMessage).toHaveBeenCalledWith({
+			type: "openFile",
+			text: "./src/b.ts",
+		})
 	})
 })

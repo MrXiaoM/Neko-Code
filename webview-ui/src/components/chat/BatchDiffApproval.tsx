@@ -1,4 +1,5 @@
 import React, { memo, useState } from "react"
+import { vscode } from "@src/utils/vscode"
 import CodeAccordion from "../common/CodeAccordion"
 
 interface FileDiff {
@@ -38,6 +39,9 @@ export const BatchDiffApproval = memo(({ files = [], ts }: BatchDiffApprovalProp
 				{files.map((file, index) => {
 					// Use backend-provided unified diff only. Stats also provided by backend.
 					const unified = file.content || ""
+					const onJumpToFile = file.path
+						? () => vscode.postMessage({ type: "openFile", text: "./" + file.path })
+						: undefined
 
 					return (
 						<div key={`${file.path}-${index}-${ts}`}>
@@ -47,6 +51,7 @@ export const BatchDiffApproval = memo(({ files = [], ts }: BatchDiffApprovalProp
 								language="diff"
 								isExpanded={expandedFiles[file.path] || false}
 								onToggleExpand={() => handleToggleExpand(file.path)}
+								onJumpToFile={onJumpToFile}
 								diffStats={file.diffStats ?? undefined}
 							/>
 						</div>
