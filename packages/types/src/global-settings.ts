@@ -363,6 +363,7 @@ export const SECRET_STATE_KEYS = [
 	"sambaNovaApiKey",
 	"zaiApiKey",
 	"fireworksApiKey",
+	"friendliApiKey",
 	"vercelAiGatewayApiKey",
 	"opencodeGoApiKey",
 	"basetenApiKey",
