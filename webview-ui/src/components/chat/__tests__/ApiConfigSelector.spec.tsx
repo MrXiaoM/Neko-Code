@@ -461,11 +461,11 @@ describe("ApiConfigSelector", () => {
 		const trigger = screen.getByTestId("dropdown-trigger")
 		fireEvent.click(trigger)
 
-		const popoverContent = screen.getByTestId("popover-content")
-
-		// Should have a single scroll container with max-h-[300px] and overflow-y-auto
-		const scrollContainer = popoverContent.querySelector(".max-h-\\[300px\\].overflow-y-auto")
+		// Should have a single scroll container whose max height grows with pinned configs.
+		const scrollContainer = screen.getByTestId("api-config-list")
 		expect(scrollContainer).toBeInTheDocument()
+		expect(scrollContainer).toHaveClass("overflow-y-auto")
+		expect(scrollContainer).toHaveStyle({ maxHeight: "min(396px, calc(100vh - 160px))" })
 
 		// Check for pinned configs sticky header
 		const pinnedStickyHeader = scrollContainer?.querySelector(".sticky.top-0.z-10.bg-vscode-dropdown-background")
@@ -515,11 +515,11 @@ describe("ApiConfigSelector", () => {
 		const trigger = screen.getByTestId("dropdown-trigger")
 		fireEvent.click(trigger)
 
-		const popoverContent = screen.getByTestId("popover-content")
-
-		// Should have a single scroll container with max-h-[300px] and overflow-y-auto
-		const scrollContainer = popoverContent.querySelector(".max-h-\\[300px\\].overflow-y-auto")
+		// Should have a single scroll container with the base max height when no configs are pinned.
+		const scrollContainer = screen.getByTestId("api-config-list")
 		expect(scrollContainer).toBeInTheDocument()
+		expect(scrollContainer).toHaveClass("overflow-y-auto")
+		expect(scrollContainer).toHaveStyle({ maxHeight: "min(300px, calc(100vh - 160px))" })
 
 		// No pinned section should exist when no configs are pinned
 		const pinnedSection = scrollContainer?.querySelector(".sticky.top-0")

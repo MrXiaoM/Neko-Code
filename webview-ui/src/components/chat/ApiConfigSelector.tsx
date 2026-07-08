@@ -24,6 +24,10 @@ interface ApiConfigSelectorProps {
 	onToggleLockApiConfig: () => void
 }
 
+const CONFIG_LIST_BASE_MAX_HEIGHT = 300
+const CONFIG_LIST_HEIGHT_PER_PINNED_CONFIG = 32
+const CONFIG_LIST_VIEWPORT_MAX_HEIGHT = "calc(100vh - 160px)"
+
 export const ApiConfigSelector = ({
 	value,
 	displayName,
@@ -74,6 +78,8 @@ export const ApiConfigSelector = ({
 		const unpinned = filteredConfigs.filter((config) => !pinnedApiConfigs?.[config.id])
 		return { pinnedConfigs: pinned, unpinnedConfigs: unpinned }
 	}, [filteredConfigs, pinnedApiConfigs])
+
+	const configListMaxHeight = `min(${CONFIG_LIST_BASE_MAX_HEIGHT + pinnedConfigs.length * CONFIG_LIST_HEIGHT_PER_PINNED_CONFIG}px, ${CONFIG_LIST_VIEWPORT_MAX_HEIGHT})`
 
 	const handleSelect = useCallback(
 		(configId: string) => {
@@ -201,7 +207,10 @@ export const ApiConfigSelector = ({
 					{filteredConfigs.length === 0 && searchValue ? (
 						<div className="py-2 px-3 text-sm text-vscode-foreground/70">{t("common:ui.no_results")}</div>
 					) : (
-						<div className="max-h-[300px] overflow-y-auto">
+						<div
+							data-testid="api-config-list"
+							className="overflow-y-auto"
+							style={{ maxHeight: configListMaxHeight }}>
 							{/* Pinned configs - sticky header */}
 							{pinnedConfigs.length > 0 && (
 								<div
