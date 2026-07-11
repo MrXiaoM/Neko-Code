@@ -2445,7 +2445,8 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 				// the user hits max requests and denies resetting the count.
 				break
 			} else {
-				nextUserContent = [{ type: "text", text: formatResponse.noToolsUsed() }]
+				// Pass 1 as the failed count since this is the first reminder in the outer loop
+				nextUserContent = [{ type: "text", text: formatResponse.noToolsUsed(1) }]
 			}
 		}
 	}
@@ -3583,7 +3584,7 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 						// Use the task's locked protocol for consistent behavior
 						this.userMessageContent.push({
 							type: "text",
-							text: formatResponse.noToolsUsed(),
+							text: formatResponse.noToolsUsed(this.consecutiveNoToolUseCount),
 						})
 					} else {
 						// Reset counter when tools are used successfully

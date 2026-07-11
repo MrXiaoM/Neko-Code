@@ -39,19 +39,37 @@ export const formatResponse = {
 			suggestion: "尝试在没有此文件的情况下继续，或要求用户更新 .rooignore 文件",
 		}),
 
-	noToolsUsed: () => {
+	noToolsUsed: (failedCount: number = 1) => {
 		const instructions = getToolInstructionsReminder()
 
-		return `[错误] 你在上一轮响应中没有使用工具！请重试并使用工具。
+		// 第一次失败：友好提醒，引导模型将文本封装到工具中
+		if (failedCount <= 1) {
+			return `你上一轮的响应只包含文本，没有使用任何工具。请用工具来继续你的工作。
 
 ${instructions}
 
-# 后续步骤
+# 你应该现在做什么？
 
-如果你已完成用户的任务，使用 attempt_completion 工具。
-如果你需要用户提供额外信息，使用 ask_followup_question 工具。
-否则，如果你尚未完成任务且不需要额外信息，则继续执行任务的下一步。
-（这是一条自动消息，请不要以对话方式回复。）`
+如果你已经完成了任务 → 使用 attempt_completion 工具来提交结果（把你的结论放在 \`result\` 参数里）。
+如果你需要更多信息才能继续 → 使用 ask_followup_question 工具向用户提问。
+如果你刚做完分析需要进入下一步 → 使用相应的工具来执行操作（如 write_to_file、execute_command 等）。
+你的所有文本输出都应封装在工具调用中——纯文本回复不会被用户看到。
+（这是系统自动提醒，不要用对话回复，直接使用工具。）`
+		}
+
+		// 第二次及以上失败：更强硬提醒 + 明确告知严重性
+		return `你已连续 ${failedCount} 次未使用工具！这是最后一次自动提醒，如果再不用工具将计入错误次数。
+
+${instructions}
+
+# 你必须立即选择一个工具：
+
+- 任务已完成 → attempt_completion（把你的结论放在 \`result\` 参数里）
+- 需要问用户 → ask_followup_question
+- 需要继续干活 → 选一个适合的工具直接执行
+
+注意：你刚才输出的文字不是"执行了一步"——文字分析必须包装在工具调用里才有效。如果你认为已经完成了，就用 attempt_completion；如果还没完成就用工具干活。
+（这是系统自动提醒，不要用对话回复，直接使用工具。）`
 	},
 
 	tooManyMistakes: (feedback?: string) =>
