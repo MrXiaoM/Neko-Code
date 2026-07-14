@@ -88,64 +88,6 @@ describe("TerminalProcess", () => {
 			}
 		})
 
-		it("rejects multiline commands with an error message", async () => {
-			let completedOutput: string | undefined
-
-			terminalProcess.once("completed", (output) => {
-				completedOutput = output
-			})
-
-			terminalProcess.once("continue", () => {})
-
-			await terminalProcess.run('PR_SHA=abc123\nfor f in one two; do\n  echo "$f @ $PR_SHA"\ndone')
-
-			expect(completedOutput).toContain("multiline commands are not supported")
-			expect(completedOutput).toContain("write_to_file")
-			expect(mockTerminal.shellIntegration?.executeCommand).not.toHaveBeenCalled()
-		})
-
-		it("rejects PowerShell multiline commands with error", async () => {
-			const psSpy = vi.spyOn(Terminal, "isActiveShellPowerShell").mockReturnValue(true)
-			let completedOutput: string | undefined
-
-			try {
-				terminalProcess.once("completed", (output) => {
-					completedOutput = output
-				})
-
-				terminalProcess.once("continue", () => {})
-
-				await terminalProcess.run("echo one\necho two")
-
-				expect(completedOutput).toContain("multiline commands are not supported")
-				expect(completedOutput).toContain("write_to_file")
-				expect(mockTerminal.shellIntegration?.executeCommand).not.toHaveBeenCalled()
-			} finally {
-				psSpy.mockRestore()
-			}
-		})
-
-		it("rejects fish multiline commands with error", async () => {
-			const fishSpy = vi.spyOn(Terminal, "isActiveShellFish").mockReturnValue(true)
-			let completedOutput: string | undefined
-
-			try {
-				terminalProcess.once("completed", (output) => {
-					completedOutput = output
-				})
-
-				terminalProcess.once("continue", () => {})
-
-				await terminalProcess.run("echo one\necho two")
-
-				expect(completedOutput).toContain("multiline commands are not supported")
-				expect(completedOutput).toContain("write_to_file")
-				expect(mockTerminal.shellIntegration?.executeCommand).not.toHaveBeenCalled()
-			} finally {
-				fishSpy.mockRestore()
-			}
-		})
-
 		it("accepts single-line commands without rejection", async () => {
 			mockStream = (async function* () {
 				yield "\x1b]633;C\x07"
@@ -164,6 +106,114 @@ describe("TerminalProcess", () => {
 
 			expect(mockTerminal.shellIntegration.executeCommand).toHaveBeenCalled()
 		})
+
+		it("prefers Ctrl+U preflight on reused Windows Git Bash terminals, then escalates to Ctrl+C after corruption", async () => {
+			vi.useFakeTimers()
+			const platformSpy = vi.spyOn(process, "platform", "get").mockReturnValue("win32")
+			const bashSpy = vi.spyOn(Terminal, "isActiveShellBash").mockReturnValue(true)
+			const psSpy = vi.spyOn(Terminal, "isActiveShellPowerShell").mockReturnValue(false)
+			const fishSpy = vi.spyOn(Terminal, "isActiveShellFish").mockReturnValue(false)
+
+			try {
+				mockTerminalInfo.hasCompletedCommand = true
+
+				let executeCount = 0
+				mockTerminal.shellIntegration.executeCommand.mockImplementation(() => {
+					executeCount += 1
+					const attempt = executeCount
+					const execution = {
+						commandLine: {
+							value: attempt === 1 ? "px vitest run" : "npx vitest run",
+						},
+						read: vi.fn(),
+					}
+
+					// Drive the process via stream_available + shell_execution_complete
+					// after executeCommand returns, matching production TerminalRegistry wiring.
+					queueMicrotask(() => {
+						const stream = (async function* () {
+							yield "\x1b]633;C\x07"
+							yield attempt === 1 ? "command not found\n" : "ok\n"
+							yield "\x1b]633;D\x07"
+						})()
+						if (attempt === 1) {
+							mockTerminalInfo.commandCorrupted = true
+						}
+						terminalProcess.emit("stream_available", stream)
+						queueMicrotask(() => {
+							// First attempt: registry suppresses damaged exit code.
+							// Second attempt: clean success.
+							terminalProcess.emit("shell_execution_complete", {
+								exitCode: attempt === 1 ? undefined : 0,
+							})
+						})
+					})
+
+					return execution
+				})
+
+				const runPromise = terminalProcess.run("npx vitest run")
+
+				// First preflight settle (Ctrl+U) + first attempt.
+				await vi.advanceTimersByTimeAsync(0)
+				await vi.advanceTimersByTimeAsync(50)
+				await vi.advanceTimersByTimeAsync(0)
+				// Corruption retry preflight (Ctrl+C) + second attempt.
+				await vi.advanceTimersByTimeAsync(50)
+				await vi.advanceTimersByTimeAsync(0)
+				await vi.advanceTimersByTimeAsync(0)
+
+				await runPromise
+
+				expect(mockTerminal.sendText).toHaveBeenNthCalledWith(1, "\x15", false)
+				expect(mockTerminal.sendText).toHaveBeenNthCalledWith(2, "\x03", false)
+				expect(mockTerminal.shellIntegration.executeCommand).toHaveBeenCalledTimes(2)
+				expect(mockTerminalInfo.hasCompletedCommand).toBe(true)
+				expect(mockTerminalInfo.commandCorrupted).toBe(false)
+			} finally {
+				platformSpy.mockRestore()
+				bashSpy.mockRestore()
+				psSpy.mockRestore()
+				fishSpy.mockRestore()
+				vi.useRealTimers()
+			}
+		})
+
+		it("skips preflight on first use of a Windows Git Bash terminal", async () => {
+			const platformSpy = vi.spyOn(process, "platform", "get").mockReturnValue("win32")
+			const bashSpy = vi.spyOn(Terminal, "isActiveShellBash").mockReturnValue(true)
+			const psSpy = vi.spyOn(Terminal, "isActiveShellPowerShell").mockReturnValue(false)
+			const fishSpy = vi.spyOn(Terminal, "isActiveShellFish").mockReturnValue(false)
+
+			try {
+				mockTerminalInfo.hasCompletedCommand = false
+
+				mockStream = (async function* () {
+					yield "\x1b]633;C\x07"
+					yield "ok\n"
+					yield "\x1b]633;D\x07"
+					terminalProcess.emit("shell_execution_complete", { exitCode: 0 })
+				})()
+
+				mockTerminal.shellIntegration.executeCommand.mockReturnValue({
+					read: vi.fn().mockReturnValue(mockStream),
+				})
+
+				const runPromise = terminalProcess.run("echo ok")
+				terminalProcess.emit("stream_available", mockStream)
+				await runPromise
+
+				expect(mockTerminal.sendText).not.toHaveBeenCalled()
+				expect(mockTerminal.shellIntegration.executeCommand).toHaveBeenCalledTimes(1)
+				expect(mockTerminalInfo.hasCompletedCommand).toBe(true)
+			} finally {
+				platformSpy.mockRestore()
+				bashSpy.mockRestore()
+				psSpy.mockRestore()
+				fishSpy.mockRestore()
+			}
+		})
+
 		it("runs command after shell integration activates via onDidChangeTerminalShellIntegration event", async () => {
 			// Cover Terminal.runCommand's waitForShellIntegration resolve path: shell
 			// integration is initially absent but arrives via the VSCode event before timeout.

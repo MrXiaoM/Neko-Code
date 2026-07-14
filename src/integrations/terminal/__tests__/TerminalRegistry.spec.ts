@@ -432,6 +432,79 @@ describe("TerminalRegistry", () => {
 			expect(setStreamSpy).toHaveBeenCalledWith(mockStream)
 			expect(terminal.busy).toBe(true)
 		})
+
+		it("marks leading-char corruption on start and suppresses the damaged exit code", async () => {
+			const terminal = TerminalRegistry.createTerminal("/test/path", "vscode") as Terminal
+			const process = new TerminalProcess(terminal)
+			const emitSpy = vi.spyOn(process, "emit")
+			const mockStream = (async function* () {
+				yield "command not found\n"
+			})()
+			const execution = {
+				commandLine: { value: "px vitest run" },
+				read: vi.fn().mockReturnValue(mockStream),
+			} as any
+
+			process.ownExecution = execution
+			terminal.process = process
+			terminal.expectedCommand = "npx vitest run"
+			terminal.busy = true
+			terminal.running = true
+
+			await startHandler({
+				terminal: terminal.terminal,
+				execution,
+			})
+
+			expect(terminal.commandCorrupted).toBe(true)
+			expect(execution.read).toHaveBeenCalledTimes(1)
+
+			await endHandler({
+				terminal: terminal.terminal,
+				execution,
+				exitCode: 127,
+			})
+
+			// Damaged exit code must not be surfaced as the real result.
+			expect(emitSpy).toHaveBeenCalledWith(
+				"shell_execution_complete",
+				expect.objectContaining({ exitCode: undefined }),
+			)
+			expect(emitSpy).not.toHaveBeenCalledWith(
+				"shell_execution_complete",
+				expect.objectContaining({ exitCode: 127 }),
+			)
+		})
+
+		it("synthesizes unknown completion for a corrupted sibling end event", async () => {
+			const terminal = TerminalRegistry.createTerminal("/test/path", "vscode") as Terminal
+			const process = new TerminalProcess(terminal)
+			const emitSpy = vi.spyOn(process, "emit")
+
+			const ownedExecution = { commandLine: { value: "npx vitest run" } } as any
+			const damagedExecution = { commandLine: { value: "px vitest run" } } as any
+			process.ownExecution = ownedExecution
+			terminal.process = process
+			terminal.expectedCommand = "npx vitest run"
+			terminal.commandCorrupted = true
+			terminal.busy = true
+			terminal.running = true
+
+			await endHandler({
+				terminal: terminal.terminal,
+				execution: damagedExecution,
+				exitCode: 127,
+			})
+
+			expect(emitSpy).toHaveBeenCalledWith(
+				"shell_execution_complete",
+				expect.objectContaining({ exitCode: undefined }),
+			)
+			expect(emitSpy).not.toHaveBeenCalledWith(
+				"shell_execution_complete",
+				expect.objectContaining({ exitCode: 127 }),
+			)
+		})
 	})
 
 	describe("releaseTerminalsForTask", () => {

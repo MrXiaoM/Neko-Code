@@ -18,21 +18,20 @@ export class TerminalProcess extends BaseTerminalProcess {
 	// Delay between Ctrl+C re-sends. Kept short so cancel stays responsive; the
 	// retry window is bounded by (CTRL_C_SEND_LIMIT - 1) * ABORT_RETRY_DELAY_MS.
 	private static readonly ABORT_RETRY_DELAY_MS = 500
-	// Fallback timeout for the post-stream `shell_execution_complete` event.
-	// Once the data stream has closed, the command has effectively finished in
-	// the shell; the only thing left is VS Code's end-of-execution signal
-	// (onDidEndTerminalShellExecution -> shellExecutionComplete). On Windows +
-	// Git Bash the OSC 633 command markers can get corrupted (e.g. the leading
-	// command character is swallowed), and VS Code may then never deliver a
-	// matching end event for this execution. Without a bound, `run()` would
-	// await forever and the whole tool call would hang. After this timeout we
-	// synthesize completion from the fact that the stream already closed.
-	private static readonly SHELL_EXECUTION_COMPLETE_TIMEOUT_MS = 5_000
+	// Preflight clear-line delay before reusing a Windows Git Bash terminal.
+	// Gives the shell a beat to settle after Ctrl+U / Ctrl+C before we inject
+	// the real command via shellIntegration.executeCommand.
+	private static readonly PREFLIGHT_SETTLE_MS = 50
+	// One automatic resubmit after leading-char corruption is detected.
+	// First attempt: Ctrl+U preflight. Retry: escalate to Ctrl+C preflight.
+	private static readonly CORRUPTION_RETRY_LIMIT = 1
 
 	private terminalRef: WeakRef<Terminal>
 	// Guards against overlapping abort retry loops if abort() is called again
 	// while a previous loop is still re-sending Ctrl+C.
 	private aborting = false
+	// Tracks whether this process already performed a Git Bash corruption retry.
+	private corruptionRetried = false
 	// The specific VSCode shell execution this process was started with. Kept on the
 	// process (not just terminal.activeShellExecution, which gets reused/reassigned as
 	// soon as the next command starts) so TerminalRegistry can tell a late
@@ -70,21 +69,6 @@ export class TerminalProcess extends BaseTerminalProcess {
 
 	public override async run(command: string) {
 		this.command = command
-
-		// Reject multiline commands — they cause VS Code shell integration
-		// markers (OSC 633) to corrupt on Windows + Git Bash, resulting in
-		// the end event never firing and the tool call hanging forever.
-		// Agents should use write_to_file to create temp scripts instead.
-		if (command.includes("\n")) {
-			this.emit(
-				"completed",
-				"<error: multiline commands are not supported. Use write_to_file to create a temporary script file, then execute it with a single-line command (e.g. `python /tmp/script.py`).>",
-			)
-			this.terminal.busy = false
-			this.terminal.setActiveStream(undefined)
-			this.continue()
-			return
-		}
 
 		const terminal = this.terminal.terminal
 
@@ -179,6 +163,7 @@ export class TerminalProcess extends BaseTerminalProcess {
 		const shellKind = {
 			isPowerShell: Terminal.isActiveShellPowerShell(),
 			isFish: Terminal.isActiveShellFish(),
+			isBash: Terminal.isActiveShellBash(),
 		}
 		let commandToExecute = command
 
@@ -194,13 +179,27 @@ export class TerminalProcess extends BaseTerminalProcess {
 			}
 		}
 
+		const preparedCommand = this.prepareCommandForShellIntegration(commandToExecute, shellKind)
+		// Windows + Git Bash reused terminals are prone to swallowing the first
+		// character of executeCommand input. Prefer a light Ctrl+U clear-line
+		// preflight first; escalate to Ctrl+C only when corruption is observed.
+		const useGitBashPreflight = process.platform === "win32" && shellKind.isBash
+		const preflightMode: "ctrl-u" | "ctrl-c" | undefined =
+			useGitBashPreflight && this.terminal.hasCompletedCommand ? "ctrl-u" : undefined
+
+		if (preflightMode) {
+			await this.preflightClearLine(terminal, preflightMode)
+		}
+
+		this.terminal.commandCorrupted = false
+		this.terminal.expectedCommand = preparedCommand
+
 		try {
-			const execution = terminal.shellIntegration.executeCommand(
-				this.prepareCommandForShellIntegration(commandToExecute, shellKind),
-			)
+			const execution = terminal.shellIntegration.executeCommand(preparedCommand)
 
 			this.ownExecution = execution
 			this.terminal.activeShellExecution = execution
+			this.terminal.expectedCommand = preparedCommand
 			// Do NOT call execution.read() here. Reading must happen inside
 			// onDidStartTerminalShellExecution (TerminalRegistry), which fires when
 			// VSCode's shell integration confirms the command has actually started
@@ -210,6 +209,7 @@ export class TerminalProcess extends BaseTerminalProcess {
 			// VSCode doesn't buffer retroactively, and zero chunks arrive.
 		} catch (error) {
 			this.terminal.activeShellExecution = undefined
+			this.terminal.expectedCommand = undefined
 			this.cleanupScriptFile()
 			throw error
 		}
@@ -234,6 +234,8 @@ export class TerminalProcess extends BaseTerminalProcess {
 				console.info("[Terminal Process] shell execution completed before stream arrived — finishing cleanly")
 				cancelStreamWait()
 				this.terminal.activeShellExecution = undefined
+				this.terminal.expectedCommand = undefined
+				this.terminal.hasCompletedCommand = true
 				this.terminal.busy = false
 				this.isHot = false
 				this.cleanupScriptFile()
@@ -254,6 +256,7 @@ export class TerminalProcess extends BaseTerminalProcess {
 			)
 
 			this.terminal.busy = false
+			this.terminal.expectedCommand = undefined
 			this.cleanupScriptFile()
 
 			// Emit continue event to allow execution to proceed
@@ -514,6 +517,40 @@ export class TerminalProcess extends BaseTerminalProcess {
 			// command is finished, we still want to consider it 'hot' in case
 			// so that api request stalls to let diagnostics catch up").
 			this.stopHotTimer()
+
+			// Leading-char corruption: the command that actually ran is not ours
+			// (e.g. `px ...` instead of `npx ...`). Discard this attempt and escalate
+			// preflight to Ctrl+C for one automatic resubmit.
+			if (this.terminal.commandCorrupted && useGitBashPreflight && !this.corruptionRetried) {
+				console.warn(
+					"[TerminalProcess] Leading-character command corruption detected; retrying with Ctrl+C preflight",
+					{
+						terminalId: this.terminal.id,
+						command: this.command,
+						previousPreflight: preflightMode,
+					},
+				)
+				this.corruptionRetried = true
+				this.fullOutput = ""
+				this.lastRetrievedIndex = 0
+				this.terminal.commandCorrupted = false
+				this.terminal.expectedCommand = preparedCommand
+				this.terminal.process = this
+				this.terminal.busy = true
+				this.terminal.running = false
+				this.terminal.activeShellExecution = undefined
+				this.ownExecution = undefined
+				this.isHot = false
+
+				await this.preflightClearLine(terminal, "ctrl-c")
+				await this.resubmitCommand(terminal, preparedCommand)
+				return
+			}
+
+			this.terminal.expectedCommand = undefined
+			this.terminal.commandCorrupted = false
+			this.terminal.hasCompletedCommand = true
+
 			this.emit("completed", this.stripCursorSequences(this.removeVSCodeShellIntegration(this.fullOutput)))
 			this.emit("continue")
 		} catch (error) {
@@ -532,6 +569,7 @@ export class TerminalProcess extends BaseTerminalProcess {
 			if (streamProcessingError !== undefined) {
 				// Ensure cleanup and caller unblocking happen even when the loop throws.
 				this.terminal.activeShellExecution = undefined
+				this.terminal.expectedCommand = undefined
 				this.terminal.busy = false
 				this.isHot = false
 				this.cleanupScriptFile()
@@ -542,83 +580,211 @@ export class TerminalProcess extends BaseTerminalProcess {
 				this.emit("continue")
 			}
 		}
+	}
 
-		// Set streamClosed immediately after stream ends.
-		this.terminal.setActiveStream(undefined)
+	/**
+	 * Clear residual input on a reused Windows Git Bash terminal before
+	 * shellIntegration.executeCommand.
+	 *
+	 * Strategy (owner preference):
+	 * 1. Prefer Ctrl+U (`\x15`) — kill the current line only
+	 * 2. Escalate to Ctrl+C (`\x03`) after a leading-char corruption is observed
+	 */
+	private async preflightClearLine(terminal: vscode.Terminal, mode: "ctrl-u" | "ctrl-c"): Promise<void> {
+		const sequence = mode === "ctrl-c" ? "\x03" : "\x15"
 
-		// Wait for shell execution to complete.
-		//
-		// The data stream has already closed at this point, which means the
-		// command has effectively finished running in the shell. All we're
-		// waiting for now is VS Code's end-of-execution signal
-		// (onDidEndTerminalShellExecution -> shellExecutionComplete). On
-		// Windows + Git Bash the OSC 633 command markers can become corrupted
-		// (symptom: the leading command character is swallowed, e.g. `npx` runs
-		// as `px`), and VS Code may then never deliver a matching end event for
-		// this execution. Awaiting unconditionally would hang `run()` forever,
-		// which in turn hangs the whole tool call (no tool_result is ever
-		// produced and the UI is left with stale, disabled approval buttons).
-		//
-		// Since the stream is already closed, bound the wait: if the end event
-		// doesn't arrive in time, synthesize completion so the process always
-		// finishes cleanly.
-		let shellExecutionTimedOut = false
-		let completeTimeoutId: NodeJS.Timeout | undefined
-		const shellExecutionCompleteWithTimeout = Promise.race([
-			shellExecutionComplete,
-			new Promise<ExitCodeDetails>((resolve) => {
-				completeTimeoutId = setTimeout(() => {
-					shellExecutionTimedOut = true
-					// exitCode left undefined: we genuinely don't know the real
-					// exit status because VS Code never reported it. Downstream
-					// formatting surfaces this as an unknown exit status rather
-					// than falsely claiming success.
-					resolve({ exitCode: undefined })
-				}, TerminalProcess.SHELL_EXECUTION_COMPLETE_TIMEOUT_MS)
-			}),
-		])
+		console.info("[TerminalProcess] Preflight clear-line before executeCommand", {
+			terminalId: this.terminal.id,
+			mode,
+		})
 
-		await shellExecutionCompleteWithTimeout
+		// sendText(..., false) injects the control character without pressing Enter.
+		terminal.sendText(sequence, false)
 
-		if (completeTimeoutId) {
-			clearTimeout(completeTimeoutId)
+		await new Promise((resolve) => setTimeout(resolve, TerminalProcess.PREFLIGHT_SETTLE_MS))
+	}
+
+	/**
+	 * Resubmit a prepared command after preflight, reusing the same process instance.
+	 * Used only for the Git Bash leading-character corruption recovery path.
+	 */
+	private async resubmitCommand(terminal: vscode.Terminal, preparedCommand: string): Promise<void> {
+		// Create fresh waiters for the retry attempt.
+		let cancelStreamWait: () => void = () => {}
+		const streamAvailable = new Promise<AsyncIterable<string>>((resolve, reject) => {
+			const timeoutId = setTimeout(() => {
+				this.removeAllListeners("stream_available")
+				this.emit("no_shell_integration", {
+					message: `VSCE shell integration stream did not start within ${Terminal.getShellIntegrationTimeout() / 1000} seconds. Terminal problem?`,
+					commandSubmitted: true,
+				})
+				reject(
+					new Error(
+						`VSCE shell integration stream did not start within ${Terminal.getShellIntegrationTimeout() / 1000} seconds.`,
+					),
+				)
+			}, Terminal.getShellIntegrationTimeout())
+
+			cancelStreamWait = () => {
+				clearTimeout(timeoutId)
+				this.removeAllListeners("stream_available")
+			}
+
+			this.once("stream_available", (stream: AsyncIterable<string>) => {
+				clearTimeout(timeoutId)
+				resolve(stream)
+			})
+		})
+
+		const doneSignal = { done: false }
+		const shellExecutionComplete = new Promise<ExitCodeDetails>((resolve) => {
+			this.once("shell_execution_complete", (details: ExitCodeDetails) => {
+				doneSignal.done = true
+				resolve(details)
+			})
+		})
+
+		let shellExecutionStarted = false
+		this.once("shell_execution_started", () => {
+			shellExecutionStarted = true
+		})
+
+		this.terminal.commandCorrupted = false
+		this.terminal.expectedCommand = preparedCommand
+
+		try {
+			const execution = terminal.shellIntegration!.executeCommand(preparedCommand)
+			this.ownExecution = execution
+			this.terminal.activeShellExecution = execution
+			this.terminal.expectedCommand = preparedCommand
+		} catch (error) {
+			this.terminal.activeShellExecution = undefined
+			this.terminal.expectedCommand = undefined
+			this.cleanupScriptFile()
+			throw error
 		}
 
-		if (shellExecutionTimedOut) {
-			console.warn(
-				"[TerminalProcess] shell_execution_complete was not received within " +
-					`${TerminalProcess.SHELL_EXECUTION_COMPLETE_TIMEOUT_MS}ms after the stream closed; ` +
-					"synthesizing completion (likely corrupted shell integration markers).",
-				{ terminalId: this.terminal.id, command: this.command },
+		this.isHot = true
+
+		let stream: AsyncIterable<string>
+		try {
+			const COMPLETED_BEFORE_STREAM = Symbol("completed_before_stream")
+			const result = await Promise.race([
+				streamAvailable,
+				shellExecutionComplete.then(() => COMPLETED_BEFORE_STREAM as typeof COMPLETED_BEFORE_STREAM),
+			])
+
+			if (result === COMPLETED_BEFORE_STREAM) {
+				cancelStreamWait()
+				this.terminal.activeShellExecution = undefined
+				this.terminal.expectedCommand = undefined
+				this.terminal.hasCompletedCommand = true
+				this.terminal.busy = false
+				this.isHot = false
+				this.cleanupScriptFile()
+				this.emit("completed", "")
+				this.emit("continue")
+				return
+			}
+
+			stream = result as AsyncIterable<string>
+		} catch (error) {
+			console.error("[Terminal Process] Stream error on corruption retry:", (error as Error).message)
+			this.emit(
+				"completed",
+				"<VSCE shell integration stream did not start: terminal output and command execution status is unknown>",
 			)
-			// Mirror the bookkeeping shellExecutionComplete() would have done so
-			// the terminal isn't left marked busy/running and can be reused.
 			this.terminal.busy = false
-			this.terminal.running = false
+			this.terminal.expectedCommand = undefined
+			this.cleanupScriptFile()
+			this.emit("continue")
+			return
 		}
 
-		this.terminal.activeShellExecution = undefined
+		// Reuse the same interruptible stream consumption path as run() for the retry.
+		// Keep this path intentionally simpler: no second corruption retry.
+		void shellExecutionStarted
+		void doneSignal
 
-		this.isHot = false
+		const iterator = stream[Symbol.asyncIterator]()
+		let streamEndedByEvent = false
+		let sawEndMarker = false
+		const DONE_SENTINEL = Symbol("done")
 
-		// Emit any remaining output before completing.
-		this.emitRemainingBufferIfListening()
+		try {
+			let nextChunk = iterator.next()
+			while (true) {
+				const raceResult = await Promise.race([
+					nextChunk,
+					shellExecutionComplete.then(() => DONE_SENTINEL as typeof DONE_SENTINEL),
+				])
 
-		// fullOutput begins after C marker so we only need to trim off D marker
-		// (if D exists, see VSCode bug# 237208):
-		const match = this.matchBeforeVsceEndMarkers(this.fullOutput)
+				if (raceResult === DONE_SENTINEL) {
+					streamEndedByEvent = true
+					break
+				}
 
-		if (match !== undefined) {
-			this.fullOutput = match
+				const { value: data, done } = raceResult as IteratorResult<string>
+				if (done) {
+					break
+				}
+
+				const match = this.fullOutput === "" ? this.matchAfterVsceStartMarkers(data) : undefined
+				if (match !== undefined) {
+					this.emit("line", "")
+				}
+				this.fullOutput += match !== undefined ? match : data
+
+				const now = Date.now()
+				if (this.isListening && (now - this.lastEmitTime_ms > 100 || this.lastEmitTime_ms === 0)) {
+					this.emitRemainingBufferIfListening()
+					this.lastEmitTime_ms = now
+				}
+				this.startHotTimer(data)
+
+				if (this.matchBeforeVsceEndMarkers(this.fullOutput) !== undefined) {
+					sawEndMarker = true
+					break
+				}
+				nextChunk = iterator.next()
+			}
+
+			this.terminal.setActiveStream(undefined)
+
+			if (!streamEndedByEvent) {
+				if (sawEndMarker) {
+					await Promise.race([
+						shellExecutionComplete,
+						new Promise<void>((resolve) => setTimeout(resolve, 1_000)),
+					])
+				} else {
+					await shellExecutionComplete
+				}
+			}
+
+			this.terminal.activeShellExecution = undefined
+			this.cleanupScriptFile()
+			this.isHot = false
+			this.emitRemainingBufferIfListening()
+
+			const match = this.matchBeforeVsceEndMarkers(this.fullOutput)
+			if (match !== undefined) {
+				this.fullOutput = match
+			}
+
+			this.stopHotTimer()
+			this.terminal.expectedCommand = undefined
+			this.terminal.commandCorrupted = false
+			this.terminal.hasCompletedCommand = true
+			this.emit("completed", this.stripCursorSequences(this.removeVSCodeShellIntegration(this.fullOutput)))
+			this.emit("continue")
+		} finally {
+			try {
+				await iterator.return?.()
+			} catch {
+				/* ignore */
+			}
 		}
-
-		// For now we don't want this delaying requests since we don't send
-		// diagnostics automatically anymore (previous: "even though the
-		// command is finished, we still want to consider it 'hot' in case
-		// so that api request stalls to let diagnostics catch up").
-		this.stopHotTimer()
-		this.emit("completed", this.stripCursorSequences(this.removeVSCodeShellIntegration(this.fullOutput)))
-		this.emit("continue")
 	}
 
 	/**

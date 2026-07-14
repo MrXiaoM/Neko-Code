@@ -49,9 +49,10 @@ export class TerminalRegistry {
 			const startDisposable = vscode.window.onDidStartTerminalShellExecution?.(
 				async (e: vscode.TerminalShellExecutionStartEvent) => {
 					const terminal = this.getTerminalByVSCETerminal(e.terminal)
+					const reportedCommand = e.execution?.commandLine?.value
 
 					console.info("[onDidStartTerminalShellExecution]", {
-						command: e.execution?.commandLine?.value,
+						command: reportedCommand,
 						terminalId: terminal?.id,
 					})
 
@@ -82,6 +83,25 @@ export class TerminalRegistry {
 							)
 							return
 						}
+
+						// Detect Windows + Git Bash leading-character corruption early
+						// (`npx` → `px`) so the end handler can refuse the damaged exit code.
+						if (
+							terminal.expectedCommand &&
+							typeof reportedCommand === "string" &&
+							Terminal.isLeadingCharCommandCorruption(terminal.expectedCommand, reportedCommand)
+						) {
+							terminal.commandCorrupted = true
+							console.warn(
+								"[onDidStartTerminalShellExecution] Detected leading-character command corruption",
+								{
+									terminalId: terminal.id,
+									expectedCommand: terminal.expectedCommand,
+									reportedCommand,
+								},
+							)
+						}
+
 						const stream = e.execution.read()
 						terminal.setActiveStream(stream)
 						// Only mark busy when there is a live process to clear it later.
@@ -109,9 +129,10 @@ export class TerminalRegistry {
 					const terminal = this.getTerminalByVSCETerminal(e.terminal)
 					const process = terminal?.process
 					const exitDetails = TerminalProcess.interpretExitCode(e.exitCode)
+					const reportedCommand = e.execution?.commandLine?.value
 
 					console.info("[onDidEndTerminalShellExecution]", {
-						command: e.execution?.commandLine?.value,
+						command: reportedCommand,
 						terminalId: terminal?.id,
 						...exitDetails,
 					})
@@ -144,11 +165,67 @@ export class TerminalRegistry {
 						process.ownExecution !== e.execution
 
 					if (isStaleExecution) {
+						// If we already know the submitted command was corrupted, the unmatched
+						// end is that damaged sibling finishing. Unblock the waiter with an
+						// unknown exit code so TerminalProcess can retry immediately.
+						if (terminal instanceof Terminal && terminal.commandCorrupted && process) {
+							console.warn(
+								"[onDidEndTerminalShellExecution] Corrupted sibling end event; synthesizing unknown completion for retry",
+								{
+									terminalId: terminal.id,
+									reportedCommand,
+									expectedCommand: terminal.expectedCommand,
+									exitCode: e.exitCode,
+								},
+							)
+							terminal.shellExecutionComplete({ exitCode: undefined })
+							return
+						}
+
 						console.info(
 							"[TerminalRegistry] Ignoring stale onDidEndTerminalShellExecution for a superseded execution",
 							{ terminalId: terminal.id, exitCode: e.exitCode },
 						)
 
+						return
+					}
+
+					// Own execution finished but the command line was corrupted: never surface
+					// the damaged command's exit code (e.g. 127 from `px ...`) as the real result.
+					if (
+						terminal instanceof Terminal &&
+						terminal.commandCorrupted &&
+						process instanceof TerminalProcess &&
+						process.ownExecution === e.execution
+					) {
+						console.warn("[onDidEndTerminalShellExecution] Suppressing exit code for corrupted command", {
+							terminalId: terminal.id,
+							expectedCommand: terminal.expectedCommand,
+							reportedCommand,
+							exitCode: e.exitCode,
+						})
+						terminal.shellExecutionComplete({ exitCode: undefined })
+						return
+					}
+
+					// Even without ownExecution set yet, refuse completion when the reported
+					// command line is the classic leading-char corruption of expectedCommand.
+					if (
+						terminal instanceof Terminal &&
+						terminal.expectedCommand &&
+						typeof reportedCommand === "string" &&
+						Terminal.isLeadingCharCommandCorruption(terminal.expectedCommand, reportedCommand)
+					) {
+						terminal.commandCorrupted = true
+						console.warn("[onDidEndTerminalShellExecution] Ignoring corrupted-command end event", {
+							terminalId: terminal.id,
+							expectedCommand: terminal.expectedCommand,
+							reportedCommand,
+							exitCode: e.exitCode,
+						})
+						if (process) {
+							terminal.shellExecutionComplete({ exitCode: undefined })
+						}
 						return
 					}
 

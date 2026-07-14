@@ -173,6 +173,38 @@ describe("Terminal VS Code terminal profile (#277)", () => {
 			})
 		})
 
+		describe("isBash", () => {
+			it.each([
+				["C:\\Program Files\\Git\\bin\\bash.exe", true],
+				["C:\\Program Files\\Git\\usr\\bin\\bash.exe", true],
+				["/bin/bash", true],
+				["/usr/bin/sh", true],
+				["C:\\Windows\\System32\\cmd.exe", false],
+				["C:\\Program Files\\PowerShell\\pwsh.exe", false],
+			])("isBash(%s) === %s", (input, expected) => {
+				expect(Terminal.isBash(input)).toBe(expected)
+			})
+		})
+
+		describe("isLeadingCharCommandCorruption", () => {
+			it("detects classic npx → px first-character drop", () => {
+				expect(
+					Terminal.isLeadingCharCommandCorruption(
+						"npx vitest run core/task/__tests__/ask-clear-approval-buttons.spec.ts",
+						"px vitest run core/task/__tests__/ask-clear-approval-buttons.spec.ts",
+					),
+				).toBe(true)
+			})
+
+			it("returns false when commands match", () => {
+				expect(Terminal.isLeadingCharCommandCorruption("npx vitest run", "npx vitest run")).toBe(false)
+			})
+
+			it("returns false for unrelated command mismatches", () => {
+				expect(Terminal.isLeadingCharCommandCorruption("npx vitest run", "npm test")).toBe(false)
+			})
+		})
+
 		describe("isActiveShellCmdExe", () => {
 			it("returns false on non-Windows platforms", () => {
 				expect(Terminal.isActiveShellCmdExe("linux")).toBe(false)

@@ -16,6 +16,25 @@ export class Terminal extends BaseTerminal {
 
 	public activeShellExecution?: vscode.TerminalShellExecution
 
+	/**
+	 * Exact command string last submitted via shellIntegration.executeCommand.
+	 * Used to detect Windows + Git Bash leading-character corruption (`npx` → `px`).
+	 */
+	public expectedCommand?: string
+
+	/**
+	 * True when VS Code reports a commandLine that does not match expectedCommand
+	 * (typically the first character was swallowed by OSC 633 corruption).
+	 */
+	public commandCorrupted = false
+
+	/**
+	 * Becomes true after at least one command has completed on this terminal.
+	 * Reused terminals are more prone to Git Bash leading-char corruption, so
+	 * preflight clear-line is only applied once this is true.
+	 */
+	public hasCompletedCommand = false
+
 	constructor(id: number, terminal: vscode.Terminal | undefined, cwd: string) {
 		super("vscode", id, cwd, Terminal.getReuseKey())
 
@@ -402,6 +421,73 @@ export class Terminal extends BaseTerminal {
 
 	public static isFish(shellPath: string): boolean {
 		return /[/\\]fish(?:\.exe)?$/i.test(shellPath)
+	}
+
+	public static isBash(shellPath: string): boolean {
+		return /[/\\](?:bash|sh)(?:\.exe)?$/i.test(shellPath)
+	}
+
+	/**
+	 * True when the active shell is bash/sh (including Git Bash on Windows).
+	 * Used for Git Bash leading-character corruption workarounds.
+	 */
+	public static isActiveShellBash(platform: NodeJS.Platform = process.platform): boolean {
+		const profileOverride = Terminal.getTerminalProfile()
+
+		if (profileOverride) {
+			const profileShell = Terminal.getProfileShell(platform)
+			return profileShell?.shellPath ? Terminal.isBash(profileShell.shellPath) : false
+		}
+
+		const defaultProfileName = Terminal.getConfiguredDefaultProfileName(platform)
+
+		if (!defaultProfileName) {
+			return false
+		}
+
+		const profiles = Terminal.getConfiguredProfiles(platform)
+		const profile = profiles[defaultProfileName] as { path?: unknown } | null | undefined
+
+		if (!profile) {
+			return false
+		}
+
+		const resolved = Terminal.resolveProfilePath(profile.path, platform)
+		return resolved ? Terminal.isBash(resolved) : false
+	}
+
+	/**
+	 * Detects the classic Windows + Git Bash shell-integration corruption where
+	 * the first character of the submitted command is swallowed (`npx` → `px`).
+	 */
+	public static isLeadingCharCommandCorruption(expectedCommand: string, actualCommandLine: string): boolean {
+		const expected = expectedCommand.trim()
+		const actual = actualCommandLine.trim()
+
+		if (!expected || !actual || expected === actual) {
+			return false
+		}
+
+		// Exact "first character dropped" match.
+		if (expected.length > 1 && actual === expected.slice(1)) {
+			return true
+		}
+
+		// First-token first-char drop with the remainder unchanged.
+		// e.g. expected "npx vitest run x", actual "px vitest run x"
+		const expectedFirstSpace = expected.indexOf(" ")
+		const actualFirstSpace = actual.indexOf(" ")
+
+		if (expectedFirstSpace === -1 || actualFirstSpace === -1) {
+			return false
+		}
+
+		const expectedRest = expected.slice(expectedFirstSpace)
+		const actualRest = actual.slice(actualFirstSpace)
+		const expectedToken = expected.slice(0, expectedFirstSpace)
+		const actualToken = actual.slice(0, actualFirstSpace)
+
+		return expectedRest === actualRest && expectedToken.length > 1 && actualToken === expectedToken.slice(1)
 	}
 
 	/**
