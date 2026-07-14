@@ -271,6 +271,12 @@
 	"commandExecution": {
 		"abort": "Abort",
 		"running": "Running",
+		"approved": "Approved",
+		"autoApproved": "Auto-approved",
+		"rejected": "Rejected",
+		"approvedTooltip": "You approved this command",
+		"autoApprovedTooltip": "This command was auto-approved by allowlist settings",
+		"rejectedTooltip": "This command was rejected (button, auto-deny, or by sending a message)",
 		"pid": "PID: {{pid}}",
 		"exitStatus": "Exited with status {{exitCode}}",
 		"malformedCommand": "Malformed command: shell syntax error",

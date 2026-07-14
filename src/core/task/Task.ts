@@ -30,6 +30,7 @@ import {
 	type ClineMessage,
 	type ClineSay,
 	type ClineAsk,
+	type ApprovalState,
 	type ToolProgressStatus,
 	type HistoryItem,
 	type CreateTaskOptions,
@@ -1181,6 +1182,10 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 		const state = provider ? await provider.getState() : undefined
 		const approval = await checkAutoApproval({ state, ask: type, text, isProtected })
 		const isAutoAnswered = approval.decision === "approve" || approval.decision === "deny"
+		// Distinct from isAnswered: records how the ask was resolved so the UI
+		// can show "approved" vs "auto-approved" vs "rejected".
+		const autoApprovalState: ApprovalState | undefined =
+			approval.decision === "approve" ? "auto_approved" : approval.decision === "deny" ? "rejected" : undefined
 
 		if (partial !== undefined) {
 			const lastMessage = this.clineMessages.at(-1)
@@ -1244,6 +1249,9 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 					lastMessage.isProtected = isProtected
 					if (isAutoAnswered) {
 						lastMessage.isAnswered = true
+						if (autoApprovalState) {
+							lastMessage.approvalState = autoApprovalState
+						}
 					}
 					await this.saveClineMessages()
 					// Fire-and-forget: see updateClineMessage call above for the
@@ -1265,6 +1273,7 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 						text,
 						isProtected,
 						isAnswered: isAutoAnswered || undefined,
+						approvalState: autoApprovalState,
 					})
 				}
 			}
@@ -1282,6 +1291,7 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 				text,
 				isProtected,
 				isAnswered: isAutoAnswered || undefined,
+				approvalState: autoApprovalState,
 			})
 		}
 
@@ -1456,19 +1466,50 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 			}
 		}
 
-		// Mark the last tool-approval ask as answered when user approves (or auto-approval)
-		if (askResponse === "yesButtonClicked") {
-			const lastToolAskIndex = findLastIndex(
-				this.clineMessages,
-				(msg) => msg.type === "ask" && msg.ask === "tool" && !msg.isAnswered,
-			)
-			if (lastToolAskIndex !== -1) {
-				this.clineMessages[lastToolAskIndex].isAnswered = true
-				void this.updateClineMessage(this.clineMessages[lastToolAskIndex]).catch((error) => {
+		// Stamp approval decision on the latest interactive ask that still needs
+		// a user/system decision. Auto-approve/deny already set approvalState in
+		// ask(); never overwrite those values when approveAsk/denyAsk is invoked
+		// from the auto path.
+		const isCommandLikeAsk = (ask: ClineAsk | undefined) =>
+			ask === "command" || ask === "tool" || ask === "use_mcp_server"
+
+		const lastCommandLikeIndex = findLastIndex(
+			this.clineMessages,
+			(msg) => msg.type === "ask" && isCommandLikeAsk(msg.ask) && (!msg.isAnswered || !msg.approvalState),
+		)
+
+		if (lastCommandLikeIndex !== -1) {
+			const message = this.clineMessages[lastCommandLikeIndex]
+			let didUpdate = false
+
+			if (askResponse === "yesButtonClicked") {
+				if (!message.approvalState) {
+					message.approvalState = "approved"
+					didUpdate = true
+				}
+				if (!message.isAnswered) {
+					message.isAnswered = true
+					didUpdate = true
+				}
+			} else if (askResponse === "noButtonClicked" || askResponse === "messageResponse") {
+				// messageResponse on command/tool/mcp is treated as rejection by
+				// askApproval (response !== "yesButtonClicked").
+				if (!message.approvalState) {
+					message.approvalState = "rejected"
+					didUpdate = true
+				}
+				if (!message.isAnswered) {
+					message.isAnswered = true
+					didUpdate = true
+				}
+			}
+
+			if (didUpdate) {
+				void this.updateClineMessage(message).catch((error) => {
 					console.error("[Task#handleWebviewAskResponse] updateClineMessage failed:", error)
 				})
 				this.saveClineMessages().catch((error) => {
-					console.error("Failed to save answered tool-ask state:", error)
+					console.error("Failed to save command-like ask approval state:", error)
 				})
 			}
 		}

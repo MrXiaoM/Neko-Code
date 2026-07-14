@@ -35,7 +35,7 @@ async function attachQueue(task: Task) {
 }
 
 describe("Task.ask auto-approval stamping", () => {
-	it("stamps isAnswered:true on the message when a command ask is auto-approved", async () => {
+	it("stamps isAnswered:true and approvalState auto_approved when a command ask is auto-approved", async () => {
 		const postMessageToWebview = vi.fn().mockResolvedValue(undefined)
 		const provider: ProviderStub = {
 			postMessageToWebview,
@@ -56,11 +56,12 @@ describe("Task.ask auto-approval stamping", () => {
 		// The message must carry isAnswered:true so the webview never shows buttons.
 		const addCall = (task as any).addToClineMessages.mock.calls[0][0]
 		expect(addCall.isAnswered).toBe(true)
+		expect(addCall.approvalState).toBe("auto_approved")
 		// clearApprovalButtons is no longer sent as a separate message.
 		expect(postMessageToWebview).not.toHaveBeenCalledWith({ type: "clearApprovalButtons" })
 	})
 
-	it("stamps isAnswered:true on the message when a command ask is auto-denied", async () => {
+	it("stamps isAnswered:true and approvalState rejected when a command ask is auto-denied", async () => {
 		const postMessageToWebview = vi.fn().mockResolvedValue(undefined)
 		const provider: ProviderStub = {
 			postMessageToWebview,
@@ -80,10 +81,11 @@ describe("Task.ask auto-approval stamping", () => {
 		expect(result.response).toBe("noButtonClicked")
 		const addCall = (task as any).addToClineMessages.mock.calls[0][0]
 		expect(addCall.isAnswered).toBe(true)
+		expect(addCall.approvalState).toBe("rejected")
 		expect(postMessageToWebview).not.toHaveBeenCalledWith({ type: "clearApprovalButtons" })
 	})
 
-	it("does not stamp isAnswered when the ask requires a manual decision", async () => {
+	it("stamps approved on manual Run without overwriting later, and leaves add-time approval empty", async () => {
 		const postMessageToWebview = vi.fn().mockResolvedValue(undefined)
 		const provider: ProviderStub = {
 			postMessageToWebview,
@@ -102,6 +104,10 @@ describe("Task.ask auto-approval stamping", () => {
 
 		// Simulate the user clicking Run after the buttons are shown.
 		setTimeout(() => {
+			// Mirror production: message already lives in clineMessages when the user answers.
+			// Clone so later mutation of clineMessages does not rewrite the original add() arg snapshot.
+			const added = (task as any).addToClineMessages.mock.calls[0][0]
+			;(task as any).clineMessages = [{ ...added }]
 			task.approveAsk()
 		}, 0)
 
@@ -109,7 +115,120 @@ describe("Task.ask auto-approval stamping", () => {
 
 		const addCall = (task as any).addToClineMessages.mock.calls[0][0]
 		expect(addCall.isAnswered).toBeFalsy()
+		expect(addCall.approvalState).toBeUndefined()
+		expect((task as any).clineMessages[0].approvalState).toBe("approved")
+		expect((task as any).clineMessages[0].isAnswered).toBe(true)
 		expect(postMessageToWebview).not.toHaveBeenCalledWith({ type: "clearApprovalButtons" })
+	})
+
+	it("stamps rejected when the user sends a message instead of approving a command", async () => {
+		const postMessageToWebview = vi.fn().mockResolvedValue(undefined)
+		const provider: ProviderStub = {
+			postMessageToWebview,
+			getState: async () => ({
+				autoApprovalEnabled: false,
+				alwaysAllowExecute: false,
+				allowedCommands: [],
+				deniedCommands: [],
+			}),
+		}
+
+		const task = buildTask(provider)
+		await attachQueue(task)
+
+		const askPromise = task.ask("command", "echo hi", false)
+
+		setTimeout(() => {
+			const added = (task as any).addToClineMessages.mock.calls[0][0]
+			;(task as any).clineMessages = [added]
+			task.handleWebviewAskResponse("messageResponse", "do something else instead")
+		}, 0)
+
+		await askPromise
+
+		expect((task as any).clineMessages[0].approvalState).toBe("rejected")
+		expect((task as any).clineMessages[0].isAnswered).toBe(true)
+	})
+
+	it("stamps rejected when the user clicks Deny on a command", async () => {
+		const postMessageToWebview = vi.fn().mockResolvedValue(undefined)
+		const provider: ProviderStub = {
+			postMessageToWebview,
+			getState: async () => ({
+				autoApprovalEnabled: false,
+				alwaysAllowExecute: false,
+				allowedCommands: [],
+				deniedCommands: [],
+			}),
+		}
+
+		const task = buildTask(provider)
+		await attachQueue(task)
+
+		const askPromise = task.ask("command", "echo hi", false)
+
+		setTimeout(() => {
+			const added = (task as any).addToClineMessages.mock.calls[0][0]
+			;(task as any).clineMessages = [added]
+			task.denyAsk()
+		}, 0)
+
+		await askPromise
+
+		expect((task as any).clineMessages[0].approvalState).toBe("rejected")
+		expect((task as any).clineMessages[0].isAnswered).toBe(true)
+	})
+
+	it("does not overwrite auto_approved when approveAsk is invoked from the auto path", async () => {
+		const postMessageToWebview = vi.fn().mockResolvedValue(undefined)
+		const provider: ProviderStub = {
+			postMessageToWebview,
+			getState: async () => ({
+				autoApprovalEnabled: true,
+				alwaysAllowExecute: true,
+				allowedCommands: ["echo"],
+				deniedCommands: [],
+			}),
+		}
+
+		const task = buildTask(provider)
+		await attachQueue(task)
+
+		// Capture the stamped message into clineMessages so handleWebviewAskResponse can see it.
+		;(task as any).addToClineMessages = vi.fn(async (msg: any) => {
+			;(task as any).clineMessages.push(msg)
+		})
+
+		const result = await task.ask("command", "echo hi", false)
+
+		expect(result.response).toBe("yesButtonClicked")
+		expect((task as any).clineMessages[0].approvalState).toBe("auto_approved")
+	})
+
+	it("auto-approves JSON command approval payloads using the embedded command", async () => {
+		const postMessageToWebview = vi.fn().mockResolvedValue(undefined)
+		const provider: ProviderStub = {
+			postMessageToWebview,
+			getState: async () => ({
+				autoApprovalEnabled: true,
+				alwaysAllowExecute: true,
+				allowedCommands: ["echo"],
+				deniedCommands: [],
+			}),
+		}
+
+		const task = buildTask(provider)
+		await attachQueue(task)
+
+		const payload = JSON.stringify({
+			command: "echo hi",
+			terminalInfo: { provider: "vscode", willReuseTerminal: false, cwd: "/tmp" },
+		})
+		const result = await task.ask("command", payload, false)
+
+		expect(result.response).toBe("yesButtonClicked")
+		const addCall = (task as any).addToClineMessages.mock.calls[0][0]
+		expect(addCall.approvalState).toBe("auto_approved")
 	})
 
 	it("does not stamp isAnswered for the followup timeout branch", async () => {

@@ -227,6 +227,12 @@
 	"commandOutput": "命令输出",
 	"commandExecution": {
 		"running": "正在运行",
+		"approved": "批准执行",
+		"autoApproved": "自动批准执行",
+		"rejected": "拒绝执行",
+		"approvedTooltip": "你已批准执行此命令",
+		"autoApprovedTooltip": "此命令已由允许列表设置自动批准",
+		"rejectedTooltip": "此命令已被拒绝（点击拒绝、自动拒绝，或直接发送消息）",
 		"abort": "中止",
 		"pid": "PID: {{pid}}",
 		"exitStatus": "已退出，状态码 {{exitCode}}",

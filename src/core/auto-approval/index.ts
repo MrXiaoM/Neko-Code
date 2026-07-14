@@ -13,6 +13,23 @@ import { isWriteToolAction, isReadOnlyToolAction } from "./tools"
 import { isMcpToolAlwaysAllowed } from "./mcp"
 import { getCommandDecision } from "./commands"
 
+/**
+ * Extract the shell command from a command-ask payload.
+ * Production messages are JSON (`{ command, terminalInfo }`); partial streams
+ * and older history may still be plain command text.
+ */
+function extractCommandText(text: string): string {
+	try {
+		const parsed = JSON.parse(text) as { command?: unknown }
+		if (typeof parsed.command === "string") {
+			return parsed.command
+		}
+	} catch {
+		// Older / partial command messages are plain text.
+	}
+	return text
+}
+
 // We have auto-approval actions for different categories.
 export type AutoApprovalState =
 	| "alwaysAllowReadOnly"
@@ -117,7 +134,12 @@ export async function checkAutoApproval({
 		}
 
 		if (state.alwaysAllowExecute === true) {
-			const decision = getCommandDecision(text, state.allowedCommands || [], state.deniedCommands || [])
+			// Command approval messages may be JSON payloads
+			// (`{ command, terminalInfo }`) or plain command text (partial
+			// streams / older history). Always extract the real command before
+			// allowlist/denylist matching.
+			const command = extractCommandText(text)
+			const decision = getCommandDecision(command, state.allowedCommands || [], state.deniedCommands || [])
 
 			if (decision === "auto_approve") {
 				return { decision: "approve" }

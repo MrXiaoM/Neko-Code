@@ -247,6 +247,16 @@ export type ContextTruncation = z.infer<typeof contextTruncationSchema>
  *
  * Note: These fields are mutually exclusive - a message will have at most one of them.
  */
+/**
+ * Approval decision for interactive asks (primarily command execution UI).
+ * - approved: user manually approved (Run/Approve button)
+ * - auto_approved: system auto-approved (allowlist / always-allow settings)
+ * - rejected: user denied, auto-denied, or rejected by sending a message instead of approving
+ */
+export const approvalStateSchema = z.enum(["approved", "auto_approved", "rejected"])
+
+export type ApprovalState = z.infer<typeof approvalStateSchema>
+
 export const clineMessageSchema = z.object({
 	ts: z.number(),
 	type: z.union([z.literal("ask"), z.literal("say")]),
@@ -272,6 +282,12 @@ export const clineMessageSchema = z.object({
 	isProtected: z.boolean().optional(),
 	apiProtocol: z.union([z.literal("openai"), z.literal("anthropic")]).optional(),
 	isAnswered: z.boolean().optional(),
+	/**
+	 * How the interactive ask was resolved. Used by the webview to show
+	 * approval/rejection labels (e.g. command execution rows).
+	 * Distinct from `isAnswered`, which only tracks whether buttons should hide.
+	 */
+	approvalState: approvalStateSchema.optional(),
 })
 
 export type ClineMessage = z.infer<typeof clineMessageSchema>

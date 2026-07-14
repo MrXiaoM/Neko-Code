@@ -1,12 +1,13 @@
 import { useCallback, useState, memo, useMemo } from "react"
 import { useEvent } from "react-use"
-import { t } from "i18next"
+import { useTranslation } from "react-i18next"
 import { ChevronDown, OctagonX, SquareArrowOutUpRight } from "lucide-react"
 
 import {
 	type ExtensionMessage,
 	type CommandExecutionStatus,
 	type CommandTerminalInfo,
+	type ApprovalState,
 	commandExecutionStatusSchema,
 } from "@roo-code/types"
 
@@ -41,9 +42,11 @@ interface CommandExecutionProps {
 	text?: string
 	icon?: JSX.Element | null
 	title?: JSX.Element | null
+	approvalState?: ApprovalState
 }
 
-export const CommandExecution = ({ executionId, text, icon, title }: CommandExecutionProps) => {
+export const CommandExecution = ({ executionId, text, icon, title, approvalState }: CommandExecutionProps) => {
+	const { t } = useTranslation()
 	const {
 		terminalShellIntegrationDisabled = false,
 		allowedCommands = [],
@@ -185,12 +188,49 @@ export const CommandExecution = ({ executionId, text, icon, title }: CommandExec
 
 	useEvent("message", onMessage)
 
+	const approvalLabelKey =
+		approvalState === "approved"
+			? "chat:commandExecution.approved"
+			: approvalState === "auto_approved"
+				? "chat:commandExecution.autoApproved"
+				: approvalState === "rejected"
+					? "chat:commandExecution.rejected"
+					: null
+
+	const approvalTooltipKey =
+		approvalState === "approved"
+			? "chat:commandExecution.approvedTooltip"
+			: approvalState === "auto_approved"
+				? "chat:commandExecution.autoApprovedTooltip"
+				: approvalState === "rejected"
+					? "chat:commandExecution.rejectedTooltip"
+					: null
+
+	const approvalTitle =
+		approvalLabelKey !== null ? (
+			<span
+				className={cn(
+					"font-bold",
+					approvalState === "approved" && "text-green-600",
+					approvalState === "auto_approved" && "text-blue-500",
+					approvalState === "rejected" && "text-vscode-errorForeground",
+				)}>
+				{t(approvalLabelKey)}
+			</span>
+		) : (
+			title
+		)
+
 	return (
 		<>
 			<div className="flex flex-row items-center justify-between gap-2 mb-1">
 				<div className="flex flex-row items-center gap-2">
 					{icon}
-					{title}
+					{approvalTooltipKey ? (
+						<StandardTooltip content={t(approvalTooltipKey)}>{approvalTitle}</StandardTooltip>
+					) : (
+						approvalTitle
+					)}
 					{status?.status === "started" && (
 						<StandardTooltip content={t("chat:commandExecution.running")}>
 							<div className="rounded-full size-2 bg-yellow-500 animate-pulse" />
@@ -199,7 +239,7 @@ export const CommandExecution = ({ executionId, text, icon, title }: CommandExec
 					{status?.status === "exited" && (
 						<div className="flex flex-row items-center gap-2 font-mono text-xs">
 							<StandardTooltip
-								content={t("chat.commandExecution.exitStatus", { exitStatus: status.exitCode })}>
+								content={t("chat:commandExecution.exitStatus", { exitCode: status.exitCode })}>
 								<div
 									className={cn(
 										"rounded-full size-2",
@@ -279,6 +319,7 @@ const providerLabels: Record<CommandTerminalInfo["provider"], string> = {
 }
 
 const TerminalInfo = ({ terminalInfo }: { terminalInfo: CommandTerminalInfo }) => {
+	const { t } = useTranslation()
 	const canFocusTerminal = terminalInfo.provider === "vscode" && terminalInfo.terminalId !== undefined
 
 	return (

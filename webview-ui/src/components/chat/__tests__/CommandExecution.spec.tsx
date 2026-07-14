@@ -8,22 +8,30 @@ import { TooltipProvider } from "../../../components/ui/tooltip"
 import { ExtensionStateContext } from "../../../context/ExtensionStateContext"
 
 // Mock dependencies
+const tMock = (key: string, options?: Record<string, unknown>) => {
+	if (key === "chat:commandExecution.terminalType") {
+		return `Type: ${options?.type}`
+	}
+	if (key === "chat:commandExecution.workingDirectory") {
+		return `Working directory: ${options?.cwd}`
+	}
+	if (key === "chat:commandExecution.terminalProfile") {
+		return `Profile: ${options?.profile}`
+	}
+	if (key === "chat:commandExecution.terminalId") {
+		return `Terminal: #${options?.id}`
+	}
+	return key
+}
+
+vi.mock("react-i18next", () => ({
+	useTranslation: () => ({
+		t: tMock,
+	}),
+}))
+
 vi.mock("i18next", () => ({
-	t: (key: string, options?: Record<string, unknown>) => {
-		if (key === "chat:commandExecution.terminalType") {
-			return `Type: ${options?.type}`
-		}
-		if (key === "chat:commandExecution.workingDirectory") {
-			return `Working directory: ${options?.cwd}`
-		}
-		if (key === "chat:commandExecution.terminalProfile") {
-			return `Profile: ${options?.profile}`
-		}
-		if (key === "chat:commandExecution.terminalId") {
-			return `Terminal: #${options?.id}`
-		}
-		return key
-	},
+	t: tMock,
 }))
 
 vi.mock("react-use", () => ({
@@ -223,6 +231,44 @@ describe("CommandExecution", () => {
 
 		expect(screen.getByTestId("custom-icon")).toBeInTheDocument()
 		expect(screen.getByTestId("custom-title")).toBeInTheDocument()
+	})
+
+	it("should show approved approval label instead of the default title", () => {
+		const title = <span data-testid="custom-title">Running</span>
+
+		render(
+			<ExtensionStateWrapper>
+				<CommandExecution
+					executionId="approval-approved"
+					text="npm test"
+					title={title}
+					approvalState="approved"
+				/>
+			</ExtensionStateWrapper>,
+		)
+
+		expect(screen.getByText("chat:commandExecution.approved")).toBeInTheDocument()
+		expect(screen.queryByTestId("custom-title")).not.toBeInTheDocument()
+	})
+
+	it("should show auto-approved approval label", () => {
+		render(
+			<ExtensionStateWrapper>
+				<CommandExecution executionId="approval-auto" text="npm test" approvalState="auto_approved" />
+			</ExtensionStateWrapper>,
+		)
+
+		expect(screen.getByText("chat:commandExecution.autoApproved")).toBeInTheDocument()
+	})
+
+	it("should show rejected approval label", () => {
+		render(
+			<ExtensionStateWrapper>
+				<CommandExecution executionId="approval-rejected" text="rm -rf /" approvalState="rejected" />
+			</ExtensionStateWrapper>,
+		)
+
+		expect(screen.getByText("chat:commandExecution.rejected")).toBeInTheDocument()
 	})
 
 	it("should show command pattern selector for commands", () => {

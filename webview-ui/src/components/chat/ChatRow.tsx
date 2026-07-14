@@ -1714,6 +1714,7 @@ export const ChatRowContent = ({
 							text={message.text}
 							icon={icon}
 							title={title}
+							approvalState={message.approvalState}
 						/>
 					)
 				case "use_mcp_server":
