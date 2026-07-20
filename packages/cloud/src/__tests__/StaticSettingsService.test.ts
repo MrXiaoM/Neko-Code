@@ -99,6 +99,17 @@ describe("StaticSettingsService", () => {
 			expect(mockLog).not.toHaveBeenCalled()
 		})
 
+		it("should not let logging failures mask parse errors", () => {
+			const throwingLog = vi.fn(() => {
+				throw new Error("logger failed")
+			})
+
+			expect(() => new StaticSettingsService("invalid-base64!@#", throwingLog)).toThrow(
+				"Failed to parse static settings",
+			)
+			expect(throwingLog).toHaveBeenCalled()
+		})
+
 		describe("isTaskSyncEnabled", () => {
 			it("should always return true", () => {
 				const service = new StaticSettingsService(validBase64)
