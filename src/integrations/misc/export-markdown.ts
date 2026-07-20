@@ -118,9 +118,7 @@ export function formatContentBlockToMarkdown(block: ExtendedContentBlock): strin
 				return `[${toolName}${block.is_error ? " (Error)" : ""}]\n${block.content}`
 			} else if (Array.isArray(block.content)) {
 				return `[${toolName}${block.is_error ? " (Error)" : ""}]\n${block.content
-					.map((contentBlock: Anthropic.TextBlockParam | Anthropic.ImageBlockParam) =>
-						formatContentBlockToMarkdown(contentBlock),
-					)
+					.map((contentBlock) => formatContentBlockToMarkdown(contentBlock))
 					.join("\n")}`
 			} else {
 				return `[${toolName}${block.is_error ? " (Error)" : ""}]`
