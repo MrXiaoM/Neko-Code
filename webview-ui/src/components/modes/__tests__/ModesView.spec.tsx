@@ -46,7 +46,8 @@ describe("PromptsView", () => {
 	it("displays the current mode name in the select trigger", () => {
 		renderPromptsView({ mode: "code" })
 		const selectTrigger = screen.getByTestId("mode-select-trigger")
-		expect(selectTrigger).toHaveTextContent("Code")
+		// Built-in mode display names are localized (e.g. "💻 编写").
+		expect(selectTrigger).toHaveTextContent("编写")
 	})
 
 	it("opens the mode selection popover when the trigger is clicked", async () => {
@@ -64,7 +65,8 @@ describe("PromptsView", () => {
 		fireEvent.click(selectTrigger)
 
 		const searchInput = screen.getByTestId("mode-search-input")
-		fireEvent.change(searchInput, { target: { value: "ask" } })
+		// Filter by localized mode name substring (ask mode is "❓ 询问").
+		fireEvent.change(searchInput, { target: { value: "询问" } })
 
 		await waitFor(() => {
 			expect(screen.getByTestId("mode-option-ask")).toBeInTheDocument()

@@ -37,6 +37,7 @@ vi.mock("../setup", () => ({
 		changeLanguage: vi.fn(),
 	},
 	loadTranslations: vi.fn(),
+	setWebviewAgentName: vi.fn(),
 }))
 
 const TestComponent = () => {

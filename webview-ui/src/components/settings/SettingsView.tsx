@@ -233,30 +233,48 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 	// Track the last apiConfiguration reference to detect changes from
 	// loadApiConfigForEdit (which updates the config data but not currentApiConfigName).
 	const lastApiConfigurationRef = useRef<ProviderSettings | undefined>(extensionState.apiConfiguration)
+	// Keep a ref so the sync effect can read the latest dirty flag without re-firing
+	// on every keystroke / toggle of isChangeDetected.
+	const isChangeDetectedRef = useRef(isChangeDetected)
+	useEffect(() => {
+		isChangeDetectedRef.current = isChangeDetected
+	}, [isChangeDetected])
 
 	useEffect(() => {
 		const apiConfigChanged = lastApiConfigurationRef.current !== extensionState.apiConfiguration
 		lastApiConfigurationRef.current = extensionState.apiConfiguration
 
+		const profileNameChanged = prevApiConfigName.current !== currentApiConfigName
+
 		// Skip if neither currentApiConfigName nor apiConfiguration changed.
-		if (!apiConfigChanged && prevApiConfigName.current === currentApiConfigName) {
+		if (!apiConfigChanged && !profileNameChanged) {
 			return
 		}
 
-		// Only merge apiConfiguration into cachedState. Do NOT reset the
-		// entire cachedState as that would discard user's in-progress edits.
+		// Chat switched the active profile — adopt that profile and clear dirty.
+		if (profileNameChanged) {
+			prevApiConfigName.current = currentApiConfigName
+			setCachedState((prevCachedState) => ({
+				...prevCachedState,
+				apiConfiguration: extensionState.apiConfiguration ?? prevCachedState.apiConfiguration,
+			}))
+			setChangeDetected(false)
+			return
+		}
+
+		// Only apiConfiguration reference changed (e.g. import replay, external
+		// extension-state update, or loadApiConfigForEdit). When the user has
+		// unsaved local edits in the settings buffer, do NOT clobber them —
+		// cachedState is intentionally isolated until Save/Discard.
+		// See AGENTS.md Settings View Pattern.
+		if (isChangeDetectedRef.current) {
+			return
+		}
+
 		setCachedState((prevCachedState) => ({
 			...prevCachedState,
 			apiConfiguration: extensionState.apiConfiguration ?? prevCachedState.apiConfiguration,
 		}))
-
-		// Reset change-detection only when the active profile name changed
-		// (i.e. the chat interface switched configs). For loadApiConfigForEdit
-		// the user is actively editing, so keep the dirty flag.
-		if (prevApiConfigName.current !== currentApiConfigName) {
-			prevApiConfigName.current = currentApiConfigName
-			setChangeDetected(false)
-		}
 	}, [currentApiConfigName, extensionState])
 
 	// Bust the cache when settings are imported.

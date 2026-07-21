@@ -1,6 +1,6 @@
 // npx vitest src/components/modes/__tests__/ModesView.import-switch.spec.tsx
 
-import { render, waitFor } from "@/utils/test-utils"
+import { render, screen, waitFor } from "@/utils/test-utils"
 import ModesView from "../ModesView"
 import { ExtensionStateContext } from "@src/context/ExtensionStateContext"
 import { vscode } from "@src/utils/vscode"
@@ -68,20 +68,23 @@ describe("ModesView Import Auto-Switch", () => {
 
 		window.dispatchEvent(new MessageEvent("message", importMessage))
 
-		// Wait for the mode switch message to be sent
+		// ModesView switches visualMode locally and does NOT broadcast a global
+		// "mode" message (that would change the chat active mode).
 		await waitFor(() => {
-			expect(vscode.postMessage).toHaveBeenCalledWith({
-				type: "mode",
-				text: importedModeSlug,
-			})
+			expect(screen.getByTestId("mode-select-trigger")).toHaveTextContent("Custom Test Mode")
 		})
+		expect(vscode.postMessage).not.toHaveBeenCalledWith(
+			expect.objectContaining({
+				type: "mode",
+			}),
+		)
 	})
 
-	it("should fallback to architect mode when imported slug not yet in state (race condition)", async () => {
+	it("should fallback to default mode when imported slug not yet in state (race condition)", async () => {
 		const importedModeSlug = "custom-new-mode"
 
 		// Render without the imported mode in customModes (simulating race condition)
-		renderModesView({ customModes: [] })
+		renderModesView({ customModes: [], mode: "code" })
 
 		// Simulate successful import message but mode not yet in state
 		const importMessage = {
@@ -94,13 +97,22 @@ describe("ModesView Import Auto-Switch", () => {
 
 		window.dispatchEvent(new MessageEvent("message", importMessage))
 
-		// Wait for the fallback to default mode (architect)
+		// Fallback sets visualMode to defaultModeSlug locally (no backend mode message).
 		await waitFor(() => {
-			expect(vscode.postMessage).toHaveBeenCalledWith({
-				type: "mode",
-				text: defaultModeSlug,
-			})
+			const trigger = screen.getByTestId("mode-select-trigger")
+			// defaultModeSlug is "architect" → localized display name includes "架构师"
+			if (defaultModeSlug === "architect") {
+				expect(trigger).toHaveTextContent("架构师")
+			} else {
+				expect(trigger).not.toHaveTextContent(importedModeSlug)
+			}
 		})
+		expect(vscode.postMessage).not.toHaveBeenCalledWith(
+			expect.objectContaining({
+				type: "mode",
+				text: importedModeSlug,
+			}),
+		)
 	})
 
 	it("should not switch modes on import failure", async () => {

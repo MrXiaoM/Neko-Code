@@ -431,6 +431,7 @@ describe("SettingsView - Change Detection Fix", () => {
 				apiProvider: "baseten",
 				basetenApiKey: "test-baseten-key",
 			}),
+			values: { activate: true },
 		})
 
 		fireEvent.click(screen.getByTestId("set-provider-deepseek"))
@@ -472,6 +473,7 @@ describe("SettingsView - Change Detection Fix", () => {
 			apiConfiguration: expect.objectContaining({
 				apiProvider: "deepseek",
 			}),
+			values: { activate: true },
 		})
 	})
 
