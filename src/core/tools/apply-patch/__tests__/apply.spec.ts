@@ -90,7 +90,7 @@ describe("apply-patch apply", () => {
 				},
 			]
 			expect(() => applyChunksToContent(original, "test.txt", chunks)).toThrow(ApplyPatchError)
-			expect(() => applyChunksToContent(original, "test.txt", chunks)).toThrow("Failed to find context")
+			expect(() => applyChunksToContent(original, "test.txt", chunks)).toThrow("无法在文件 test.txt 中找到上下文")
 		})
 
 		it("should throw when old lines not found", () => {
@@ -104,7 +104,9 @@ describe("apply-patch apply", () => {
 				},
 			]
 			expect(() => applyChunksToContent(original, "test.txt", chunks)).toThrow(ApplyPatchError)
-			expect(() => applyChunksToContent(original, "test.txt", chunks)).toThrow("Failed to find expected lines")
+			expect(() => applyChunksToContent(original, "test.txt", chunks)).toThrow(
+				"无法在文件 test.txt 中找到预期的行",
+			)
 		})
 
 		it("should handle pure addition (empty oldLines)", () => {

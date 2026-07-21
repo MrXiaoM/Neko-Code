@@ -672,7 +672,7 @@ ${result.content}`
 			task.consecutiveMistakeCount++
 			task.recordToolError("read_file")
 			const errorMsg = await task.sayAndCreateMissingParamError("read_file", "files")
-			pushToolResult(`Error: ${errorMsg}`)
+			pushToolResult(`错误：${errorMsg}`)
 			return
 		}
 
@@ -801,8 +801,8 @@ ${result.content}`
 				await task.fileContextTracker.trackFileContext(relPath, "read_tool")
 			} catch (error) {
 				const errorMsg = error instanceof Error ? error.message : String(error)
-				results.push(`File: ${relPath}\nError: ${errorMsg}`)
-				await task.say("error", `Error reading file ${relPath}: ${errorMsg}`)
+				results.push(`文件：${relPath}\n错误：${errorMsg}`)
+				await task.say("error", `读取文件 ${relPath} 时发生错误：${errorMsg}`)
 				// Mirror the native path: a failed read marks the tool turn as failed.
 				task.didToolFailInCurrentTurn = true
 			}

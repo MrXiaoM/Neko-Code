@@ -38,15 +38,23 @@ describe("CustomModesManager - YAML Edge Cases", () => {
 	let mockOnUpdate: Mock
 	let mockWorkspaceFolders: { uri: { fsPath: string } }[]
 
-	const mockStoragePath = `${path.sep}mock${path.sep}settings`
+	// Use path.resolve/path.join so Windows and POSIX path separators stay consistent
+	// with CustomModesManager (which also builds paths via path.join + getWorkspacePath).
+	const mockStoragePath = path.resolve("/mock/settings")
 	const mockSettingsPath = path.join(mockStoragePath, "settings", GlobalFileNames.customModes)
-	const mockRoomodes = `${path.sep}mock${path.sep}workspace${path.sep}.roomodes`
+	const mockWorkspacePath = path.resolve("/mock/workspace")
+	const mockRoomodes = path.join(mockWorkspacePath, ".roomodes")
 
-	// Helper function to reduce duplication in fs.readFile mocks
+	// Helper function to reduce duplication in fs.readFile mocks.
+	// Normalize path separators so Windows/POSIX lookups stay consistent.
 	const mockFsReadFile = (files: Record<string, string>) => {
-		;(fs.readFile as Mock).mockImplementation(async (path: string) => {
-			if (files[path]) return files[path]
-			throw new Error("File not found")
+		const normalizedFiles = new Map(
+			Object.entries(files).map(([key, value]) => [key.replace(/\\/g, "/"), value] as const),
+		)
+		;(fs.readFile as Mock).mockImplementation(async (filePath: string) => {
+			const content = normalizedFiles.get(String(filePath).replace(/\\/g, "/"))
+			if (content !== undefined) return content
+			throw new Error(`File not found: ${filePath}`)
 		})
 	}
 
@@ -64,12 +72,18 @@ describe("CustomModesManager - YAML Edge Cases", () => {
 			},
 		} as unknown as vscode.ExtensionContext
 
-		mockWorkspaceFolders = [{ uri: { fsPath: "/mock/workspace" } }]
+		mockWorkspaceFolders = [{ uri: { fsPath: mockWorkspacePath } }]
 		;(vscode.workspace as any).workspaceFolders = mockWorkspaceFolders
 		;(vscode.workspace.onDidSaveTextDocument as Mock).mockReturnValue({ dispose: vi.fn() })
-		;(getWorkspacePath as Mock).mockReturnValue("/mock/workspace")
-		;(fileExistsAtPath as Mock).mockImplementation(async (path: string) => {
-			return path === mockSettingsPath || path === mockRoomodes
+		;(getWorkspacePath as Mock).mockReturnValue(mockWorkspacePath)
+		;(fileExistsAtPath as Mock).mockImplementation(async (filePath: string) => {
+			const normalized = filePath.replace(/\\/g, "/")
+			return (
+				normalized === mockSettingsPath.replace(/\\/g, "/") ||
+				normalized === mockRoomodes.replace(/\\/g, "/") ||
+				normalized.endsWith("/.roomodes") ||
+				normalized.endsWith(`/${GlobalFileNames.customModes}`)
+			)
 		})
 		;(fs.mkdir as Mock).mockResolvedValue(undefined)
 		;(fs.readFile as Mock).mockImplementation(async (path: string) => {
@@ -300,16 +314,33 @@ describe("CustomModesManager - YAML Edge Cases", () => {
 				],
 			})
 
+			// Rebuild manager + mocks for this case so cache / prior test state cannot interfere.
+			const showErrorMessage = vi.fn()
+			;(vscode.window as any).showErrorMessage = showErrorMessage
+			;(fileExistsAtPath as Mock).mockImplementation(async (filePath: string) => {
+				const normalized = String(filePath).replace(/\\/g, "/")
+				return (
+					normalized === mockSettingsPath.replace(/\\/g, "/") ||
+					normalized === mockRoomodes.replace(/\\/g, "/")
+				)
+			})
 			mockFsReadFile({
 				[mockRoomodes]: invalidSchema,
 				[mockSettingsPath]: yaml.stringify({ customModes: [] }),
 			})
+			manager = new CustomModesManager(mockContext, mockOnUpdate)
 
+			const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
 			const modes = await manager.getCustomModes()
 
-			// Should show schema validation error
+			// Should reject invalid schema and surface an error to the user.
 			expect(modes).toHaveLength(0)
-			expect(vscode.window.showErrorMessage).toHaveBeenCalledWith("customModes.errors.schemaValidationError")
+			expect(consoleError).toHaveBeenCalledWith(
+				expect.stringContaining("Schema validation failed"),
+				expect.anything(),
+			)
+			expect(showErrorMessage).toHaveBeenCalledWith("customModes.errors.schemaValidationError")
+			consoleError.mockRestore()
 		})
 	})
 

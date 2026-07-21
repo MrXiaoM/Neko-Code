@@ -106,7 +106,7 @@ describe("SwitchModeTool", () => {
 		expect(mockTask.recordToolError).toHaveBeenCalledWith("switch_mode")
 		expect(mockTask.didToolFailInCurrentTurn).toBe(true)
 		expect(mockCallbacks.pushToolResult).toHaveBeenCalledWith(
-			formatResponse.toolError("Invalid mode: nonexistent-mode"),
+			formatResponse.toolError("无效的模式：nonexistent-mode"),
 		)
 		// Should NOT attempt to switch or ask approval
 		expect(mockCallbacks.askApproval).not.toHaveBeenCalled()
@@ -123,7 +123,7 @@ describe("SwitchModeTool", () => {
 
 		expect(mockTask.recordToolError).toHaveBeenCalledWith("switch_mode")
 		expect(mockTask.didToolFailInCurrentTurn).toBe(true)
-		expect(mockCallbacks.pushToolResult).toHaveBeenCalledWith("Already in Code mode.")
+		expect(mockCallbacks.pushToolResult).toHaveBeenCalledWith("已经在 Code 模式中了。")
 		// Should NOT ask approval or switch
 		expect(mockCallbacks.askApproval).not.toHaveBeenCalled()
 		expect(mockHandleModeSwitch).not.toHaveBeenCalled()
@@ -170,7 +170,7 @@ describe("SwitchModeTool", () => {
 
 		// Should have pushed success result
 		expect(mockCallbacks.pushToolResult).toHaveBeenCalledWith(
-			"Successfully switched from Code mode to Architect mode because: need to plan architecture.",
+			"已成功从 Code 模式切换为 Architect 模式，原因：need to plan architecture.",
 		)
 	})
 
@@ -186,7 +186,7 @@ describe("SwitchModeTool", () => {
 
 		expect(mockHandleModeSwitch).toHaveBeenCalledWith("ask")
 
-		expect(mockCallbacks.pushToolResult).toHaveBeenCalledWith("Successfully switched from Code mode to Ask mode.")
+		expect(mockCallbacks.pushToolResult).toHaveBeenCalledWith("已成功从 Code 模式切换为 Ask 模式.")
 	})
 
 	it("should reset consecutive mistake count on success", async () => {
@@ -227,7 +227,7 @@ describe("SwitchModeTool", () => {
 
 		// Should fall back to defaultModeSlug ("code") and succeed
 		expect(mockCallbacks.pushToolResult).toHaveBeenCalledWith(
-			"Successfully switched from Code mode to Architect mode because: test.",
+			"已成功从 Code 模式切换为 Architect 模式，原因：test.",
 		)
 	})
 
@@ -305,7 +305,7 @@ describe("SwitchModeTool", () => {
 		expect(mockCallbacks.askApproval).toHaveBeenCalled()
 		expect(mockHandleModeSwitch).toHaveBeenCalledWith("custom-mode")
 		expect(mockCallbacks.pushToolResult).toHaveBeenCalledWith(
-			"Successfully switched from Code mode to Custom Mode mode because: testing custom modes.",
+			"已成功从 Code 模式切换为 Custom Mode 模式，原因：testing custom modes.",
 		)
 	})
 
@@ -337,7 +337,7 @@ describe("SwitchModeTool", () => {
 
 		expect(mockHandleModeSwitch).toHaveBeenCalledWith("code")
 		expect(mockCallbacks.pushToolResult).toHaveBeenCalledWith(
-			"Successfully switched from Architect mode to Code mode because: switching back.",
+			"已成功从 Architect 模式切换为 Code 模式，原因：switching back.",
 		)
 	})
 
@@ -350,8 +350,6 @@ describe("SwitchModeTool", () => {
 
 		// defaultModeSlug is "code" (from mock)
 		// Should report switching from Code mode
-		expect(mockCallbacks.pushToolResult).toHaveBeenCalledWith(
-			"Successfully switched from Code mode to Ask mode because: test.",
-		)
+		expect(mockCallbacks.pushToolResult).toHaveBeenCalledWith("已成功从 Code 模式切换为 Ask 模式，原因：test.")
 	})
 })

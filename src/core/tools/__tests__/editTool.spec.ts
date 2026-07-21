@@ -257,7 +257,7 @@ describe("editTool", () => {
 			)
 
 			expect(result).toContain("Error:")
-			expect(result).toContain("3 matches")
+			expect(result).toContain("3 次匹配")
 			expect(result).toContain("replace_all")
 			expect(mockTask.consecutiveMistakeCount).toBe(1)
 			expect(mockTask.recordToolError).toHaveBeenCalledWith("edit")
@@ -272,7 +272,7 @@ describe("editTool", () => {
 			)
 
 			expect(result).toContain("Error:")
-			expect(result).toContain("No match found")
+			expect(result).toContain("没有匹配的")
 			expect(mockTask.consecutiveMistakeCount).toBe(1)
 			expect(mockTask.recordToolError).toHaveBeenCalledWith("edit", "no_match")
 		})
@@ -286,7 +286,7 @@ describe("editTool", () => {
 			)
 
 			expect(result).toContain("Error:")
-			expect(result).toContain("identical")
+			expect(result).toContain("是相同的")
 			expect(mockTask.consecutiveMistakeCount).toBe(1)
 			expect(mockTask.recordToolError).toHaveBeenCalledWith("edit")
 		})
@@ -326,7 +326,7 @@ describe("editTool", () => {
 			const result = await executeEditTool({}, { fileExists: false })
 
 			expect(result).toContain("Error:")
-			expect(result).toContain("File not found")
+			expect(result).toContain("文件不存在")
 			expect(mockTask.consecutiveMistakeCount).toBe(1)
 		})
 
@@ -355,7 +355,7 @@ describe("editTool", () => {
 
 			expect(mockTask.diffViewProvider.revertChanges).toHaveBeenCalled()
 			expect(mockTask.diffViewProvider.saveChanges).not.toHaveBeenCalled()
-			expect(result).toContain("rejected")
+			expect(result).toContain("此变更已被用户拒绝")
 		})
 	})
 
@@ -401,7 +401,7 @@ describe("editTool", () => {
 			})
 
 			expect(capturedResult).toContain("Error:")
-			expect(capturedResult).toContain("Failed to read file")
+			expect(capturedResult).toContain("读取文件")
 			expect(mockTask.consecutiveMistakeCount).toBe(1)
 		})
 

@@ -137,8 +137,8 @@ describe("ReadCommandOutputTool", () => {
 			await tool.execute({ artifact_id: artifactId }, mockTask, mockCallbacks)
 
 			const result = mockCallbacks.pushToolResult.mock.calls[0][0]
-			expect(result).toContain(`[Command Output: ${artifactId}]`)
-			expect(result).toContain("Total size:")
+			expect(result).toContain(`[命令输出：${artifactId}]`)
+			expect(result).toContain("总大小：")
 			expect(result).toMatch(/\d+(\.\d+)?(bytes|KB|MB)/)
 		})
 
@@ -177,7 +177,7 @@ describe("ReadCommandOutputTool", () => {
 			await tool.execute({ artifact_id: artifactId }, mockTask, mockCallbacks)
 
 			const result = mockCallbacks.pushToolResult.mock.calls[0][0]
-			expect(result).toContain("TRUNCATED")
+			expect(result).toContain("已截断")
 		})
 
 		it("should start reading from custom offset", async () => {
@@ -211,7 +211,7 @@ describe("ReadCommandOutputTool", () => {
 			await tool.execute({ artifact_id: artifactId, offset }, mockTask, mockCallbacks)
 
 			const result = mockCallbacks.pushToolResult.mock.calls[0][0]
-			expect(result).toContain(`Showing bytes ${offset}-`)
+			expect(result).toContain(`显示字节位置 ${offset}-`)
 			expect(mockFileHandle.read).toHaveBeenCalled()
 		})
 
@@ -233,7 +233,7 @@ describe("ReadCommandOutputTool", () => {
 
 			expect(mockCallbacks.pushToolResult).toHaveBeenCalled()
 			const result = mockCallbacks.pushToolResult.mock.calls[0][0]
-			expect(result).toContain("TRUNCATED")
+			expect(result).toContain("已截断")
 		})
 
 		it("should show TRUNCATED when more content exists", async () => {
@@ -252,7 +252,7 @@ describe("ReadCommandOutputTool", () => {
 			await tool.execute({ artifact_id: artifactId, limit }, mockTask, mockCallbacks)
 
 			const result = mockCallbacks.pushToolResult.mock.calls[0][0]
-			expect(result).toContain("TRUNCATED")
+			expect(result).toContain("已截断")
 		})
 
 		it("should show COMPLETE when all content is returned", async () => {
@@ -270,8 +270,8 @@ describe("ReadCommandOutputTool", () => {
 			await tool.execute({ artifact_id: artifactId }, mockTask, mockCallbacks)
 
 			const result = mockCallbacks.pushToolResult.mock.calls[0][0]
-			expect(result).toContain("COMPLETE")
-			expect(result).not.toContain("TRUNCATED")
+			expect(result).toContain("完整")
+			expect(result).not.toContain("已截断")
 		})
 	})
 
@@ -333,7 +333,7 @@ describe("ReadCommandOutputTool", () => {
 			await tool.execute({ artifact_id: artifactId, search: "Error" }, mockTask, mockCallbacks)
 
 			const result = mockCallbacks.pushToolResult.mock.calls[0][0]
-			expect(result).toContain("Total matches: 2")
+			expect(result).toContain("总匹配数：2")
 			expect(result).toMatch(/2 \|.*Error on line 2/)
 			expect(result).toMatch(/4 \|.*Error on line 4/)
 		})
@@ -347,7 +347,7 @@ describe("ReadCommandOutputTool", () => {
 			await tool.execute({ artifact_id: artifactId, search: "NOTFOUND" }, mockTask, mockCallbacks)
 
 			const result = mockCallbacks.pushToolResult.mock.calls[0][0]
-			expect(result).toContain("No matches found for the search pattern")
+			expect(result).toContain("没有找到匹配的搜索结果")
 		})
 
 		it("should handle regex patterns in search", async () => {
@@ -388,10 +388,8 @@ describe("ReadCommandOutputTool", () => {
 			await tool.execute({ artifact_id: artifactId }, mockTask, mockCallbacks)
 
 			expect(mockTask.didToolFailInCurrentTurn).toBe(true)
-			expect(mockTask.say).toHaveBeenCalledWith("error", expect.stringContaining("not found"))
-			expect(mockCallbacks.pushToolResult).toHaveBeenCalledWith(
-				expect.stringContaining("Error: Artifact not found"),
-			)
+			expect(mockTask.say).toHaveBeenCalledWith("error", expect.stringContaining("不存在"))
+			expect(mockCallbacks.pushToolResult).toHaveBeenCalledWith(expect.stringContaining("错误：构件不存在"))
 		})
 
 		it("should reject invalid artifact_id with path traversal attempt", async () => {
@@ -413,10 +411,7 @@ describe("ReadCommandOutputTool", () => {
 
 				expect(mockTask.consecutiveMistakeCount).toBeGreaterThan(0)
 				expect(mockTask.didToolFailInCurrentTurn).toBe(true)
-				expect(mockTask.say).toHaveBeenCalledWith(
-					"error",
-					expect.stringContaining("Invalid artifact_id format"),
-				)
+				expect(mockTask.say).toHaveBeenCalledWith("error", expect.stringContaining("无效的 artifact_id 格式"))
 			}
 		})
 
@@ -448,8 +443,8 @@ describe("ReadCommandOutputTool", () => {
 				mockCallbacks,
 			)
 
-			expect(mockTask.say).toHaveBeenCalledWith("error", expect.stringContaining("Invalid offset"))
-			expect(mockCallbacks.pushToolResult).toHaveBeenCalledWith(expect.stringContaining("Error: Invalid offset"))
+			expect(mockTask.say).toHaveBeenCalledWith("error", expect.stringContaining("无效的偏移"))
+			expect(mockCallbacks.pushToolResult).toHaveBeenCalledWith(expect.stringContaining("错误：无效的偏移"))
 		})
 
 		it("should handle negative offset", async () => {
@@ -460,7 +455,7 @@ describe("ReadCommandOutputTool", () => {
 
 			await tool.execute({ artifact_id: artifactId, offset: -10 }, mockTask, mockCallbacks)
 
-			expect(mockTask.say).toHaveBeenCalledWith("error", expect.stringContaining("Invalid offset"))
+			expect(mockTask.say).toHaveBeenCalledWith("error", expect.stringContaining("无效的偏移"))
 		})
 
 		it("should handle missing artifact_id parameter", async () => {
@@ -483,11 +478,8 @@ describe("ReadCommandOutputTool", () => {
 
 			await tool.execute({ artifact_id: artifactId }, mockTask, mockCallbacks)
 
-			expect(mockTask.say).toHaveBeenCalledWith(
-				"error",
-				expect.stringContaining("Global storage path is not available"),
-			)
-			expect(mockCallbacks.pushToolResult).toHaveBeenCalledWith(expect.stringContaining("Error"))
+			expect(mockTask.say).toHaveBeenCalledWith("error", expect.stringContaining("全局存储路径不可用"))
+			expect(mockCallbacks.pushToolResult).toHaveBeenCalledWith(expect.stringContaining("错误"))
 		})
 
 		it("should handle file read errors", async () => {

@@ -12,9 +12,9 @@ describe("Code Action Prompts", () => {
 			})
 			expect(prompt).toContain(testFilePath)
 			expect(prompt).toContain(testCode)
-			expect(prompt).toContain("purpose and functionality")
-			expect(prompt).toContain("Key components")
-			expect(prompt).toContain("Important patterns")
+			expect(prompt).toContain("目的和功能")
+			expect(prompt).toContain("关键组件")
+			expect(prompt).toContain("重要模式")
 		})
 	})
 
@@ -26,8 +26,8 @@ describe("Code Action Prompts", () => {
 			})
 			expect(prompt).toContain(testFilePath)
 			expect(prompt).toContain(testCode)
-			expect(prompt).toContain("Address all detected problems")
-			expect(prompt).not.toContain("Current problems detected")
+			expect(prompt).toContain("解决上面列出的所有检测到的问题")
+			expect(prompt).not.toContain("当前检测到的问题")
 		})
 
 		it("should format fix prompt with diagnostics", () => {
@@ -49,7 +49,7 @@ describe("Code Action Prompts", () => {
 				diagnostics,
 			})
 
-			expect(prompt).toContain("Current problems detected:")
+			expect(prompt).toContain("当前检测到的问题：")
 			expect(prompt).toContain("[eslint] Missing semicolon (semi)")
 			expect(prompt).toContain("[Error] Unused variable")
 			expect(prompt).toContain(testCode)
@@ -64,10 +64,10 @@ describe("Code Action Prompts", () => {
 			})
 			expect(prompt).toContain(testFilePath)
 			expect(prompt).toContain(testCode)
-			expect(prompt).toContain("Code readability")
-			expect(prompt).toContain("Performance optimization")
-			expect(prompt).toContain("Best practices")
-			expect(prompt).toContain("Error handling")
+			expect(prompt).toContain("代码可读性和可维护性")
+			expect(prompt).toContain("性能优化")
+			expect(prompt).toContain("最佳实践")
+			expect(prompt).toContain("错误处理")
 		})
 	})
 
@@ -78,7 +78,7 @@ describe("Code Action Prompts", () => {
 			})
 
 			expect(prompt).toBe(
-				"Generate an enhanced version of this prompt (reply with only the enhanced prompt - no conversation, explanations, lead-in, bullet points, placeholders, or surrounding quotes):\n\ntest",
+				"生成此提示词的增强版本（仅回复增强后的提示词——不要包含对话、解释、引言、要点、占位符或引号）：\n\ntest",
 			)
 			// Verify it ignores parameters since ENHANCE template doesn't use any
 			expect(prompt).not.toContain(testFilePath)
@@ -244,7 +244,7 @@ describe("Code Action Prompts", () => {
 			)
 
 			expect(prompt).toContain(`Custom template for ${testFilePath}`)
-			expect(prompt).not.toContain("purpose and functionality")
+			expect(prompt).not.toContain("目的和功能")
 		})
 
 		it("should use default template when custom prompts does not include type", () => {

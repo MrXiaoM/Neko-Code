@@ -742,7 +742,7 @@ describe("useMcpToolTool", () => {
 			})
 
 			expect(mockTask.say).toHaveBeenCalledWith("mcp_server_request_started")
-			expect(mockTask.say).toHaveBeenCalledWith("mcp_server_response", "[1 image(s) received]", [
+			expect(mockTask.say).toHaveBeenCalledWith("mcp_server_response", "[1 张图片已接收]", [
 				"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ",
 			])
 			expect(mockPushToolResult).toHaveBeenCalledWith(expect.stringContaining("with 1 image(s)"))
@@ -854,7 +854,7 @@ describe("useMcpToolTool", () => {
 			})
 
 			// Should not double-prefix the data URL
-			expect(mockTask.say).toHaveBeenCalledWith("mcp_server_response", "[1 image(s) received]", [
+			expect(mockTask.say).toHaveBeenCalledWith("mcp_server_response", "[1 张图片已接收]", [
 				"data:image/jpeg;base64,/9j/4AAQSkZJRg==",
 			])
 		})
@@ -913,7 +913,7 @@ describe("useMcpToolTool", () => {
 				pushToolResult: mockPushToolResult,
 			})
 
-			expect(mockTask.say).toHaveBeenCalledWith("mcp_server_response", "[2 image(s) received]", [
+			expect(mockTask.say).toHaveBeenCalledWith("mcp_server_response", "[2 张图片已接收]", [
 				"data:image/png;base64,image1data",
 				"data:image/png;base64,image2data",
 			])

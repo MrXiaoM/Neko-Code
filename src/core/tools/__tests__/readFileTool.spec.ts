@@ -209,7 +209,7 @@ describe("ReadFileTool", () => {
 			expect(mockTask.consecutiveMistakeCount).toBe(1)
 			expect(mockTask.recordToolError).toHaveBeenCalledWith("read_file")
 			expect(mockTask.sayAndCreateMissingParamError).toHaveBeenCalledWith("read_file", "path")
-			expect(callbacks.pushToolResult).toHaveBeenCalledWith(expect.stringContaining("Error:"))
+			expect(callbacks.pushToolResult).toHaveBeenCalledWith(expect.stringContaining("错误："))
 		})
 
 		it("should return error when path is undefined", async () => {
@@ -219,7 +219,7 @@ describe("ReadFileTool", () => {
 			await readFileTool.execute({} as any, mockTask as any, callbacks)
 
 			expect(mockTask.consecutiveMistakeCount).toBe(1)
-			expect(callbacks.pushToolResult).toHaveBeenCalledWith(expect.stringContaining("Error:"))
+			expect(callbacks.pushToolResult).toHaveBeenCalledWith(expect.stringContaining("错误："))
 		})
 
 		it("should return error when offset is 0 or negative", async () => {
@@ -229,7 +229,7 @@ describe("ReadFileTool", () => {
 			await readFileTool.execute({ path: "test.txt", offset: 0 }, mockTask as any, callbacks)
 
 			expect(callbacks.pushToolResult).toHaveBeenCalledWith(
-				expect.stringContaining("offset must be a 1-indexed line number"),
+				expect.stringContaining("offset 必须是一个 1-indexed 的行号"),
 			)
 		})
 
@@ -240,7 +240,7 @@ describe("ReadFileTool", () => {
 			await readFileTool.execute({ path: "test.txt", offset: -5 }, mockTask as any, callbacks)
 
 			expect(callbacks.pushToolResult).toHaveBeenCalledWith(
-				expect.stringContaining("offset must be a 1-indexed line number"),
+				expect.stringContaining("offset 必须是一个 1-indexed 的行号"),
 			)
 		})
 
@@ -259,7 +259,7 @@ describe("ReadFileTool", () => {
 			)
 
 			expect(callbacks.pushToolResult).toHaveBeenCalledWith(
-				expect.stringContaining("anchor_line must be a 1-indexed line number"),
+				expect.stringContaining("anchor_line 必须是一个 1-indexed 的行号"),
 			)
 		})
 
@@ -278,7 +278,7 @@ describe("ReadFileTool", () => {
 			)
 
 			expect(callbacks.pushToolResult).toHaveBeenCalledWith(
-				expect.stringContaining("anchor_line must be a 1-indexed line number"),
+				expect.stringContaining("anchor_line 必须是一个 1-indexed 的行号"),
 			)
 		})
 	})
@@ -307,9 +307,9 @@ describe("ReadFileTool", () => {
 
 			expect(mockTask.say).toHaveBeenCalledWith(
 				"error",
-				expect.stringContaining("Cannot read 'src/utils' because it is a directory"),
+				expect.stringContaining("无法读取文件 'src/utils'，因为它是一个目录"),
 			)
-			expect(callbacks.pushToolResult).toHaveBeenCalledWith(expect.stringContaining("it is a directory"))
+			expect(callbacks.pushToolResult).toHaveBeenCalledWith(expect.stringContaining("因为它是一个目录"))
 			expect(mockTask.didToolFailInCurrentTurn).toBe(true)
 		})
 	})
@@ -408,8 +408,8 @@ describe("ReadFileTool", () => {
 
 			await readFileTool.execute({ path: "corrupt.png" }, mockTask as any, callbacks)
 
-			expect(mockTask.say).toHaveBeenCalledWith("error", expect.stringContaining("Error reading image file"))
-			expect(callbacks.pushToolResult).toHaveBeenCalledWith(expect.stringContaining("Error"))
+			expect(mockTask.say).toHaveBeenCalledWith("error", expect.stringContaining("读取图片文件"))
+			expect(callbacks.pushToolResult).toHaveBeenCalledWith(expect.stringContaining("错误"))
 		})
 	})
 
@@ -452,7 +452,7 @@ describe("ReadFileTool", () => {
 
 			await readFileTool.execute({ path: "program.exe" }, mockTask as any, callbacks)
 
-			expect(callbacks.pushToolResult).toHaveBeenCalledWith(expect.stringContaining("Binary file"))
+			expect(callbacks.pushToolResult).toHaveBeenCalledWith(expect.stringContaining("二进制文件"))
 		})
 
 		it("should handle extraction errors gracefully", async () => {
@@ -463,7 +463,7 @@ describe("ReadFileTool", () => {
 
 			await readFileTool.execute({ path: "corrupt.pdf" }, mockTask as any, callbacks)
 
-			expect(mockTask.say).toHaveBeenCalledWith("error", expect.stringContaining("Error extracting text"))
+			expect(mockTask.say).toHaveBeenCalledWith("error", expect.stringContaining("无法从"))
 			expect(mockTask.didToolFailInCurrentTurn).toBe(true)
 		})
 	})
@@ -562,8 +562,8 @@ describe("ReadFileTool", () => {
 
 			await readFileTool.execute({ path: "large.ts" }, mockTask as any, callbacks)
 
-			expect(callbacks.pushToolResult).toHaveBeenCalledWith(expect.stringContaining("truncated"))
-			expect(callbacks.pushToolResult).toHaveBeenCalledWith(expect.stringContaining("To read more"))
+			expect(callbacks.pushToolResult).toHaveBeenCalledWith(expect.stringContaining("已截断"))
+			expect(callbacks.pushToolResult).toHaveBeenCalledWith(expect.stringContaining("了解更多"))
 		})
 
 		it("should handle empty files", async () => {
@@ -607,7 +607,7 @@ describe("ReadFileTool", () => {
 			await readFileTool.execute({ path: "test.ts" }, mockTask as any, callbacks)
 
 			expect(mockTask.didRejectTool).toBe(true)
-			expect(callbacks.pushToolResult).toHaveBeenCalledWith(expect.stringContaining("Denied by user"))
+			expect(callbacks.pushToolResult).toHaveBeenCalledWith(expect.stringContaining("被用户拒绝"))
 		})
 
 		it("should include user feedback when provided with approval", async () => {
@@ -667,7 +667,7 @@ describe("ReadFileTool", () => {
 
 			await readFileTool.execute({ path: "src/app.ts" }, mockTask as any, callbacks)
 
-			expect(callbacks.pushToolResult).toHaveBeenCalledWith(expect.stringContaining("File: src/app.ts"))
+			expect(callbacks.pushToolResult).toHaveBeenCalledWith(expect.stringContaining("文件：src/app.ts"))
 		})
 
 		it("should track file context after successful read", async () => {
@@ -698,7 +698,7 @@ describe("ReadFileTool", () => {
 
 			await readFileTool.execute({ path: "nonexistent.ts" }, mockTask as any, callbacks)
 
-			expect(mockTask.say).toHaveBeenCalledWith("error", expect.stringContaining("Error reading file"))
+			expect(mockTask.say).toHaveBeenCalledWith("error", expect.stringContaining("读取文件"))
 			expect(mockTask.didToolFailInCurrentTurn).toBe(true)
 		})
 
@@ -710,7 +710,7 @@ describe("ReadFileTool", () => {
 
 			await readFileTool.execute({ path: "protected.ts" }, mockTask as any, callbacks)
 
-			expect(mockTask.say).toHaveBeenCalledWith("error", expect.stringContaining("Error reading file"))
+			expect(mockTask.say).toHaveBeenCalledWith("error", expect.stringContaining("读取文件"))
 			expect(mockTask.didToolFailInCurrentTurn).toBe(true)
 		})
 	})
@@ -746,7 +746,7 @@ describe("ReadFileTool", () => {
 			await readFileTool.execute({ files: [{ path: "legacy.ts" }] } as any, mockTask as any, callbacks)
 
 			// The legacy path emits "File: <path>" entries — proof the backward-compat branch ran.
-			expect(callbacks.pushToolResult).toHaveBeenCalledWith(expect.stringContaining("File: legacy.ts"))
+			expect(callbacks.pushToolResult).toHaveBeenCalledWith(expect.stringContaining("文件：legacy.ts"))
 		})
 
 		it("should return error when legacy files array is empty", async () => {
@@ -757,7 +757,7 @@ describe("ReadFileTool", () => {
 
 			expect(mockTask.consecutiveMistakeCount).toBe(1)
 			expect(mockTask.recordToolError).toHaveBeenCalledWith("read_file")
-			expect(callbacks.pushToolResult).toHaveBeenCalledWith(expect.stringContaining("Error:"))
+			expect(callbacks.pushToolResult).toHaveBeenCalledWith(expect.stringContaining("错误："))
 		})
 
 		it("should handle multiple files in legacy format", async () => {
@@ -816,7 +816,7 @@ describe("ReadFileTool", () => {
 			await readFileTool.execute({ files: [{ path: "protected.ts" }] } as any, mockTask as any, callbacks)
 
 			expect(mockTask.didRejectTool).toBe(true)
-			expect(callbacks.pushToolResult).toHaveBeenCalledWith(expect.stringContaining("Denied by user"))
+			expect(callbacks.pushToolResult).toHaveBeenCalledWith(expect.stringContaining("被用户拒绝"))
 		})
 
 		it("should handle directory path in legacy format", async () => {
@@ -828,7 +828,7 @@ describe("ReadFileTool", () => {
 
 			await readFileTool.execute({ files: [{ path: "src/utils" }] } as any, mockTask as any, callbacks)
 
-			expect(callbacks.pushToolResult).toHaveBeenCalledWith(expect.stringContaining("it is a directory"))
+			expect(callbacks.pushToolResult).toHaveBeenCalledWith(expect.stringContaining("因为它是一个目录"))
 			// Consistent with the native path: a failed read fails the tool turn.
 			expect(mockTask.didToolFailInCurrentTurn).toBe(true)
 		})
@@ -873,7 +873,7 @@ describe("ReadFileTool", () => {
 			await readFileTool.execute({ files: [{ path: "image.png" }] } as any, mockTask as any, callbacks)
 
 			expect(callbacks.pushToolResult).toHaveBeenCalledWith(
-				expect.stringContaining("Image file - content processed"),
+				expect.stringContaining("图片文件 - 内容已由视觉模型处理"),
 			)
 		})
 
@@ -905,7 +905,7 @@ describe("ReadFileTool", () => {
 
 			await readFileTool.execute({ files: [{ path: "program.exe" }] } as any, mockTask as any, callbacks)
 
-			expect(callbacks.pushToolResult).toHaveBeenCalledWith(expect.stringContaining("Cannot read binary file"))
+			expect(callbacks.pushToolResult).toHaveBeenCalledWith(expect.stringContaining("无法读取二进制文件"))
 		})
 
 		it("should handle file read errors in legacy format", async () => {
@@ -917,7 +917,7 @@ describe("ReadFileTool", () => {
 
 			await readFileTool.execute({ files: [{ path: "missing.ts" }] } as any, mockTask as any, callbacks)
 
-			expect(mockTask.say).toHaveBeenCalledWith("error", expect.stringContaining("Error reading file"))
+			expect(mockTask.say).toHaveBeenCalledWith("error", expect.stringContaining("读取文件"))
 			expect(callbacks.pushToolResult).toHaveBeenCalledWith(expect.stringContaining("ENOENT"))
 			// Consistent with the native path: a failed read fails the tool turn.
 			expect(mockTask.didToolFailInCurrentTurn).toBe(true)
@@ -970,7 +970,7 @@ describe("ReadFileTool", () => {
 
 			await readFileTool.execute({ files: [{ path: "large.ts" }] } as any, mockTask as any, callbacks)
 
-			expect(callbacks.pushToolResult).toHaveBeenCalledWith(expect.stringContaining("File truncated"))
+			expect(callbacks.pushToolResult).toHaveBeenCalledWith(expect.stringContaining("文件已截断"))
 		})
 
 		it("should track file context in legacy format", async () => {
@@ -1144,8 +1144,8 @@ describe("ReadFileTool", () => {
 				callbacks,
 			)
 
-			expect(callbacks.pushToolResult).toHaveBeenCalledWith(expect.stringContaining("File content truncated"))
-			expect(callbacks.pushToolResult).toHaveBeenCalledWith(expect.stringContaining("To read more"))
+			expect(callbacks.pushToolResult).toHaveBeenCalledWith(expect.stringContaining("文件内容已截断"))
+			expect(callbacks.pushToolResult).toHaveBeenCalledWith(expect.stringContaining("了解更多"))
 		})
 
 		it("should include range information in indentation mode when not truncated", async () => {
@@ -1171,7 +1171,7 @@ describe("ReadFileTool", () => {
 				callbacks,
 			)
 
-			expect(callbacks.pushToolResult).toHaveBeenCalledWith(expect.stringContaining("Included ranges: 5-14"))
+			expect(callbacks.pushToolResult).toHaveBeenCalledWith(expect.stringContaining("包含范围: 5-14"))
 		})
 
 		it("should pass all indentation options to readWithIndentation", async () => {
@@ -1299,7 +1299,9 @@ describe("ReadFileTool", () => {
 
 			await readFileTool.execute({ path: "test.ts", offset: 5, limit: 100 }, mockTask as any, callbacks)
 
-			expect(callbacks.pushToolResult).toHaveBeenCalledWith(expect.stringContaining("Showing lines 5-104"))
+			expect(callbacks.pushToolResult).toHaveBeenCalledWith(
+				expect.stringContaining("正在显示总共 500 行中的第 5-104 行"),
+			)
 		})
 	})
 
@@ -1334,7 +1336,7 @@ describe("ReadFileTool", () => {
 			// The approval message should contain the indentation mode info
 			const askCall = mockTask.ask.mock.calls[0]
 			const message = JSON.parse(askCall[1])
-			expect(message.reason).toContain("indentation mode at line 42")
+			expect(message.reason).toContain("位于 42 行的缩进模式")
 		})
 
 		it("should show line range in approval when offset > 1", async () => {
@@ -1354,7 +1356,7 @@ describe("ReadFileTool", () => {
 
 			const askCall = mockTask.ask.mock.calls[0]
 			const message = JSON.parse(askCall[1])
-			expect(message.reason).toContain("lines 10-59")
+			expect(message.reason).toContain("第 10-59 行")
 			expect(message.startLine).toBe(10)
 		})
 
@@ -1375,8 +1377,8 @@ describe("ReadFileTool", () => {
 
 			const askCall = mockTask.ask.mock.calls[0]
 			const message = JSON.parse(askCall[1])
-			expect(message.reason).toContain("up to")
-			expect(message.reason).toContain("lines")
+			expect(message.reason).toContain("直到")
+			expect(message.reason).toContain("行")
 			expect(message.startLine).toBeUndefined()
 		})
 
@@ -1405,7 +1407,7 @@ describe("ReadFileTool", () => {
 
 			const askCall = mockTask.ask.mock.calls[0]
 			const message = JSON.parse(askCall[1])
-			expect(message.reason).toContain("indentation mode at line 7")
+			expect(message.reason).toContain("位于 7 行的缩进模式")
 		})
 	})
 
@@ -1467,7 +1469,7 @@ describe("ReadFileTool", () => {
 			await readFileTool.execute({ path: "test.ts" }, mockTask as any, callbacks)
 
 			expect(mockTask.didToolFailInCurrentTurn).toBe(true)
-			expect(callbacks.pushToolResult).toHaveBeenCalledWith(expect.stringContaining("Error"))
+			expect(callbacks.pushToolResult).toHaveBeenCalledWith(expect.stringContaining("错误"))
 		})
 
 		it("should set didToolFailInCurrentTurn on rooignore block", async () => {

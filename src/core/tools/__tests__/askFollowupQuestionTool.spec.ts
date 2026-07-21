@@ -94,7 +94,7 @@ describe("AskFollowupQuestionTool", () => {
 		// A present-but-non-array value is a type error.
 		expect(mockTask.sayAndCreateMissingParamError).not.toHaveBeenCalled()
 		const pushed = (mockCallbacks.pushToolResult as any).mock.calls[0][0]
-		expect(pushed).toContain("must be an array")
+		expect(pushed).toContain("必须是一个建议条目数组")
 		expect(pushed).not.toContain("Missing value")
 	})
 
@@ -114,9 +114,9 @@ describe("AskFollowupQuestionTool", () => {
 		expect(mockTask.recordToolError).toHaveBeenCalledWith("ask_followup_question")
 		expect(mockTask.didToolFailInCurrentTurn).toBe(true)
 		expect(mockTask.sayAndCreateMissingParamError).not.toHaveBeenCalled()
-		expect(mockTask.say).toHaveBeenCalledWith("error", expect.stringContaining("must be an array"))
+		expect(mockTask.say).toHaveBeenCalledWith("error", expect.stringContaining("必须是一个建议条目数组"))
 		const pushed = (mockCallbacks.pushToolResult as any).mock.calls[0][0]
-		expect(pushed).toContain("must be an array")
+		expect(pushed).toContain("必须是一个建议条目数组")
 		expect(pushed).not.toContain("Missing value")
 		// The tool must not proceed to ask the user with an invalid payload.
 		expect(mockTask.ask).not.toHaveBeenCalled()

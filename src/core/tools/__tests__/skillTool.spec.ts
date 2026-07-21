@@ -74,7 +74,7 @@ describe("skillTool", () => {
 		await skillTool.handle(mockTask as Task, block, mockCallbacks)
 
 		expect(mockCallbacks.pushToolResult).toHaveBeenCalledWith(
-			formatResponse.toolError("Skill 'non-existent' not found. Available skills: create-mcp-server"),
+			formatResponse.toolError("Skill 'non-existent' 不存在。可用的 skills 列表: create-mcp-server"),
 		)
 	})
 
@@ -95,7 +95,7 @@ describe("skillTool", () => {
 		await skillTool.handle(mockTask as Task, block, mockCallbacks)
 
 		expect(mockCallbacks.pushToolResult).toHaveBeenCalledWith(
-			formatResponse.toolError("Skill 'non-existent' not found. Available skills: (none)"),
+			formatResponse.toolError("Skill 'non-existent' 不存在。可用的 skills 列表: (无)"),
 		)
 	})
 
@@ -294,9 +294,7 @@ Step 1: Create the server...`,
 		await skillTool.handle(mockTask as Task, block, mockCallbacks)
 
 		expect(mockTask.recordToolError).toHaveBeenCalledWith("skill")
-		expect(mockCallbacks.pushToolResult).toHaveBeenCalledWith(
-			formatResponse.toolError("Skills Manager not available"),
-		)
+		expect(mockCallbacks.pushToolResult).toHaveBeenCalledWith(formatResponse.toolError("Skills 管理器不可用"))
 	})
 
 	it("should load project skill", async () => {

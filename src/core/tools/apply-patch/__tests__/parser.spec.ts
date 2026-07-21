@@ -4,14 +4,12 @@ describe("apply_patch parser", () => {
 	describe("parsePatch", () => {
 		it("should reject patch without Begin Patch marker", () => {
 			expect(() => parsePatch("bad")).toThrow(ParseError)
-			expect(() => parsePatch("bad")).toThrow("The first line of the patch must be '*** Begin Patch'")
+			expect(() => parsePatch("bad")).toThrow("patch 的第一行必须是 '*** Begin Patch'")
 		})
 
 		it("should reject patch without End Patch marker", () => {
 			expect(() => parsePatch("*** Begin Patch\nbad")).toThrow(ParseError)
-			expect(() => parsePatch("*** Begin Patch\nbad")).toThrow(
-				"The last line of the patch must be '*** End Patch'",
-			)
+			expect(() => parsePatch("*** Begin Patch\nbad")).toThrow("patch 的最后一行必须是 '*** End Patch'")
 		})
 
 		it("should parse empty patch", () => {

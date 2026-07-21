@@ -88,6 +88,11 @@ describe("TerminalProcess shell_execution_complete fallback timeout", () => {
 
 		const runPromise = terminalProcess.run("npx vue-tsc -b")
 
+		// Production path: TerminalRegistry emits stream_available from
+		// onDidStartTerminalShellExecution (not via executeCommand().read()).
+		terminalProcess.emit("stream_available", stream)
+		terminalProcess.emit("shell_execution_started", 1234)
+
 		// Let the stream drain (microtasks) and the post-stream code reach the
 		// bounded await for shell_execution_complete.
 		await vi.advanceTimersByTimeAsync(0)
@@ -143,6 +148,8 @@ describe("TerminalProcess shell_execution_complete fallback timeout", () => {
 		})
 
 		const runPromise = terminalProcess.run("echo ok")
+		terminalProcess.emit("stream_available", stream)
+		terminalProcess.emit("shell_execution_started", 1234)
 
 		// Drain the stream.
 		await vi.advanceTimersByTimeAsync(0)

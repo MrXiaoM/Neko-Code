@@ -175,14 +175,14 @@ describe("mode-validator", () => {
 		it("throws error for unknown/invalid tools", () => {
 			// Unknown tools should throw with a specific "Unknown tool" error
 			expect(() => validateToolUse("unknown_tool" as any, "architect", [])).toThrow(
-				'Unknown tool "unknown_tool". This tool does not exist.',
+				'未知工具 "unknown_tool"。这个工具不存在',
 			)
 		})
 
 		it("throws error for disallowed tools in architect mode", () => {
 			// execute_command is a valid tool but not allowed in architect mode
 			expect(() => validateToolUse("execute_command", "architect", [])).toThrow(
-				'Tool "execute_command" is not allowed in architect mode.',
+				'工具 "execute_command" 不被允许在 architect 模式中使用。',
 			)
 		})
 
@@ -190,7 +190,7 @@ describe("mode-validator", () => {
 			// Gemini may receive all tool declarations for history compatibility, so
 			// execution-time validation must remain the final mode restriction guard.
 			expect(() => validateToolUse("write_to_file", askMode, [])).toThrow(
-				'Tool "write_to_file" is not allowed in ask mode.',
+				'工具 "write_to_file" 不被允许在 ask 模式中使用。',
 			)
 		})
 
@@ -201,7 +201,7 @@ describe("mode-validator", () => {
 		it("throws error when tool requirement is not met", () => {
 			const requirements = { apply_diff: false }
 			expect(() => validateToolUse("apply_diff", codeMode, [], requirements)).toThrow(
-				'Tool "apply_diff" is not allowed in code mode.',
+				'工具 "apply_diff" 不被允许在 code 模式中使用。',
 			)
 		})
 
@@ -225,10 +225,10 @@ describe("mode-validator", () => {
 			)
 
 			expect(() => validateToolUse("execute_command", codeMode, [], toolRequirements)).toThrow(
-				'Tool "execute_command" is not allowed in code mode.',
+				'工具 "execute_command" 不被允许在 code 模式中使用。',
 			)
 			expect(() => validateToolUse("search_files", codeMode, [], toolRequirements)).toThrow(
-				'Tool "search_files" is not allowed in code mode.',
+				'工具 "search_files" 不被允许在 code 模式中使用。',
 			)
 		})
 

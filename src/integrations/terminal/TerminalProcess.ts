@@ -488,10 +488,27 @@ export class TerminalProcess extends BaseTerminalProcess {
 					}`,
 				)
 			} else {
+				// Stream closed without a D marker and without shell_execution_complete.
+				// On Windows + Git Bash, corrupted OSC 633 markers can drop the end event
+				// forever; bound the wait so execute_command cannot hang indefinitely.
+				const FALLBACK_COMPLETE_MS = 5_000
+				let fallbackTimer: NodeJS.Timeout | undefined
+				let fallbackWon = false
+				const fallback = new Promise<void>((resolve) => {
+					fallbackTimer = setTimeout(() => {
+						fallbackWon = true
+						resolve()
+					}, FALLBACK_COMPLETE_MS)
+				})
 				const waitStartedAt = Date.now()
-				await shellExecutionComplete
+				await Promise.race([shellExecutionComplete, fallback])
+				clearTimeout(fallbackTimer)
 				console.info(
-					`[Terminal Process] shellExecutionComplete resolved after ${Date.now() - waitStartedAt}ms (stream closed, no D marker)`,
+					`[Terminal Process] post-stream wait resolved after ${Date.now() - waitStartedAt}ms via ${
+						fallbackWon
+							? `fallback timer (${FALLBACK_COMPLETE_MS}ms, no onDidEndTerminalShellExecution)`
+							: "shellExecutionComplete"
+					}`,
 				)
 			}
 
@@ -550,6 +567,10 @@ export class TerminalProcess extends BaseTerminalProcess {
 			this.terminal.expectedCommand = undefined
 			this.terminal.commandCorrupted = false
 			this.terminal.hasCompletedCommand = true
+			// When shell_execution_complete never arrives (Windows OSC 633 corruption),
+			// still release the terminal so it can be reused.
+			this.terminal.busy = false
+			this.terminal.running = false
 
 			this.emit("completed", this.stripCursorSequences(this.removeVSCodeShellIntegration(this.fullOutput)))
 			this.emit("continue")
@@ -758,7 +779,11 @@ export class TerminalProcess extends BaseTerminalProcess {
 						new Promise<void>((resolve) => setTimeout(resolve, 1_000)),
 					])
 				} else {
-					await shellExecutionComplete
+					// Bound the wait when stream closes without end marker / end event.
+					await Promise.race([
+						shellExecutionComplete,
+						new Promise<void>((resolve) => setTimeout(resolve, 5_000)),
+					])
 				}
 			}
 
@@ -776,6 +801,8 @@ export class TerminalProcess extends BaseTerminalProcess {
 			this.terminal.expectedCommand = undefined
 			this.terminal.commandCorrupted = false
 			this.terminal.hasCompletedCommand = true
+			this.terminal.busy = false
+			this.terminal.running = false
 			this.emit("completed", this.stripCursorSequences(this.removeVSCodeShellIntegration(this.fullOutput)))
 			this.emit("continue")
 		} finally {

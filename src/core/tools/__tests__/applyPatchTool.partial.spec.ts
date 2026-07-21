@@ -183,7 +183,7 @@ describe("ApplyPatchTool.handlePartial", () => {
 		const payload = await executePartial(undefined)
 
 		expect(payload.tool).toBe("appliedDiff")
-		expect(payload.diff).toBe("Parsing patch...")
+		expect(payload.diff).toBe("正在解析 patch...")
 		expect(payload.path).toBe(path.basename(cwd))
 		expect(typeof payload.isOutsideWorkspace).toBe("boolean")
 	})

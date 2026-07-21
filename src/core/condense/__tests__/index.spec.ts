@@ -909,17 +909,16 @@ describe("summarizeConversation", () => {
 			expect.any(Array),
 			undefined, // metadata is undefined when not passed to summarizeConversation
 		)
-		// Verify the CRITICAL instructions are included in the prompt
+		// Verify the CRITICAL instructions are included in the system prompt (SUMMARY_PROMPT)
 		const actualPrompt = (mockApiHandler.createMessage as Mock).mock.calls[0][0]
 		expect(actualPrompt).toContain("CRITICAL: This is a summarization-only request")
 		expect(actualPrompt).toContain("CRITICAL: This summarization request is a SYSTEM OPERATION")
-
 		// Check that maybeRemoveImageBlocks was called with the correct messages
-		// The final request message now contains the detailed CONDENSE instructions
+		// The final request message now contains the detailed CONDENSE instructions (Chinese)
 		const mockCallArgs = (maybeRemoveImageBlocks as Mock).mock.calls[0][0] as any[]
 		const finalMessage = mockCallArgs[mockCallArgs.length - 1]
 		expect(finalMessage.role).toBe("user")
-		expect(finalMessage.content).toContain("Your task is to create a detailed summary of the conversation")
+		expect(finalMessage.content).toContain("你的任务是创建对话迄今的详细摘要")
 	})
 
 	it("should include the original first user message in summarization input", async () => {

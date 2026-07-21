@@ -252,7 +252,7 @@ describe("editFileTool", () => {
 				new_string: "same",
 			})
 
-			expect(result).toContain("No changes to apply")
+			expect(result).toContain("需要编辑的文件没有变更")
 			expect(result).toContain("<error_details>")
 			expect(mockTask.consecutiveMistakeCount).toBe(1)
 			expect(mockTask.didToolFailInCurrentTurn).toBe(true)
@@ -346,7 +346,7 @@ describe("editFileTool", () => {
 		it("returns error when file does not exist and old_string is not empty", async () => {
 			const result = await executeEditFileTool({}, { fileExists: false })
 
-			expect(result).toContain("File does not exist")
+			expect(result).toContain("路径指定的文件不存在")
 			expect(result).toContain("<error_details>")
 			expect(mockTask.consecutiveMistakeCount).toBe(1)
 			expect(mockTask.didToolFailInCurrentTurn).toBe(true)
@@ -366,13 +366,13 @@ describe("editFileTool", () => {
 				{ fileContent: "Line 1\nLine 2\nLine 3" },
 			)
 
-			expect(result).toContain("No match found")
+			expect(result).toContain("文件中没有匹配的文本")
 			expect(result).toContain("<error_details>")
 			expect(mockTask.consecutiveMistakeCount).toBe(1)
 			expect(mockTask.didToolFailInCurrentTurn).toBe(true)
 			expect(mockTask.recordToolError).toHaveBeenCalledWith(
 				"edit_file",
-				expect.stringContaining("No match found"),
+				expect.stringContaining("文件中没有匹配的文本"),
 			)
 		})
 
@@ -380,7 +380,7 @@ describe("editFileTool", () => {
 			await executeEditFileTool({ old_string: "NonExistent" }, { fileContent: "Line 1\nLine 2\nLine 3" })
 			await executeEditFileTool({ old_string: "NonExistent" }, { fileContent: "Line 1\nLine 2\nLine 3" })
 
-			expect(mockTask.say).toHaveBeenCalledWith("diff_error", expect.stringContaining("No match found"))
+			expect(mockTask.say).toHaveBeenCalledWith("diff_error", expect.stringContaining("文件中没有匹配的文本"))
 		})
 
 		it("returns error when occurrence count does not match expected_replacements", async () => {
@@ -389,13 +389,13 @@ describe("editFileTool", () => {
 				{ fileContent: "Line 1\nLine 2\nLine 3" },
 			)
 
-			expect(result).toContain("Expected 1 occurrence(s) but found 3")
+			expect(result).toContain("期望发生 1 次匹配，但实际匹配了 3 次")
 			expect(result).toContain("<error_details>")
 			expect(mockTask.consecutiveMistakeCount).toBe(1)
 			expect(mockTask.didToolFailInCurrentTurn).toBe(true)
 			expect(mockTask.recordToolError).toHaveBeenCalledWith(
 				"edit_file",
-				expect.stringContaining("Occurrence count mismatch"),
+				expect.stringContaining("文件中的发生次数不匹配"),
 			)
 		})
 
@@ -430,7 +430,7 @@ describe("editFileTool", () => {
 				{ fileContent: "Line 1\nLine 2\nLine 3\nLine 4" },
 			)
 
-			expect(result).toContain("Expected 1 occurrence(s) but found 4")
+			expect(result).toContain("期望发生 1 次匹配，但实际匹配了 4 次")
 			expect(result).toContain("<error_details>")
 		})
 	})
@@ -443,7 +443,7 @@ describe("editFileTool", () => {
 			expect(mockTask.say).not.toHaveBeenCalledWith("diff_error", expect.any(String))
 			expect(mockTask.recordToolError).toHaveBeenCalledWith(
 				"edit_file",
-				expect.stringContaining("No match found"),
+				expect.stringContaining("文件中没有匹配的文本"),
 			)
 		})
 
@@ -455,7 +455,7 @@ describe("editFileTool", () => {
 			await executeEditFileTool({ old_string: "AlsoNonExistent" }, { fileContent: "Line 1\nLine 2\nLine 3" })
 
 			expect(mockTask.consecutiveMistakeCountForEditFile.get(testFilePath)).toBe(2)
-			expect(mockTask.say).toHaveBeenCalledWith("diff_error", expect.stringContaining("No match found"))
+			expect(mockTask.say).toHaveBeenCalledWith("diff_error", expect.stringContaining("文件中没有匹配的文本"))
 		})
 
 		it("does NOT show diff_error to user on first occurrence_mismatch failure", async () => {
@@ -468,7 +468,7 @@ describe("editFileTool", () => {
 			expect(mockTask.say).not.toHaveBeenCalledWith("diff_error", expect.any(String))
 			expect(mockTask.recordToolError).toHaveBeenCalledWith(
 				"edit_file",
-				expect.stringContaining("Occurrence count mismatch"),
+				expect.stringContaining("文件中的发生次数不匹配"),
 			)
 		})
 
@@ -486,10 +486,7 @@ describe("editFileTool", () => {
 			)
 
 			expect(mockTask.consecutiveMistakeCountForEditFile.get(testFilePath)).toBe(2)
-			expect(mockTask.say).toHaveBeenCalledWith(
-				"diff_error",
-				expect.stringContaining("Occurrence count mismatch"),
-			)
+			expect(mockTask.say).toHaveBeenCalledWith("diff_error", expect.stringContaining("文件中的发生次数不匹配"))
 		})
 
 		it("resets consecutive error counter on successful edit", async () => {
@@ -544,9 +541,9 @@ describe("editFileTool", () => {
 				{ fileExists: true, fileContent: "Existing content" },
 			)
 
-			expect(result).toContain("File already exists")
+			expect(result).toContain("文件已经存在")
 			expect(result).toContain("<error_details>")
-			expect(result).toContain("already exists")
+			expect(result).toContain("已经存在")
 			expect(mockTask.consecutiveMistakeCount).toBe(1)
 			expect(mockTask.didToolFailInCurrentTurn).toBe(true)
 		})
@@ -570,7 +567,7 @@ describe("editFileTool", () => {
 
 			expect(mockTask.diffViewProvider.revertChanges).toHaveBeenCalled()
 			expect(mockTask.diffViewProvider.saveChanges).not.toHaveBeenCalled()
-			expect(result).toContain("rejected")
+			expect(result).toContain("此变更已被用户拒绝")
 		})
 	})
 
@@ -623,7 +620,7 @@ describe("editFileTool", () => {
 				{ isPartial: false, fileContent: "Line 1\nLine 2\nLine 3" },
 			)
 
-			expect(result).toContain("No changes needed")
+			expect(result).toContain("没有需要的变更")
 			const askCalls = mockTask.ask.mock.calls
 			const hasFinalToolAsk = askCalls.some((call: any[]) => call[0] === "tool" && call[2] === false)
 			expect(hasFinalToolAsk).toBe(true)
@@ -661,7 +658,7 @@ describe("editFileTool", () => {
 				pushToolResult: localPushToolResult,
 			})
 
-			expect(capturedResult).toContain("Failed to read file")
+			expect(capturedResult).toContain("无法读取文件")
 			expect(capturedResult).toContain("<error_details>")
 			expect(mockTask.consecutiveMistakeCount).toBe(1)
 			expect(mockTask.didToolFailInCurrentTurn).toBe(true)

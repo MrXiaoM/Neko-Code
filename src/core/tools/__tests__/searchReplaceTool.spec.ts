@@ -255,7 +255,7 @@ describe("searchReplaceTool", () => {
 			const result = await executeSearchReplaceTool({}, { fileExists: false })
 
 			expect(result).toContain("Error:")
-			expect(result).toContain("File not found")
+			expect(result).toContain("文件不存在")
 			expect(mockCline.consecutiveMistakeCount).toBe(1)
 		})
 
@@ -274,7 +274,7 @@ describe("searchReplaceTool", () => {
 			)
 
 			expect(result).toContain("Error:")
-			expect(result).toContain("No match found")
+			expect(result).toContain("无法进行匹配")
 			expect(mockCline.consecutiveMistakeCount).toBe(1)
 			expect(mockCline.recordToolError).toHaveBeenCalledWith("search_replace", "no_match")
 		})
@@ -286,7 +286,7 @@ describe("searchReplaceTool", () => {
 			)
 
 			expect(result).toContain("Error:")
-			expect(result).toContain("3 matches")
+			expect(result).toContain("3 个匹配结果")
 			expect(mockCline.consecutiveMistakeCount).toBe(1)
 			expect(mockCline.recordToolError).toHaveBeenCalledWith("search_replace", "multiple_matches")
 		})
@@ -324,7 +324,7 @@ describe("searchReplaceTool", () => {
 
 			expect(mockCline.diffViewProvider.revertChanges).toHaveBeenCalled()
 			expect(mockCline.diffViewProvider.saveChanges).not.toHaveBeenCalled()
-			expect(result).toContain("rejected")
+			expect(result).toContain("此变更已被用户拒绝")
 		})
 	})
 
@@ -372,7 +372,7 @@ describe("searchReplaceTool", () => {
 			})
 
 			expect(capturedResult).toContain("Error:")
-			expect(capturedResult).toContain("Failed to read file")
+			expect(capturedResult).toContain("无法读取文件")
 			expect(mockCline.consecutiveMistakeCount).toBe(1)
 		})
 

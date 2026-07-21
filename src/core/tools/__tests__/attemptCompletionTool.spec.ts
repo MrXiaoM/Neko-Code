@@ -203,9 +203,7 @@ describe("attemptCompletionTool", () => {
 
 			expect(mockTask.consecutiveMistakeCount).toBe(1)
 			expect(mockTask.recordToolError).toHaveBeenCalledWith("attempt_completion")
-			expect(mockPushToolResult).toHaveBeenCalledWith(
-				expect.stringContaining("Cannot complete task while there are incomplete todos"),
-			)
+			expect(mockPushToolResult).toHaveBeenCalledWith(expect.stringContaining("还存在未完成 todo 时无法完成任务"))
 		})
 
 		it("should prevent completion when there are in-progress todos", async () => {
@@ -245,9 +243,7 @@ describe("attemptCompletionTool", () => {
 
 			expect(mockTask.consecutiveMistakeCount).toBe(1)
 			expect(mockTask.recordToolError).toHaveBeenCalledWith("attempt_completion")
-			expect(mockPushToolResult).toHaveBeenCalledWith(
-				expect.stringContaining("Cannot complete task while there are incomplete todos"),
-			)
+			expect(mockPushToolResult).toHaveBeenCalledWith(expect.stringContaining("还存在未完成 todo 时无法完成任务"))
 		})
 
 		it("should prevent completion when there are mixed incomplete todos", async () => {
@@ -288,9 +284,7 @@ describe("attemptCompletionTool", () => {
 
 			expect(mockTask.consecutiveMistakeCount).toBe(1)
 			expect(mockTask.recordToolError).toHaveBeenCalledWith("attempt_completion")
-			expect(mockPushToolResult).toHaveBeenCalledWith(
-				expect.stringContaining("Cannot complete task while there are incomplete todos"),
-			)
+			expect(mockPushToolResult).toHaveBeenCalledWith(expect.stringContaining("还存在未完成 todo 时无法完成任务"))
 		})
 
 		it("should allow completion when setting is disabled even with incomplete todos", async () => {
@@ -332,7 +326,7 @@ describe("attemptCompletionTool", () => {
 			expect(mockTask.consecutiveMistakeCount).toBe(0)
 			expect(mockTask.recordToolError).not.toHaveBeenCalled()
 			expect(mockPushToolResult).not.toHaveBeenCalledWith(
-				expect.stringContaining("Cannot complete task while there are incomplete todos"),
+				expect.stringContaining("还存在未完成 todo 时无法完成任务"),
 			)
 		})
 
@@ -374,9 +368,7 @@ describe("attemptCompletionTool", () => {
 			// Should prevent completion when setting is enabled and there are incomplete todos
 			expect(mockTask.consecutiveMistakeCount).toBe(1)
 			expect(mockTask.recordToolError).toHaveBeenCalledWith("attempt_completion")
-			expect(mockPushToolResult).toHaveBeenCalledWith(
-				expect.stringContaining("Cannot complete task while there are incomplete todos"),
-			)
+			expect(mockPushToolResult).toHaveBeenCalledWith(expect.stringContaining("还存在未完成 todo 时无法完成任务"))
 		})
 
 		it("should allow completion when setting is enabled but all todos are completed", async () => {
@@ -418,7 +410,7 @@ describe("attemptCompletionTool", () => {
 			expect(mockTask.consecutiveMistakeCount).toBe(0)
 			expect(mockTask.recordToolError).not.toHaveBeenCalled()
 			expect(mockPushToolResult).not.toHaveBeenCalledWith(
-				expect.stringContaining("Cannot complete task while there are incomplete todos"),
+				expect.stringContaining("还存在未完成 todo 时无法完成任务"),
 			)
 		})
 
