@@ -1315,9 +1315,12 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 		// block (via the `pWaitFor`).
 		const isBlocking = !(this.askResponse !== undefined || this.lastMessageTs !== askTs)
 		const isMessageQueued = !this.messageQueueService.isEmpty()
-		// Keep queued user messages intact during command_output asks. Those asks
-		// are terminal flow-control, not conversational turns.
-		const shouldDrainQueuedMessageForAsk = type !== "command_output"
+		// Queued user messages must never implicitly approve dangerous operations.
+		// Keep them intact during command/tool/mcp approval asks and terminal
+		// flow-control (command_output). Drain only for conversational asks
+		// (e.g. followup) so the task does not hang on an unanswered prompt.
+		const shouldDrainQueuedMessageForAsk =
+			type !== "command" && type !== "command_output" && type !== "tool" && type !== "use_mcp_server"
 		const isStatusMutable = !partial && isBlocking && !isMessageQueued && approval.decision === "ask"
 
 		if (isStatusMutable) {
@@ -1365,16 +1368,9 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 			const message = this.messageQueueService.dequeueMessage()
 
 			if (message) {
-				// Check if this is a tool approval ask that needs to be handled.
-				if (type === "tool" || type === "command" || type === "use_mcp_server") {
-					// For tool approvals, we need to approve first, then send
-					// the message if there's text/images.
-					this.handleWebviewAskResponse("yesButtonClicked", message.text, message.images)
-				} else {
-					// For other ask types (like followup or command_output), fulfill the ask
-					// directly.
-					this.handleWebviewAskResponse("messageResponse", message.text, message.images)
-				}
+				// Conversational asks only: fulfill with the queued text/images.
+				// Command/tool/mcp asks never reach this branch.
+				this.handleWebviewAskResponse("messageResponse", message.text, message.images)
 			}
 		}
 
@@ -1385,19 +1381,14 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 					return true
 				}
 
-				// If a queued message arrives while we're blocked on an ask (e.g. a follow-up
-				// suggestion click that was incorrectly queued due to UI state), consume it
-				// immediately so the task doesn't hang.
+				// If a queued message arrives while we're blocked on a conversational ask
+				// (e.g. a follow-up suggestion click that was incorrectly queued due to UI
+				// state), consume it immediately so the task doesn't hang.
+				// Never auto-approve command/tool/mcp asks from the queue.
 				if (shouldDrainQueuedMessageForAsk && !this.messageQueueService.isEmpty()) {
 					const message = this.messageQueueService.dequeueMessage()
 					if (message) {
-						// If this is a tool approval ask, we need to approve first (yesButtonClicked)
-						// and include any queued text/images.
-						if (type === "tool" || type === "command" || type === "use_mcp_server") {
-							this.handleWebviewAskResponse("yesButtonClicked", message.text, message.images)
-						} else {
-							this.handleWebviewAskResponse("messageResponse", message.text, message.images)
-						}
+						this.handleWebviewAskResponse("messageResponse", message.text, message.images)
 					}
 				}
 

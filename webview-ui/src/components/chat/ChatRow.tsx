@@ -279,8 +279,15 @@ export const ChatRowContent = ({
 			? lastModifiedMessage?.text
 			: undefined
 
+	// Only treat a command as "executing" once it has produced output (i.e. it was
+	// approved and the terminal started streaming). A pending approval ask must
+	// never show the running spinner/title — that was confusing for consecutive
+	// command approvals where the latest row is still waiting for the user.
 	const isCommandExecuting =
-		isLast && lastModifiedMessage?.ask === "command" && lastModifiedMessage?.text?.includes(COMMAND_OUTPUT_STRING)
+		isLast &&
+		lastModifiedMessage?.ask === "command" &&
+		!!lastModifiedMessage?.text?.includes(COMMAND_OUTPUT_STRING) &&
+		lastModifiedMessage?.approvalState !== "rejected"
 
 	const isMcpServerResponding = isLast && lastModifiedMessage?.say === "mcp_server_request_started"
 
@@ -304,7 +311,7 @@ export const ChatRowContent = ({
 						<SquareTerminal className="size-4" aria-label="Terminal icon" />
 					),
 					<span style={{ color: normalColor, fontWeight: "bold" }}>
-						{t("chat:commandExecution.running")}
+						{isCommandExecuting ? t("chat:commandExecution.running") : t("chat:commandExecution.pending")}
 					</span>,
 				]
 			case "use_mcp_server":

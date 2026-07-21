@@ -206,6 +206,12 @@ export const CommandExecution = ({ executionId, text, icon, title, approvalState
 					? "chat:commandExecution.rejectedTooltip"
 					: null
 
+	// Never show the running indicator for commands that still need approval.
+	// A stale statusCache entry (e.g. from a previous consecutive command) must
+	// not make a pending approval row look like it is already executing.
+	const isApprovedForExecution = approvalState === "approved" || approvalState === "auto_approved"
+	const showRunningIndicator = status?.status === "started" && isApprovedForExecution
+
 	const approvalTitle =
 		approvalLabelKey !== null ? (
 			<span
@@ -231,7 +237,7 @@ export const CommandExecution = ({ executionId, text, icon, title, approvalState
 					) : (
 						approvalTitle
 					)}
-					{status?.status === "started" && (
+					{showRunningIndicator && (
 						<StandardTooltip content={t("chat:commandExecution.running")}>
 							<div className="rounded-full size-2 bg-yellow-500 animate-pulse" />
 						</StandardTooltip>
@@ -259,7 +265,7 @@ export const CommandExecution = ({ executionId, text, icon, title, approvalState
 				</div>
 				<div className=" flex flex-row items-center justify-between gap-2 px-1">
 					<div className="flex flex-row items-center gap-1">
-						{status?.status === "started" && (
+						{showRunningIndicator && (
 							<div className="flex flex-row items-center gap-2 font-mono text-xs">
 								{status.pid && <div className="whitespace-nowrap">(PID: {status.pid})</div>}
 								<StandardTooltip content={t("chat:commandExecution.abort")}>

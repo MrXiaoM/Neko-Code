@@ -84,6 +84,7 @@ describe("executeCommandTool", () => {
 			},
 			recordToolUsage: vitest.fn().mockReturnValue({} as ToolUsage),
 			recordToolError: vitest.fn(),
+			processQueuedMessages: vitest.fn(),
 			providerRef: {
 				deref: vitest.fn().mockResolvedValue({
 					getState: vitest.fn().mockResolvedValue({
@@ -190,6 +191,11 @@ describe("executeCommandTool", () => {
 			// The exact message depends on the terminal mock's behavior
 			const result = mockPushToolResult.mock.calls[0][0]
 			expect(result).toContain("终端")
+			// Queued messages should only drain after the command result is delivered.
+			expect(mockCline.processQueuedMessages).toHaveBeenCalledTimes(1)
+			expect(mockCline.processQueuedMessages.mock.invocationCallOrder[0]).toBeGreaterThan(
+				mockPushToolResult.mock.invocationCallOrder[0],
+			)
 		})
 
 		it("should pass along custom working directory if provided", async () => {
@@ -258,6 +264,8 @@ describe("executeCommandTool", () => {
 			expect(parseCommandApprovalMessage(approvalMessage).command).toBe("echo test")
 			// executeCommandInTerminal should not be called since approval was denied
 			expect(mockPushToolResult).not.toHaveBeenCalled()
+			// Rejected approvals still drain the queue so messages are not stuck.
+			expect(mockCline.processQueuedMessages).toHaveBeenCalledTimes(1)
 		})
 
 		it("should handle rooignore validation failures", async () => {

@@ -226,6 +226,7 @@
 	},
 	"commandOutput": "命令输出",
 	"commandExecution": {
+		"pending": "{{agentName}} 想要执行此命令",
 		"running": "正在运行",
 		"approved": "批准执行",
 		"autoApproved": "自动批准执行",

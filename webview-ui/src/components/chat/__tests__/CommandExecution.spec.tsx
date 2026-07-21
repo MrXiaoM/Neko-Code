@@ -795,10 +795,10 @@ Output:
 			handler?.(new MessageEvent("message", { data }))
 		}
 
-		it("should show the pulsing dot when status is started", async () => {
+		it("should show the pulsing dot when status is started and the command was approved", async () => {
 			render(
 				<ExtensionStateWrapper>
-					<CommandExecution executionId="exec-status-1" text="npm start" />
+					<CommandExecution executionId="exec-status-1" text="npm start" approvalState="approved" />
 				</ExtensionStateWrapper>,
 			)
 
@@ -814,10 +814,26 @@ Output:
 			expect(document.querySelector(".animate-pulse")).toBeInTheDocument()
 		})
 
+		it("should not show the pulsing dot for a pending approval even if a started status arrives", async () => {
+			// Consecutive command approvals: a stale/incorrect started event must not
+			// make a still-pending command look like it is already running.
+			render(
+				<ExtensionStateWrapper>
+					<CommandExecution executionId="exec-pending" text="npm start" />
+				</ExtensionStateWrapper>,
+			)
+
+			await act(async () => {
+				sendStatusMessage("exec-pending", { status: "started", command: "npm start", pid: 1234 })
+			})
+
+			expect(document.querySelector(".animate-pulse")).not.toBeInTheDocument()
+		})
+
 		it("should not show the pulsing dot for a different executionId", async () => {
 			render(
 				<ExtensionStateWrapper>
-					<CommandExecution executionId="exec-status-2" text="npm start" />
+					<CommandExecution executionId="exec-status-2" text="npm start" approvalState="approved" />
 				</ExtensionStateWrapper>,
 			)
 
@@ -832,7 +848,7 @@ Output:
 		it("should remove the pulsing dot when status transitions to exited", async () => {
 			render(
 				<ExtensionStateWrapper>
-					<CommandExecution executionId="exec-status-3" text="npm start" />
+					<CommandExecution executionId="exec-status-3" text="npm start" approvalState="approved" />
 				</ExtensionStateWrapper>,
 			)
 
@@ -861,7 +877,7 @@ Output:
 
 			const { unmount } = render(
 				<ExtensionStateWrapper>
-					<CommandExecution executionId={executionId} text="npm start" />
+					<CommandExecution executionId={executionId} text="npm start" approvalState="auto_approved" />
 				</ExtensionStateWrapper>,
 			)
 
@@ -879,7 +895,7 @@ Output:
 			// status and show the dot immediately, without any new message.
 			render(
 				<ExtensionStateWrapper>
-					<CommandExecution executionId={executionId} text="npm start" />
+					<CommandExecution executionId={executionId} text="npm start" approvalState="auto_approved" />
 				</ExtensionStateWrapper>,
 			)
 
@@ -891,7 +907,7 @@ Output:
 
 			const { unmount } = render(
 				<ExtensionStateWrapper>
-					<CommandExecution executionId={executionId} text="npm start" />
+					<CommandExecution executionId={executionId} text="npm start" approvalState="approved" />
 				</ExtensionStateWrapper>,
 			)
 
@@ -915,7 +931,7 @@ Output:
 			// because the cache was cleared when the command exited.
 			render(
 				<ExtensionStateWrapper>
-					<CommandExecution executionId={executionId} text="npm start" />
+					<CommandExecution executionId={executionId} text="npm start" approvalState="approved" />
 				</ExtensionStateWrapper>,
 			)
 

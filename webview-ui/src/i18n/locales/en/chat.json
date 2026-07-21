@@ -270,6 +270,7 @@
 	"commandOutput": "Command Output",
 	"commandExecution": {
 		"abort": "Abort",
+		"pending": "Zoo wants to execute this command",
 		"running": "Running",
 		"approved": "Approved",
 		"autoApproved": "Auto-approved",

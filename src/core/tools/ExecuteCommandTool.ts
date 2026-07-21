@@ -162,6 +162,9 @@ export class ExecuteCommandTool extends BaseTool<"execute_command"> {
 			)
 
 			if (!didApprove) {
+				// User rejected the command — drain any messages that were held
+				// during the approval ask so they are not stuck forever.
+				task.processQueuedMessages()
 				return
 			}
 
@@ -209,6 +212,8 @@ export class ExecuteCommandTool extends BaseTool<"execute_command"> {
 				}
 
 				pushToolResult(result)
+				// Dequeue held messages only after the command result is delivered.
+				task.processQueuedMessages()
 			} catch (error: unknown) {
 				// Invalidate pending ask from first execution to prevent race condition
 				task.supersedePendingAsk()
@@ -228,6 +233,7 @@ export class ExecuteCommandTool extends BaseTool<"execute_command"> {
 					}
 
 					pushToolResult(result)
+					task.processQueuedMessages()
 				} else {
 					// Command was submitted but shell integration lost track of it — show warning.
 					await task.say("shell_integration_warning")
@@ -239,12 +245,15 @@ export class ExecuteCommandTool extends BaseTool<"execute_command"> {
 					} else {
 						pushToolResult(`由于终端整合出现错误，终端中的命令执行失败。`)
 					}
+					task.processQueuedMessages()
 				}
 			}
 
 			return
 		} catch (error) {
 			await handleError("executing command", error as Error)
+			// Ensure queued messages are not stuck after an unexpected failure.
+			task.processQueuedMessages()
 			return
 		}
 	}
