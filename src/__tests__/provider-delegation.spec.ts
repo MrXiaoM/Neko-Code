@@ -265,4 +265,245 @@ describe("ClineProvider.delegateParentAndOpenChild()", () => {
 		expect(deleteTaskWithId).toHaveBeenCalledWith("child-1", false)
 		expect(createTaskWithHistoryItem).toHaveBeenCalledWith(parentHistoryItem)
 	})
+
+	it("re-delegates when parent is already delegated (interrupted child → new child)", async () => {
+		// Regression: after user returns from an interrupted child, parent may still be
+		// "delegated". Re-delegation must repoint awaitingChildId without assertValidTransition
+		// delegated → delegated, and must start the new child (no flash-back rollback).
+		const parentTask = makeParentTask()
+		const childStart = vi.fn()
+		const updateTaskHistory = vi.fn().mockResolvedValue([])
+		const delegatedParent: HistoryItem = {
+			...parentHistoryItem,
+			status: "delegated",
+			awaitingChildId: "old-child",
+			delegatedToId: "old-child",
+			childIds: ["old-child"],
+		} as HistoryItem
+		const oldChildActive: HistoryItem = {
+			id: "old-child",
+			task: "Old child",
+			tokensIn: 0,
+			tokensOut: 0,
+			totalCost: 0,
+			status: "active",
+		} as HistoryItem
+
+		const taskHistoryStore = makeStoreStub({
+			atomicReadAndUpdate: vi.fn(async (_taskId: string, updater: (h: HistoryItem) => HistoryItem) => {
+				updater(delegatedParent)
+				return []
+			}),
+			get: vi.fn((id: string) => {
+				if (id === "old-child") return oldChildActive
+				if (id === "parent-1") {
+					return {
+						...delegatedParent,
+						awaitingChildId: "child-2",
+						delegatedToId: "child-2",
+						childIds: ["old-child", "child-2"],
+					}
+				}
+				return undefined
+			}),
+		})
+
+		const provider = {
+			emit: vi.fn(),
+			getCurrentTask: vi.fn(() => parentTask),
+			removeClineFromStack: vi.fn().mockResolvedValue(undefined),
+			createTask: vi.fn().mockResolvedValue({ taskId: "child-2", start: childStart }),
+			handleModeSwitch: vi.fn().mockResolvedValue(undefined),
+			updateTaskHistory,
+			log: vi.fn(),
+			isViewLaunched: false,
+			recentTasksCache: undefined,
+			taskHistoryStore,
+		} as unknown as ClineProvider
+
+		const child = await (ClineProvider.prototype as any).delegateParentAndOpenChild.call(provider, {
+			parentTaskId: "parent-1",
+			message: "Do something else",
+			initialTodos: [],
+			mode: "code",
+		})
+
+		expect(child.taskId).toBe("child-2")
+		expect(childStart).toHaveBeenCalledTimes(1)
+
+		const [, updater] = taskHistoryStore.atomicReadAndUpdate.mock.calls[0]
+		const result = updater(delegatedParent)
+		expect(result).toMatchObject({
+			id: "parent-1",
+			status: "delegated",
+			delegatedToId: "child-2",
+			awaitingChildId: "child-2",
+			childIds: expect.arrayContaining(["old-child", "child-2"]),
+		})
+		// Must not throw: same-status re-delegation (no assertValidTransition for delegated→delegated)
+
+		// Previous active child is superseded to interrupted
+		expect(updateTaskHistory).toHaveBeenCalledWith(
+			expect.objectContaining({ id: "old-child", status: "interrupted" }),
+		)
+	})
+
+	it("throws when parent status cannot be delegated (e.g. completed)", async () => {
+		const parentTask = makeParentTask()
+		const childStart = vi.fn()
+		const completedParent: HistoryItem = {
+			...parentHistoryItem,
+			status: "completed",
+		} as HistoryItem
+
+		const getCurrentTask = vi.fn().mockReturnValue(parentTask)
+		const createTask = vi.fn().mockImplementation(async () => {
+			const child = { taskId: "child-x", start: childStart }
+			getCurrentTask.mockReturnValue(child)
+			return child
+		})
+
+		const taskHistoryStore = makeStoreStub({
+			atomicReadAndUpdate: vi.fn(async (_taskId: string, updater: (h: HistoryItem) => HistoryItem) => {
+				updater(completedParent)
+				return []
+			}),
+		})
+
+		const provider = {
+			emit: vi.fn(),
+			getCurrentTask,
+			removeClineFromStack: vi.fn().mockResolvedValue(undefined),
+			createTask,
+			handleModeSwitch: vi.fn().mockResolvedValue(undefined),
+			deleteTaskWithId: vi.fn().mockResolvedValue(undefined),
+			getTaskWithId: vi.fn().mockResolvedValue({ historyItem: completedParent }),
+			createTaskWithHistoryItem: vi.fn().mockResolvedValue(undefined),
+			log: vi.fn(),
+			isViewLaunched: false,
+			recentTasksCache: undefined,
+			taskHistoryStore,
+		} as unknown as ClineProvider
+
+		await expect(
+			(ClineProvider.prototype as any).delegateParentAndOpenChild.call(provider, {
+				parentTaskId: "parent-1",
+				message: "Nope",
+				initialTodos: [],
+				mode: "code",
+			}),
+		).rejects.toThrow(/invalid status "completed"/)
+
+		expect(childStart).not.toHaveBeenCalled()
+	})
+})
+
+describe("ClineProvider.takeOverParentIfReturningFromChild / showTaskWithId", () => {
+	/** Bind prototype methods onto a plain mock so `this.method` works like a real instance. */
+	function withPrototypeMethods(provider: Record<string, any>) {
+		provider.showTaskWithId = (ClineProvider.prototype as any).showTaskWithId
+		provider.takeOverParentIfReturningFromChild = (
+			ClineProvider.prototype as any
+		).takeOverParentIfReturningFromChild
+		return provider as unknown as ClineProvider
+	}
+
+	it("clears parent delegation when navigating from child back to parent", async () => {
+		const childTask = {
+			taskId: "child-1",
+			parentTaskId: "parent-1",
+		}
+		const parentHistory: HistoryItem = {
+			id: "parent-1",
+			task: "Parent",
+			tokensIn: 0,
+			tokensOut: 0,
+			totalCost: 0,
+			status: "delegated",
+			awaitingChildId: "child-1",
+			delegatedToId: "child-1",
+			childIds: ["child-1"],
+		} as HistoryItem
+		const childHistory: HistoryItem = {
+			id: "child-1",
+			task: "Child",
+			tokensIn: 0,
+			tokensOut: 0,
+			totalCost: 0,
+			status: "active",
+			parentTaskId: "parent-1",
+		} as HistoryItem
+
+		const updateTaskHistory = vi.fn().mockResolvedValue([])
+		const createTaskWithHistoryItem = vi.fn().mockResolvedValue(undefined)
+		const postMessageToWebview = vi.fn().mockResolvedValue(undefined)
+		const cancelledDelegationChildIds = new Set<string>(["child-1"])
+
+		const provider = withPrototypeMethods({
+			getCurrentTask: vi.fn(() => childTask),
+			getTaskWithId: vi.fn(async (id: string) => {
+				if (id === "parent-1") return { historyItem: { ...parentHistory } }
+				throw new Error("not found")
+			}),
+			createTaskWithHistoryItem,
+			postMessageToWebview,
+			updateTaskHistory,
+			log: vi.fn(),
+			taskHistoryStore: {
+				get: vi.fn((id: string) => (id === "child-1" ? childHistory : undefined)),
+			},
+			cancelledDelegationChildIds,
+			runDelegationTransition: vi.fn(async (_id: string, fn: () => Promise<void>) => fn()),
+		})
+
+		await (provider as any).showTaskWithId("parent-1")
+
+		expect(updateTaskHistory).toHaveBeenCalledWith(
+			expect.objectContaining({ id: "child-1", status: "interrupted" }),
+		)
+		expect(updateTaskHistory).toHaveBeenCalledWith(
+			expect.objectContaining({
+				id: "parent-1",
+				status: "active",
+				awaitingChildId: undefined,
+				delegatedToId: undefined,
+			}),
+		)
+		expect(cancelledDelegationChildIds.has("child-1")).toBe(false)
+		expect(createTaskWithHistoryItem).toHaveBeenCalledWith(expect.objectContaining({ id: "parent-1" }))
+		expect(postMessageToWebview).toHaveBeenCalledWith({ type: "action", action: "chatButtonClicked" })
+	})
+
+	it("does not clear delegation when opening an unrelated task", async () => {
+		const childTask = {
+			taskId: "child-1",
+			parentTaskId: "parent-1",
+		}
+		const updateTaskHistory = vi.fn().mockResolvedValue([])
+		const otherHistory: HistoryItem = {
+			id: "other-task",
+			task: "Other",
+			tokensIn: 0,
+			tokensOut: 0,
+			totalCost: 0,
+			status: "active",
+		} as HistoryItem
+
+		const provider = withPrototypeMethods({
+			getCurrentTask: vi.fn(() => childTask),
+			getTaskWithId: vi.fn(async () => ({ historyItem: otherHistory })),
+			createTaskWithHistoryItem: vi.fn().mockResolvedValue(undefined),
+			postMessageToWebview: vi.fn().mockResolvedValue(undefined),
+			updateTaskHistory,
+			log: vi.fn(),
+			taskHistoryStore: { get: vi.fn() },
+			cancelledDelegationChildIds: new Set<string>(),
+			runDelegationTransition: vi.fn(async (_id: string, fn: () => Promise<void>) => fn()),
+		})
+
+		await (provider as any).showTaskWithId("other-task")
+
+		expect(updateTaskHistory).not.toHaveBeenCalled()
+		expect(provider.createTaskWithHistoryItem).toHaveBeenCalledWith(otherHistory)
+	})
 })

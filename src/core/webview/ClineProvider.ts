@@ -2038,12 +2038,80 @@ export class ClineProvider
 
 	async showTaskWithId(id: string) {
 		if (id !== this.getCurrentTask()?.taskId) {
+			// If the user navigates from a delegated child back to its parent,
+			// treat that as taking over the parent: clear the delegation link so
+			// the parent can continue chatting and re-delegate via new_task.
+			// Without this, parent stays "delegated" and the next new_task fails
+			// with delegated → delegated (then rolls back the new child).
+			await this.takeOverParentIfReturningFromChild(id)
+
 			// Non-current task.
 			const { historyItem } = await this.getTaskWithId(id)
 			await this.createTaskWithHistoryItem(historyItem) // Clears existing task.
 		}
 
 		await this.postMessageToWebview({ type: "action", action: "chatButtonClicked" })
+	}
+
+	/**
+	 * When the user opens a parent task while its delegated child is current,
+	 * mark the child interrupted and transition the parent back to active so
+	 * subsequent new_task calls can succeed.
+	 */
+	private async takeOverParentIfReturningFromChild(targetTaskId: string): Promise<void> {
+		const current = this.getCurrentTask()
+		if (!current?.parentTaskId || current.parentTaskId !== targetTaskId) {
+			return
+		}
+
+		const childTaskId = current.taskId
+		const parentTaskId = current.parentTaskId
+
+		try {
+			await this.runDelegationTransition(parentTaskId, async () => {
+				const { historyItem: parentHistory } = await this.getTaskWithId(parentTaskId)
+
+				if (parentHistory?.status === "delegated" && parentHistory?.awaitingChildId === childTaskId) {
+					// Ensure the child is interrupted so removeClineFromStack (called
+					// by createTaskWithHistoryItem) will not try to re-repair, and so
+					// later attempt_completion from this child won't reopen the parent
+					// if the user already re-delegated elsewhere.
+					const childHistory = this.taskHistoryStore.get(childTaskId)
+					if (childHistory && childHistory.status !== "interrupted" && childHistory.status !== "completed") {
+						try {
+							assertValidTransition(childHistory.status, "interrupted")
+							await this.updateTaskHistory({ ...childHistory, status: "interrupted" })
+						} catch (childErr) {
+							this.log(
+								`[takeOverParentIfReturningFromChild] Failed to mark child ${childTaskId} interrupted (non-fatal): ${
+									childErr instanceof Error ? childErr.message : String(childErr)
+								}`,
+							)
+						}
+					}
+
+					assertValidTransition(parentHistory.status, "active")
+					await this.updateTaskHistory({
+						...parentHistory,
+						status: "active",
+						awaitingChildId: undefined,
+						delegatedToId: undefined,
+					})
+					this.cancelledDelegationChildIds.delete(childTaskId)
+					this.log(
+						`[takeOverParentIfReturningFromChild] User returned to parent ${parentTaskId}; ` +
+							`cleared delegation to child ${childTaskId} (parent → active)`,
+					)
+				}
+			})
+		} catch (err) {
+			// Non-fatal: still allow navigation; re-delegation path is a second line of defense.
+			this.log(
+				`[takeOverParentIfReturningFromChild] Failed for parent ${parentTaskId} / child ${childTaskId} (non-fatal): ${
+					err instanceof Error ? err.message : String(err)
+				}`,
+			)
+		}
 	}
 
 	async exportTaskWithId(id: string) {
@@ -3645,9 +3713,25 @@ export class ClineProvider
 		//    single lock acquisition — no concurrent writer can slip between the read and
 		//    write, and the pure updater cannot re-enter the lock (no deadlock).
 		//    Broadcast and cache invalidation happen outside the lock after it releases.
+		//
+		//    Re-delegation: if the parent is already "delegated" (e.g. user returned from
+		//    an interrupted child and is creating a new child), keep status as delegated
+		//    and only repoint awaitingChildId/delegatedToId. This is a same-status field
+		//    update, not delegated → delegated (which assertValidTransition forbids).
+		let previousAwaitingChildId: string | undefined
 		try {
 			await this.taskHistoryStore.atomicReadAndUpdate(parentTaskId, (historyItem) => {
-				assertValidTransition(historyItem.status, "delegated")
+				const currentStatus = historyItem.status ?? "active"
+				if (currentStatus === "delegated") {
+					// Same-status re-delegation: repoint to the new child without a status transition.
+					previousAwaitingChildId = historyItem.awaitingChildId
+				} else if (currentStatus === "active" || historyItem.status === undefined) {
+					assertValidTransition(historyItem.status, "delegated")
+				} else {
+					throw new Error(
+						`Cannot delegate parent ${parentTaskId}: invalid status "${currentStatus}" (expected active or delegated)`,
+					)
+				}
 				const childIds = Array.from(new Set([...(historyItem.childIds ?? []), child.taskId]))
 				return {
 					...historyItem,
@@ -3658,6 +3742,33 @@ export class ClineProvider
 				}
 			})
 			this.recentTasksCache = undefined
+
+			// Supersede the previous child when re-delegating so it cannot later
+			// attempt_completion and reopen this parent for a stale handoff.
+			if (previousAwaitingChildId && previousAwaitingChildId !== child.taskId) {
+				const oldChild = this.taskHistoryStore.get(previousAwaitingChildId)
+				if (oldChild && oldChild.status !== "interrupted" && oldChild.status !== "completed") {
+					try {
+						assertValidTransition(oldChild.status, "interrupted")
+						await this.updateTaskHistory({ ...oldChild, status: "interrupted" })
+						this.log(
+							`[delegateParentAndOpenChild] Superseded previous child ${previousAwaitingChildId} → interrupted ` +
+								`(parent ${parentTaskId} re-delegated to ${child.taskId})`,
+						)
+					} catch (supersedeErr) {
+						this.log(
+							`[delegateParentAndOpenChild] Failed to mark superseded child ${previousAwaitingChildId} interrupted (non-fatal): ${
+								supersedeErr instanceof Error ? supersedeErr.message : String(supersedeErr)
+							}`,
+						)
+					}
+				} else if (previousAwaitingChildId) {
+					this.log(
+						`[delegateParentAndOpenChild] Re-delegated parent ${parentTaskId}: ${previousAwaitingChildId} → ${child.taskId}`,
+					)
+				}
+			}
+
 			if (this.isViewLaunched) {
 				const updatedItem = this.taskHistoryStore.get(parentTaskId)
 				if (updatedItem) {
