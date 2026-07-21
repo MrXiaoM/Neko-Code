@@ -545,6 +545,63 @@ describe("ClineProvider", () => {
 		expect(mockWebviewView.webview.html).toContain("<!DOCTYPE html>")
 	})
 
+	describe("webview health recovery", () => {
+		let visibilityCallback: () => void
+
+		beforeEach(async () => {
+			mockWebviewView.onDidChangeVisibility = vi.fn().mockImplementation((cb: () => void) => {
+				visibilityCallback = cb
+				return { dispose: vi.fn() }
+			})
+			await provider.resolveWebviewView(mockWebviewView)
+			;(mockOutputChannel.appendLine as ReturnType<typeof vi.fn>).mockClear()
+			mockPostMessage.mockClear()
+		})
+
+		test("posts didBecomeVisible without reloading when the webview responds to health check", async () => {
+			const initialHtml = mockWebviewView.webview.html
+			const getMessageHandler = () => {
+				const calls = (mockWebviewView.webview.onDidReceiveMessage as any).mock.calls
+				return calls[calls.length - 1][0]
+			}
+
+			mockPostMessage.mockImplementation(async (message: ExtensionMessage) => {
+				if (message.type === "webviewHealthCheck") {
+					await getMessageHandler()({ type: "webviewHealthCheckAck" })
+				}
+			})
+
+			Object.defineProperty(mockWebviewView, "visible", { value: true, configurable: true })
+			visibilityCallback()
+			await new Promise((resolve) => setImmediate(resolve))
+
+			expect(mockPostMessage).toHaveBeenCalledWith({ type: "webviewHealthCheck" })
+			expect(mockPostMessage).toHaveBeenCalledWith({ type: "action", action: "didBecomeVisible" })
+			expect(mockWebviewView.webview.html).toBe(initialHtml)
+			expect(mockOutputChannel.appendLine).not.toHaveBeenCalledWith(
+				expect.stringContaining("Webview did not respond to health check"),
+			)
+		})
+
+		test("reloads webview html when the visible sidebar does not answer health check", async () => {
+			mockWebviewView.webview.html = ""
+			const listenerCountBefore = (mockWebviewView.webview.onDidReceiveMessage as any).mock.calls.length
+
+			Object.defineProperty(mockWebviewView, "visible", { value: true, configurable: true })
+			visibilityCallback()
+			await new Promise((resolve) => setImmediate(resolve))
+
+			expect(mockPostMessage).toHaveBeenCalledWith({ type: "webviewHealthCheck" })
+			expect(mockOutputChannel.appendLine).toHaveBeenCalledWith(
+				expect.stringContaining("Webview did not respond to health check"),
+			)
+			expect(mockWebviewView.webview.html).toContain("<!DOCTYPE html>")
+			expect((mockWebviewView.webview.onDidReceiveMessage as any).mock.calls.length).toBeGreaterThan(
+				listenerCountBefore,
+			)
+		})
+	})
+
 	describe("logWebviewHiddenDiagnostics", () => {
 		let visibilityCallback: () => void
 

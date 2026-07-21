@@ -163,6 +163,7 @@ export class ClineProvider
 	private static activeInstances: Set<ClineProvider> = new Set()
 	private disposables: vscode.Disposable[] = []
 	private webviewDisposables: vscode.Disposable[] = []
+	private webviewMessageDisposable?: vscode.Disposable
 	private view?: vscode.WebviewView | vscode.WebviewPanel
 	private clineStack: Task[] = []
 	private delegationTransitionLocks?: Map<string, Promise<void>>
@@ -192,8 +193,11 @@ export class ClineProvider
 	public readonly taskHistoryStore: TaskHistoryStore
 	private taskHistoryStoreInitialized = false
 	private globalStateWriteThroughTimer: ReturnType<typeof setTimeout> | null = null
+	private lastWebviewHealthAck = 0
+	private webviewHealthCheckInFlight?: Promise<void>
 	private static readonly GLOBAL_STATE_WRITE_THROUGH_DEBOUNCE_MS = 5000 // 5 seconds
 	private static readonly PENDING_OPERATION_TIMEOUT_MS = 30000 // 30 seconds
+	private static readonly WEBVIEW_HEALTH_CHECK_TIMEOUT_MS = 750
 
 	private runDelegationTransition<T>(parentTaskId: string, fn: () => Promise<T>): Promise<T> {
 		this.delegationTransitionLocks ??= new Map()
@@ -634,12 +638,18 @@ export class ClineProvider
 	- https://github.com/microsoft/vscode-extension-samples/blob/main/webview-sample/src/extension.ts
 	*/
 	private clearWebviewResources() {
+		this.clearWebviewMessageListener()
 		while (this.webviewDisposables.length) {
 			const x = this.webviewDisposables.pop()
 			if (x) {
 				x.dispose()
 			}
 		}
+	}
+
+	private clearWebviewMessageListener() {
+		this.webviewMessageDisposable?.dispose()
+		this.webviewMessageDisposable = undefined
 	}
 
 	async dispose() {
@@ -865,14 +875,7 @@ export class ClineProvider
 			localResourceRoots: resourceRoots,
 		}
 
-		webviewView.webview.html =
-			this.contextProxy.extensionMode === vscode.ExtensionMode.Development
-				? await this.getHMRHtmlContent(webviewView.webview)
-				: await this.getHtmlContent(webviewView.webview)
-
-		// Sets up an event listener to listen for messages passed from the webview view context
-		// and executes code based on the message that is received.
-		this.setWebviewMessageListener(webviewView.webview)
+		await this.initializeWebviewContent(webviewView.webview)
 
 		// Initialize code index status subscription for the current workspace.
 		this.updateCodeIndexStatusSubscription()
@@ -903,7 +906,7 @@ export class ClineProvider
 			// sidebar
 			const visibilityDisposable = webviewView.onDidChangeVisibility(() => {
 				if (this.view?.visible) {
-					this.postMessageToWebview({ type: "action", action: "didBecomeVisible" })
+					void this.ensureWebviewResponsive()
 				} else {
 					this.logWebviewHiddenDiagnostics()
 				}
@@ -1431,6 +1434,51 @@ export class ClineProvider
       `
 	}
 
+	private async initializeWebviewContent(webview: vscode.Webview) {
+		this.clearWebviewMessageListener()
+		this.lastWebviewHealthAck = 0
+		webview.html =
+			this.contextProxy.extensionMode === vscode.ExtensionMode.Development
+				? await this.getHMRHtmlContent(webview)
+				: await this.getHtmlContent(webview)
+		this.setWebviewMessageListener(webview)
+	}
+
+	public markWebviewHealthy(): void {
+		this.lastWebviewHealthAck = Date.now()
+		this.isViewLaunched = true
+	}
+
+	private async ensureWebviewResponsive(): Promise<void> {
+		if (this._disposed || !this.view?.visible || this.webviewHealthCheckInFlight) {
+			return this.webviewHealthCheckInFlight
+		}
+
+		this.webviewHealthCheckInFlight = this.checkWebviewHealthAndRecover().finally(() => {
+			this.webviewHealthCheckInFlight = undefined
+		})
+
+		return this.webviewHealthCheckInFlight
+	}
+
+	private async checkWebviewHealthAndRecover(): Promise<void> {
+		const previousAck = this.lastWebviewHealthAck
+		await this.postMessageToWebview({ type: "webviewHealthCheck" })
+		await delay(ClineProvider.WEBVIEW_HEALTH_CHECK_TIMEOUT_MS)
+
+		if (this._disposed || !this.view?.visible) {
+			return
+		}
+
+		if (this.lastWebviewHealthAck > previousAck) {
+			await this.postMessageToWebview({ type: "action", action: "didBecomeVisible" })
+			return
+		}
+
+		this.log("[Zoo Code] Webview did not respond to health check; reloading webview content.")
+		await this.initializeWebviewContent(this.view.webview)
+	}
+
 	/**
 	 * Sets up an event listener to listen for messages passed from the webview context and
 	 * executes code based on the message that is received.
@@ -1441,8 +1489,8 @@ export class ClineProvider
 		const onReceiveMessage = async (message: WebviewMessage) =>
 			webviewMessageHandler(this, message, this.marketplaceManager)
 
-		const messageDisposable = webview.onDidReceiveMessage(onReceiveMessage)
-		this.webviewDisposables.push(messageDisposable)
+		this.clearWebviewMessageListener()
+		this.webviewMessageDisposable = webview.onDidReceiveMessage(onReceiveMessage)
 	}
 
 	/**

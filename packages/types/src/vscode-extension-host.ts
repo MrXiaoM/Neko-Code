@@ -103,6 +103,7 @@ export interface ExtensionMessage {
 		| "rules"
 		| "fileContent"
 		| "rooHistoryImportProgress"
+		| "webviewHealthCheck"
 	text?: string
 	/** For fileContent: { path, content, error? } */
 	fileContent?: { path: string; content: string | null; error?: string }
@@ -457,6 +458,7 @@ export interface WebviewMessage {
 		| "getListApiConfiguration"
 		| "customInstructions"
 		| "webviewDidLaunch"
+		| "webviewHealthCheckAck"
 		| "newTask"
 		| "askResponse"
 		| "terminalOperation"

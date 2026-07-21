@@ -557,7 +557,11 @@ export const webviewMessageHandler = async (
 	}
 
 	switch (message.type) {
+		case "webviewHealthCheckAck":
+			provider.markWebviewHealthy()
+			break
 		case "webviewDidLaunch":
+			provider.markWebviewHealthy()
 			// Load custom modes first
 			const customModes = await provider.customModesManager.getCustomModes()
 			await updateGlobalState("customModes", customModes)
