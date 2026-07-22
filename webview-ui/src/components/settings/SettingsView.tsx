@@ -130,7 +130,7 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 	const { t } = useAppTranslation()
 
 	const extensionState = useExtensionState()
-	const { currentApiConfigName, listApiConfigMeta, uriScheme, settingsImportedAt } = extensionState
+	const { currentApiConfigName, listApiConfigMeta, uriScheme, settingsImportedAt, mode } = extensionState
 
 	const [isDiscardDialogShow, setDiscardDialogShow] = useState(false)
 	const [isChangeDetected, setChangeDetected] = useState(false)
@@ -147,6 +147,7 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 	const contentRef = useRef<HTMLDivElement | null>(null)
 
 	const prevApiConfigName = useRef(currentApiConfigName)
+	const prevMode = useRef(mode)
 	const handledSettingsImportedAt = useRef<number | undefined>(undefined)
 	const confirmDialogHandler = useRef<() => void>()
 
@@ -245,15 +246,21 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 		lastApiConfigurationRef.current = extensionState.apiConfiguration
 
 		const profileNameChanged = prevApiConfigName.current !== currentApiConfigName
+		const modeChanged = prevMode.current !== mode
 
-		// Skip if neither currentApiConfigName nor apiConfiguration changed.
-		if (!apiConfigChanged && !profileNameChanged) {
+		// Skip if neither profile name, mode, nor apiConfiguration changed.
+		// Mode is load-bearing: mode switches can update the active provider config
+		// without changing currentApiConfigName (see upstream #925).
+		if (!apiConfigChanged && !profileNameChanged && !modeChanged) {
 			return
 		}
 
-		// Chat switched the active profile — adopt that profile and clear dirty.
-		if (profileNameChanged) {
+		// Chat switched the active profile or mode — adopt that config and clear dirty.
+		// Mode changes intentionally reset unsaved settings-buffer edits, matching the
+		// upstream behavior of syncing cachedState when the mode-bound provider changes.
+		if (profileNameChanged || modeChanged) {
 			prevApiConfigName.current = currentApiConfigName
+			prevMode.current = mode
 			setCachedState((prevCachedState) => ({
 				...prevCachedState,
 				apiConfiguration: extensionState.apiConfiguration ?? prevCachedState.apiConfiguration,
@@ -275,7 +282,7 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 			...prevCachedState,
 			apiConfiguration: extensionState.apiConfiguration ?? prevCachedState.apiConfiguration,
 		}))
-	}, [currentApiConfigName, extensionState])
+	}, [currentApiConfigName, mode, extensionState])
 
 	// Bust the cache when settings are imported.
 	useEffect(() => {
