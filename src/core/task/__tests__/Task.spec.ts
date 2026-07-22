@@ -2912,7 +2912,7 @@ describe("Queued message processing after condense", () => {
 		apiKey: "test-api-key",
 	} as any
 
-	it("processes queued message after condense completes", async () => {
+	it("processes queued message after condense when a conversational ask is waiting", async () => {
 		const provider = createProvider()
 		const task = new Task({
 			provider,
@@ -2924,6 +2924,21 @@ describe("Queued message processing after condense", () => {
 		// Make condense fast + deterministic
 		vi.spyOn(task as any, "getSystemPrompt").mockResolvedValue("system")
 		const submitSpy = vi.spyOn(task, "submitUserMessage").mockResolvedValue(undefined)
+
+		// Conversational ask must be pending; otherwise processQueuedMessages keeps the queue
+		// for consumeQueuedMessagesForNextTurn (no blind submit into a void askResponse).
+		task.userMessageContentReady = true
+		task.assistantMessageContent = []
+		task.clineMessages = [
+			{
+				ts: Date.now(),
+				type: "ask",
+				ask: "followup",
+				text: "Need more info?",
+				partial: false,
+			} as any,
+		]
+		;(task as any).askResponse = undefined
 
 		// Queue a message during condensing
 		task.messageQueueService.addMessage("queued text", ["img1.png"])
@@ -2938,6 +2953,35 @@ describe("Queued message processing after condense", () => {
 
 		expect(submitSpy).toHaveBeenCalledWith("queued text", ["img1.png"])
 		expect(task.messageQueueService.isEmpty()).toBe(true)
+	})
+
+	it("does not blind-submit queued messages after condense when no ask is waiting", async () => {
+		const provider = createProvider()
+		const task = new Task({
+			provider,
+			apiConfiguration: apiConfig,
+			task: "initial task",
+			startTask: false,
+		})
+
+		vi.spyOn(task as any, "getSystemPrompt").mockResolvedValue("system")
+		const submitSpy = vi.spyOn(task, "submitUserMessage").mockResolvedValue(undefined)
+
+		task.userMessageContentReady = true
+		task.assistantMessageContent = []
+		task.clineMessages = []
+		;(task as any).askResponse = undefined
+		task.messageQueueService.addMessage("queued without ask")
+
+		vi.useFakeTimers()
+		await task.condenseContext()
+		vi.runAllTimers()
+		vi.useRealTimers()
+
+		// Keep the message for the agentic turn-boundary consumer instead of losing it.
+		expect(submitSpy).not.toHaveBeenCalled()
+		expect(task.messageQueueService.isEmpty()).toBe(false)
+		expect(task.messageQueueService.messages[0]?.text).toBe("queued without ask")
 	})
 
 	it("does not drain queue while assistant turn is still presenting tools", async () => {
@@ -3020,6 +3064,22 @@ describe("Queued message processing after condense", () => {
 		const spyA = vi.spyOn(taskA, "submitUserMessage").mockResolvedValue(undefined)
 		const spyB = vi.spyOn(taskB, "submitUserMessage").mockResolvedValue(undefined)
 
+		// Pending conversational asks so processQueuedMessages is allowed to drain.
+		for (const task of [taskA, taskB]) {
+			task.userMessageContentReady = true
+			task.assistantMessageContent = []
+			task.clineMessages = [
+				{
+					ts: Date.now(),
+					type: "ask",
+					ask: "followup",
+					text: "?",
+					partial: false,
+				} as any,
+			]
+			;(task as any).askResponse = undefined
+		}
+
 		taskA.messageQueueService.addMessage("A message")
 		taskB.messageQueueService.addMessage("B message")
 
@@ -3041,6 +3101,144 @@ describe("Queued message processing after condense", () => {
 
 		expect(spyB).toHaveBeenCalledWith("B message", undefined)
 		expect(taskB.messageQueueService.isEmpty()).toBe(true)
+	})
+
+	it("injects queued messages into next-turn content at the turn boundary", async () => {
+		const provider = createProvider()
+		const task = new Task({
+			provider,
+			apiConfiguration: apiConfig,
+			task: "initial task",
+			startTask: false,
+		})
+		const saySpy = vi.spyOn(task, "say").mockResolvedValue(undefined as any)
+
+		// Turn finished: tools done, ready for next API request.
+		task.userMessageContentReady = true
+		task.assistantMessageContent = []
+		task.userMessageContent = [{ type: "text", text: "tool_result payload" }]
+		task.clineMessages = []
+		;(task as any).askResponse = undefined
+
+		const imageDataUrl = "data:image/png;base64,aaa"
+		task.messageQueueService.addMessage("i18n only needs en and zh-CN")
+		task.messageQueueService.addMessage("second queued note", [imageDataUrl])
+
+		const consumed = await task.consumeQueuedMessagesForNextTurn()
+
+		expect(consumed).toBe(2)
+		expect(task.messageQueueService.isEmpty()).toBe(true)
+		expect(saySpy).toHaveBeenCalledWith("user_feedback", "i18n only needs en and zh-CN", undefined)
+		expect(saySpy).toHaveBeenCalledWith("user_feedback", "second queued note", [imageDataUrl])
+		expect(task.userMessageContent).toEqual(
+			expect.arrayContaining([
+				{ type: "text", text: "tool_result payload" },
+				{
+					type: "text",
+					text: "<user_message>\ni18n only needs en and zh-CN\n</user_message>",
+				},
+				{
+					type: "text",
+					text: "<user_message>\nsecond queued note\n</user_message>",
+				},
+				expect.objectContaining({
+					type: "image",
+					source: expect.objectContaining({ type: "base64", media_type: "image/png" }),
+				}),
+			]),
+		)
+	})
+
+	it("does not inject queued messages mid-turn via consumeQueuedMessagesForNextTurn", async () => {
+		const provider = createProvider()
+		const task = new Task({
+			provider,
+			apiConfiguration: apiConfig,
+			task: "initial task",
+			startTask: false,
+		})
+		const saySpy = vi.spyOn(task, "say").mockResolvedValue(undefined as any)
+
+		task.userMessageContentReady = false
+		task.assistantMessageContent = [{ type: "tool_use", name: "apply_diff", params: {}, partial: false } as any]
+		task.userMessageContent = []
+		task.messageQueueService.addMessage("please also fix the tests")
+
+		const consumed = await task.consumeQueuedMessagesForNextTurn()
+
+		expect(consumed).toBe(0)
+		expect(saySpy).not.toHaveBeenCalled()
+		expect(task.messageQueueService.isEmpty()).toBe(false)
+		expect(task.userMessageContent).toEqual([])
+	})
+
+	it("does not inject queued messages while blocked on tool approval", async () => {
+		const provider = createProvider()
+		const task = new Task({
+			provider,
+			apiConfiguration: apiConfig,
+			task: "initial task",
+			startTask: false,
+		})
+		const saySpy = vi.spyOn(task, "say").mockResolvedValue(undefined as any)
+
+		task.userMessageContentReady = true
+		task.assistantMessageContent = []
+		task.clineMessages = [
+			{
+				ts: Date.now(),
+				type: "ask",
+				ask: "tool",
+				text: JSON.stringify({ tool: "appliedDiff" }),
+				partial: false,
+			} as any,
+		]
+		task.messageQueueService.addMessage("queued during tool approval")
+
+		const consumed = await task.consumeQueuedMessagesForNextTurn()
+
+		expect(consumed).toBe(0)
+		expect(saySpy).not.toHaveBeenCalled()
+		expect(task.messageQueueService.isEmpty()).toBe(false)
+	})
+
+	it("leaves queue for conversational ask drain instead of turn-boundary inject", async () => {
+		const provider = createProvider()
+		const task = new Task({
+			provider,
+			apiConfiguration: apiConfig,
+			task: "initial task",
+			startTask: false,
+		})
+		const saySpy = vi.spyOn(task, "say").mockResolvedValue(undefined as any)
+		const submitSpy = vi.spyOn(task, "submitUserMessage").mockResolvedValue(undefined)
+
+		task.userMessageContentReady = true
+		task.assistantMessageContent = []
+		task.clineMessages = [
+			{
+				ts: Date.now(),
+				type: "ask",
+				ask: "followup",
+				text: "Which option?",
+				partial: false,
+			} as any,
+		]
+		;(task as any).askResponse = undefined
+		task.messageQueueService.addMessage("option B")
+
+		// Turn-boundary consumer must not steal the message from the waiting ask.
+		expect(await task.consumeQueuedMessagesForNextTurn()).toBe(0)
+		expect(task.messageQueueService.isEmpty()).toBe(false)
+
+		vi.useFakeTimers()
+		task.processQueuedMessages()
+		vi.runAllTimers()
+		vi.useRealTimers()
+
+		expect(submitSpy).toHaveBeenCalledWith("option B", undefined)
+		expect(saySpy).not.toHaveBeenCalledWith("user_feedback", expect.anything(), expect.anything())
+		expect(task.messageQueueService.isEmpty()).toBe(true)
 	})
 })
 

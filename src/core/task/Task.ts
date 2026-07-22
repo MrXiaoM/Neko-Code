@@ -3685,6 +3685,11 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 						)
 					}
 
+					// Drain messages queued while tools/streaming ran into this next-turn
+					// user content. Without this, queued text only surfaces on a later
+					// conversational ask (e.g. completion_result) and feels "stuck".
+					await this.consumeQueuedMessagesForNextTurn()
+
 					// If the model did not tool use, then we need to tell it to
 					// either use a tool or attempt_completion.
 					const didToolUse = this.assistantMessageContent.some(
@@ -4838,12 +4843,98 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 	}
 
 	/**
-	 * Process any queued messages by dequeuing and submitting them.
+	 * Latest unanswered, non-partial ask currently shown in chat (if any).
+	 */
+	private getPendingBlockingAsk(): ClineMessage | undefined {
+		return findLast(this.clineMessages, (msg) => msg.type === "ask" && !msg.isAnswered && msg.partial !== true)
+	}
+
+	/**
+	 * Asks that must never be auto-fulfilled from the message queue.
+	 * messageResponse is treated as reject for tool/command/mcp approvals.
+	 */
+	private isDangerousApprovalAsk(ask: ClineAsk | undefined): boolean {
+		return ask === "tool" || ask === "command" || ask === "use_mcp_server" || ask === "command_output"
+	}
+
+	/**
+	 * True while the assistant turn still has tool/content blocks to present/execute.
+	 * Draining the queue here would drop messages (no ask() is waiting).
+	 */
+	private isMidAssistantTurn(): boolean {
+		return !this.userMessageContentReady && this.assistantMessageContent.length > 0
+	}
+
+	/**
+	 * At agentic-loop turn boundaries, fold every queued user message into the
+	 * next API user content and surface them in chat as user_feedback.
+	 *
+	 * This is the path that makes messages queued during tool execution arrive
+	 * on the *next* model turn instead of waiting for completion_result.
+	 */
+	public async consumeQueuedMessagesForNextTurn(): Promise<number> {
+		if (this.messageQueueService.isEmpty() || this.abort || this.abandoned) {
+			return 0
+		}
+
+		// Never inject while more assistant blocks may still run.
+		if (this.isMidAssistantTurn()) {
+			return 0
+		}
+
+		const pendingAsk = this.getPendingBlockingAsk()
+		if (this.isDangerousApprovalAsk(pendingAsk?.ask)) {
+			return 0
+		}
+
+		// If a conversational ask is actively waiting, leave the queue for
+		// processQueuedMessages / ask() drain so the ask can resolve cleanly.
+		if (pendingAsk && this.askResponse === undefined) {
+			return 0
+		}
+
+		let consumed = 0
+		while (!this.messageQueueService.isEmpty()) {
+			const queued = this.messageQueueService.dequeueMessage()
+			if (!queued) {
+				break
+			}
+
+			const text = (queued.text ?? "").trim()
+			const images = queued.images ?? []
+			if (!text && images.length === 0) {
+				continue
+			}
+
+			// Show in the chat timeline immediately.
+			await this.say("user_feedback", text || undefined, images.length ? images : undefined)
+
+			if (text) {
+				this.userMessageContent.push({
+					type: "text",
+					text: `<user_message>\n${text}\n</user_message>`,
+				})
+			}
+			if (images.length > 0) {
+				this.userMessageContent.push(...formatResponse.imageBlocks(images))
+			}
+			consumed++
+		}
+
+		return consumed
+	}
+
+	/**
+	 * Process any queued messages by dequeuing and submitting them into a
+	 * waiting conversational ask (followup, completion_result, etc.).
 	 *
 	 * SAFETY: Must NOT drain the queue while:
 	 * - Mid assistant turn (more tool blocks may still run) — would drop the message
 	 *   because no ask() is waiting for handleWebviewAskResponse.
 	 * - Blocked on tool/command/mcp approval — messageResponse is treated as reject.
+	 * - No conversational ask is waiting — submitUserMessage would set askResponse
+	 *   that the next ask() immediately clears; use consumeQueuedMessagesForNextTurn
+	 *   at the agentic-loop boundary instead.
 	 *
 	 * Tools like apply_diff used to call this unconditionally after every edit,
 	 * which "squeezed out" user-queued messages.
@@ -4855,22 +4946,21 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 			}
 
 			// Still presenting assistant content (e.g. after apply_diff, more tools may follow).
-			if (!this.userMessageContentReady && this.assistantMessageContent.length > 0) {
+			if (this.isMidAssistantTurn()) {
 				return
 			}
 
-			// Never auto-drain into a dangerous approval ask (would reject the tool/command).
-			const pendingAsk = findLast(
-				this.clineMessages,
-				(msg) => msg.type === "ask" && !msg.isAnswered && msg.partial !== true,
-			)
+			const pendingAsk = this.getPendingBlockingAsk()
 			const pendingAskType = pendingAsk?.ask
-			if (
-				pendingAskType === "tool" ||
-				pendingAskType === "command" ||
-				pendingAskType === "use_mcp_server" ||
-				pendingAskType === "command_output"
-			) {
+
+			// Never auto-drain into a dangerous approval ask (would reject the tool/command).
+			if (this.isDangerousApprovalAsk(pendingAskType)) {
+				return
+			}
+
+			// Only submit into an active conversational ask. Otherwise keep the
+			// queue for consumeQueuedMessagesForNextTurn at the turn boundary.
+			if (!pendingAsk || this.askResponse !== undefined) {
 				return
 			}
 
