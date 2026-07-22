@@ -191,6 +191,9 @@
 		"toolMcp": "{{agentName}} wants to use an MCP tool",
 		"followup": "{{agentName}} has a question",
 		"use_mcp_server": "{{agentName}} wants to use an MCP server",
+		"completionTitle": "Task completed!",
+		"completion": "{{agentName}} finished the task. Please take a look.",
+		"completionWithText": "{{agentName}} finished the task: {{result}}",
 		"review": "Review"
 	},
 	"answers": {

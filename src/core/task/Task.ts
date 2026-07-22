@@ -1381,6 +1381,24 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 						if (message) {
 							this.idleAsk = message
 							this.emit(RooCodeEventName.TaskIdle, this.taskId)
+
+							// Task finished and is waiting on the completion UI. Mirror the
+							// interactive-approval toast so unfocused windows still surface it.
+							if (type === "completion_result" && !this.abort && !this.abandoned) {
+								const lastCompletionSay = [...this.clineMessages]
+									.reverse()
+									.find((m) => m.type === "say" && m.say === "completion_result" && !m.partial)
+								void notifyApprovalIfWindowUnfocused({
+									ask: type,
+									text: lastCompletionSay?.text ?? message.text ?? text,
+									detail: type,
+								}).catch((error) => {
+									console.error(
+										"[Task#ask] notifyApprovalIfWindowUnfocused (completion) failed:",
+										error,
+									)
+								})
+							}
 						}
 					}, statusMutationTimeout),
 				)

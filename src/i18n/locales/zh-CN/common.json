@@ -196,6 +196,9 @@
 		"toolMcp": "{{agentName}} 想要使用 MCP 工具",
 		"followup": "{{agentName}} 有一个问题",
 		"use_mcp_server": "{{agentName}} 想要使用 MCP 服务",
+		"completionTitle": "任务完成啦！",
+		"completion": "{{agentName}} 完成任务了，请主人查看。",
+		"completionWithText": "{{agentName}} 完成任务了：{{result}}",
 		"review": "查看"
 	},
 	"answers": {

@@ -564,6 +564,22 @@ export function buildApprovalNotificationCopy(options?: {
 		return { title, body: t("common:approvalNotification.followup") }
 	}
 
+	if (ask === "completion_result") {
+		const completionTitle = t("common:approvalNotification.completionTitle")
+		const resolvedTitle =
+			completionTitle && completionTitle !== "common:approvalNotification.completionTitle"
+				? completionTitle
+				: title
+		if (raw) {
+			const short = raw.length > 120 ? `${raw.slice(0, 117)}...` : raw
+			return {
+				title: resolvedTitle,
+				body: t("common:approvalNotification.completionWithText", { result: short }),
+			}
+		}
+		return { title: resolvedTitle, body: t("common:approvalNotification.completion") }
+	}
+
 	if (ask === "use_mcp_server") {
 		return { title, body: t("common:approvalNotification.use_mcp_server") }
 	}

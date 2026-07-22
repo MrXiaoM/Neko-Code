@@ -8,6 +8,7 @@ import { Package } from "../../../shared/package"
 import {
 	__resetApprovalNotificationStateForTests,
 	buildApprovalFocusUri,
+	buildApprovalNotificationCopy,
 	buildWindowsToastXml,
 	escapeXmlForToast,
 	focusTargetWorkspaceWindow,
@@ -93,6 +94,15 @@ vi.mock("../../../i18n", () => ({
 		}
 		if (key === "common:approvalNotification.followup") {
 			return "Mirai has a question"
+		}
+		if (key === "common:approvalNotification.completionTitle") {
+			return "Task completed!"
+		}
+		if (key === "common:approvalNotification.completion") {
+			return "Mirai finished the task. Please take a look."
+		}
+		if (key === "common:approvalNotification.completionWithText") {
+			return `Mirai finished the task: ${options?.result}`
 		}
 		if (key === "common:approvalNotification.review") {
 			return "查看"
@@ -517,6 +527,56 @@ describe("approvalNotification", () => {
 			await expect(notifyApprovalIfWindowUnfocused()).resolves.toBeUndefined()
 			expect(consoleSpy).toHaveBeenCalled()
 			consoleSpy.mockRestore()
+		})
+
+		it("shows a completion toast when unfocused with result summary", async () => {
+			;(vscode.window.state as { focused: boolean }).focused = false
+
+			await notifyApprovalIfWindowUnfocused({
+				ask: "completion_result",
+				text: "All tests passed",
+			})
+
+			expect(execaMock).toHaveBeenCalled()
+			const written = String(vi.mocked(fs.writeFileSync).mock.calls.at(-1)?.[1] ?? "")
+			expect(written).toContain("Task completed!")
+			expect(written).toContain("Mirai finished the task: All tests passed")
+			expect(written).toContain("查看")
+			expect(written).toContain(escapeXmlForToast(buildApprovalFocusUri()))
+		})
+
+		it("does not show completion toast when focused", async () => {
+			;(vscode.window.state as { focused: boolean }).focused = true
+			await notifyApprovalIfWindowUnfocused({
+				ask: "completion_result",
+				text: "Done",
+			})
+			expect(execaMock).not.toHaveBeenCalled()
+		})
+	})
+
+	describe("buildApprovalNotificationCopy", () => {
+		it("builds completion copy with and without result text", () => {
+			expect(buildApprovalNotificationCopy({ ask: "completion_result" })).toEqual({
+				title: "Task completed!",
+				body: "Mirai finished the task. Please take a look.",
+			})
+			expect(
+				buildApprovalNotificationCopy({
+					ask: "completion_result",
+					text: "Fixed the merge conflict",
+				}),
+			).toEqual({
+				title: "Task completed!",
+				body: "Mirai finished the task: Fixed the merge conflict",
+			})
+		})
+
+		it("truncates long completion result text", () => {
+			const long = "x".repeat(150)
+			const copy = buildApprovalNotificationCopy({ ask: "completion_result", text: long })
+			expect(copy.body).toContain("...")
+			expect(copy.body.length).toBeLessThan(long.length + 40)
 		})
 	})
 
