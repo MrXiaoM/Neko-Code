@@ -1242,6 +1242,8 @@ describe("History resume delegation - parent metadata transitions", () => {
 				historyItem: { parentTaskId: "parent-566" },
 				providerRef: { deref: () => provider },
 				say: vi.fn().mockResolvedValue(undefined),
+				// AttemptCompletionTool flushes messages before/after completion wait.
+				persistMessages: vi.fn().mockResolvedValue(true),
 				emit: vi.fn(),
 				getTokenUsage: vi.fn(() => ({})),
 				toolUsage: {},
