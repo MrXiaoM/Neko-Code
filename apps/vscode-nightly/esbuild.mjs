@@ -74,6 +74,12 @@ async function main() {
 							["integrations", "integrations"],
 							["node_modules/vscode-material-icons/generated", "assets/vscode-material-icons"],
 							["../webview-ui/audio", "webview-ui/audio"],
+							// SnoreToast from node-notifier (not committed); packaged under dist for vsix.
+							[
+								"node_modules/node-notifier/vendor/snoreToast",
+								"dist/assets/snoretoast",
+								{ optional: true },
+							],
 						],
 						srcDir,
 						buildDir,

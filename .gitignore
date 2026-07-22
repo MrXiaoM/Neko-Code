@@ -16,6 +16,10 @@ mock/
 bin/
 *.vsix
 
+# Windows binaries (e.g. snoretoast) — copy from node_modules at build time into dist/
+*.exe
+src/assets/snoretoast/
+
 # Local prompts and rules
 /local-prompts
 AGENTS.local.md

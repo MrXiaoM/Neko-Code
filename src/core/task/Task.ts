@@ -65,7 +65,7 @@ import { ApiStream, GroundingSource } from "../../api/transform/stream"
 import { maybeRemoveImageBlocks } from "../../api/transform/image-cleaning"
 
 // shared
-import { findLastIndex } from "../../shared/array"
+import { findLast, findLastIndex } from "../../shared/array"
 import { combineApiRequests } from "../../shared/combineApiRequests"
 import { combineCommandSequences } from "../../shared/combineCommandSequences"
 import { t } from "../../i18n"
@@ -83,6 +83,7 @@ import { RepoPerTaskCheckpointService } from "../../services/checkpoints"
 // integrations
 import { DiffViewProvider } from "../../integrations/editor/DiffViewProvider"
 import { findToolName } from "../../integrations/misc/export-markdown"
+import { notifyApprovalIfWindowUnfocused } from "../../integrations/notifications/approvalNotification"
 import { RooTerminalProcess } from "../../integrations/terminal/types"
 import { TerminalRegistry } from "../../integrations/terminal/TerminalRegistry"
 import { OutputInterceptor } from "../../integrations/terminal/OutputInterceptor"
@@ -1096,6 +1097,15 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 		}
 	}
 
+	/**
+	 * Public durable flush of the chat timeline to disk.
+	 * Call after completion / manual stop / before process exit so reopening
+	 * without returning to the home screen still shows the full history.
+	 */
+	public async persistMessages(): Promise<boolean> {
+		return this.saveClineMessages()
+	}
+
 	private async saveClineMessages(): Promise<boolean> {
 		try {
 			await saveTaskMessages({
@@ -1324,19 +1334,30 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 		const isStatusMutable = !partial && isBlocking && !isMessageQueued && approval.decision === "ask"
 
 		if (isStatusMutable) {
-			const statusMutationTimeout = 2_000
+			// Keep interactionRequired / OS approval toast snappy (300ms).
+			const statusMutationTimeout = 300
 
 			if (isInteractiveAsk(type)) {
 				timeouts.push(
 					setTimeout(() => {
 						const message = this.findMessageByTimestamp(askTs)
 
-						if (message) {
+						if (message && !this.abort && !this.abandoned) {
 							this.interactiveAsk = message
 							this.emit(RooCodeEventName.TaskInteractive, this.taskId)
-							/* v8 ignore next 3 -- fires inside 2s timer after ask() resolves; not reachable in unit tests */
+							/* v8 ignore next 3 -- fires inside short timer after ask() resolves; not reachable in unit tests */
 							void provider?.postMessageToWebview({ type: "interactionRequired" }).catch((error) => {
 								console.error("[Task#ask] postMessageToWebview interactionRequired failed:", error)
+							})
+							// System notification when the VS Code window is unfocused so the user
+							// notices pending manual approval (auto-approved asks never reach here).
+							// Copy mirrors chat UI (agentName + action), e.g. "Mirai 想要执行此命令".
+							void notifyApprovalIfWindowUnfocused({
+								ask: type,
+								text: message.text ?? text,
+								detail: type,
+							}).catch((error) => {
+								console.error("[Task#ask] notifyApprovalIfWindowUnfocused failed:", error)
 							})
 						}
 					}, statusMutationTimeout),
@@ -1978,6 +1999,8 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 			const modifiedClineMessages = await this.getSavedClineMessages()
 
 			// Remove any resume messages that may have been added before.
+			// Keep completion_result rows (say + ask) so reopening a finished task
+			// still shows the "task completed" UI instead of looking like history was lost.
 			const lastRelevantMessageIndex = findLastIndex(
 				modifiedClineMessages,
 				(m) => !(m.ask === "resume_task" || m.ask === "resume_completed_task"),
@@ -2031,8 +2054,17 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 				.reverse()
 				.find((m) => !(m.ask === "resume_task" || m.ask === "resume_completed_task")) // Could be multiple resume tasks.
 
+			// Prefer completed-task resume when either the last interactive ask is
+			// completion_result OR a completion_result say exists (ask may be missing
+			// if the window closed mid-wait, leaving only the say row on disk).
+			const hasCompletionResult = this.clineMessages.some(
+				(m) =>
+					(m.type === "ask" && m.ask === "completion_result") ||
+					(m.type === "say" && m.say === "completion_result" && !m.partial),
+			)
+
 			let askType: ClineAsk
-			if (lastClineMessage?.ask === "completion_result") {
+			if (lastClineMessage?.ask === "completion_result" || hasCompletionResult) {
 				askType = "resume_completed_task"
 			} else {
 				askType = "resume_task"
@@ -2246,6 +2278,21 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 		// Force final token usage update before abort event
 		this.emitFinalTokenUsageUpdate()
 
+		// Append a durable "manually stopped" timeline entry BEFORE dispose/save.
+		// Users often close VS Code without returning to the home screen; this must
+		// already be on disk so resume shows when the task was stopped.
+		if (this.abortReason === "user_cancelled") {
+			this.appendTaskManuallyStoppedMessage()
+		}
+
+		// Persist chat history before tearing down resources. Closing the window
+		// mid-abort must not lose the last messages (completion / manual stop).
+		try {
+			await this.saveClineMessages()
+		} catch (error) {
+			console.error(`Error saving messages during abort for task ${this.taskId}.${this.instanceId}:`, error)
+		}
+
 		this.emit(RooCodeEventName.TaskAborted)
 
 		try {
@@ -2254,13 +2301,37 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 			console.error(`Error during task ${this.taskId}.${this.instanceId} disposal:`, error)
 			// Don't rethrow - we want abort to always succeed
 		}
-		// Save the countdown message in the automatic retry or other content.
-		try {
-			// Save the countdown message in the automatic retry or other content.
-			await this.saveClineMessages()
-		} catch (error) {
-			console.error(`Error saving messages during abort for task ${this.taskId}.${this.instanceId}:`, error)
+	}
+
+	/**
+	 * Appends a chat-timeline marker when the user manually stops the task.
+	 * Idempotent: skips if the last message is already a manual-stop record.
+	 * Payload stores mode (+ optional modeName) so the UI can show mode context;
+	 * timestamp comes from the message `ts` field.
+	 */
+	private appendTaskManuallyStoppedMessage(): void {
+		const last = this.clineMessages.at(-1)
+		if (last?.type === "say" && last.say === "task_manually_stopped") {
+			return
 		}
+
+		const modeSlug = this._taskMode || defaultModeSlug
+		let modeName = modeSlug
+		try {
+			// Prefer the human-readable mode name when available.
+			modeName = getModeBySlug(modeSlug)?.name || modeSlug
+		} catch {
+			modeName = modeSlug
+		}
+
+		const ts = Date.now()
+		this.lastMessageTs = ts
+		this.clineMessages.push({
+			ts,
+			type: "say",
+			say: "task_manually_stopped",
+			text: JSON.stringify({ mode: modeSlug, modeName }),
+		})
 	}
 
 	public dispose(): void {
@@ -4750,22 +4821,48 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 
 	/**
 	 * Process any queued messages by dequeuing and submitting them.
-	 * This ensures that queued user messages are sent when appropriate,
-	 * preventing them from getting stuck in the queue.
 	 *
-	 * @param context - Context string for logging (e.g., the calling tool name)
+	 * SAFETY: Must NOT drain the queue while:
+	 * - Mid assistant turn (more tool blocks may still run) — would drop the message
+	 *   because no ask() is waiting for handleWebviewAskResponse.
+	 * - Blocked on tool/command/mcp approval — messageResponse is treated as reject.
+	 *
+	 * Tools like apply_diff used to call this unconditionally after every edit,
+	 * which "squeezed out" user-queued messages.
 	 */
 	public processQueuedMessages(): void {
 		try {
-			if (!this.messageQueueService.isEmpty()) {
-				const queued = this.messageQueueService.dequeueMessage()
-				if (queued) {
-					setTimeout(() => {
-						this.submitUserMessage(queued.text, queued.images).catch((err) =>
-							console.error(`[Task] Failed to submit queued message:`, err),
-						)
-					}, 0)
-				}
+			if (this.messageQueueService.isEmpty()) {
+				return
+			}
+
+			// Still presenting assistant content (e.g. after apply_diff, more tools may follow).
+			if (!this.userMessageContentReady && this.assistantMessageContent.length > 0) {
+				return
+			}
+
+			// Never auto-drain into a dangerous approval ask (would reject the tool/command).
+			const pendingAsk = findLast(
+				this.clineMessages,
+				(msg) => msg.type === "ask" && !msg.isAnswered && msg.partial !== true,
+			)
+			const pendingAskType = pendingAsk?.ask
+			if (
+				pendingAskType === "tool" ||
+				pendingAskType === "command" ||
+				pendingAskType === "use_mcp_server" ||
+				pendingAskType === "command_output"
+			) {
+				return
+			}
+
+			const queued = this.messageQueueService.dequeueMessage()
+			if (queued) {
+				setTimeout(() => {
+					this.submitUserMessage(queued.text, queued.images).catch((err) =>
+						console.error(`[Task] Failed to submit queued message:`, err),
+					)
+				}, 0)
 			}
 		} catch (e) {
 			console.error(`[Task] Queue processing error:`, e)

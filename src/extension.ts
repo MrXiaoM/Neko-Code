@@ -362,6 +362,30 @@ export async function activate(context: vscode.ExtensionContext) {
 export async function deactivate() {
 	outputChannel.appendLine(`${Package.name} extension deactivated`)
 
+	// Flush chat history for every live task before the process exits.
+	// Users frequently close VS Code without returning to the home screen after
+	// task completion / manual stop — without this, the last timeline rows can be lost.
+	try {
+		const { ClineProvider } = await import("./core/webview/ClineProvider")
+		const instances = ClineProvider.getAllInstances()
+		await Promise.all(
+			instances.map((provider) =>
+				provider.flushAllTaskMessages().catch((error: unknown) => {
+					outputChannel.appendLine(
+						`Failed to flush task messages on deactivate: ${
+							error instanceof Error ? error.message : String(error)
+						}`,
+					)
+				}),
+			),
+		)
+		outputChannel.appendLine(`Flushed task messages for ${instances.length} provider instance(s)`)
+	} catch (error) {
+		outputChannel.appendLine(
+			`Failed to flush tasks on deactivate: ${error instanceof Error ? error.message : String(error)}`,
+		)
+	}
+
 	if (cloudService && CloudService.hasInstance()) {
 		try {
 			if (authStateChangedHandler) {

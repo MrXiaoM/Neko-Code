@@ -77,6 +77,7 @@ describe("attemptCompletionTool", () => {
 			todoList: undefined,
 			say: vi.fn().mockResolvedValue(undefined),
 			ask: vi.fn().mockResolvedValue({ response: "yesButtonClicked", text: "", images: [] }),
+			persistMessages: vi.fn().mockResolvedValue(true),
 			emitFinalTokenUsageUpdate: vi.fn(),
 			emit: vi.fn(),
 			getTokenUsage: vi.fn().mockReturnValue({}),

@@ -177,6 +177,22 @@
 			"signInUnavailable": "Roo Code Cloud sign-in is currently unavailable. Configure another provider to continue."
 		}
 	},
+	"approvalNotification": {
+		"title": "Please help me! Master!",
+		"message": "{{agentName}} needs your approval to continue.",
+		"messageWithDetail": "{{agentName}} needs your approval: {{detail}}",
+		"command": "{{agentName}} wants to execute this command",
+		"commandWithText": "{{agentName}} wants to execute: {{command}}",
+		"tool": "{{agentName}} wants to use a tool",
+		"toolEdit": "{{agentName}} wants to edit a file",
+		"toolRead": "{{agentName}} wants to read a file",
+		"toolList": "{{agentName}} wants to list files",
+		"toolSearch": "{{agentName}} wants to search files",
+		"toolMcp": "{{agentName}} wants to use an MCP tool",
+		"followup": "{{agentName}} has a question",
+		"use_mcp_server": "{{agentName}} wants to use an MCP server",
+		"review": "Review"
+	},
 	"answers": {
 		"yes": "Yes",
 		"no": "No",

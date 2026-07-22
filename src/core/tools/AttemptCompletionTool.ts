@@ -78,6 +78,10 @@ export class AttemptCompletionTool extends BaseTool<"attempt_completion"> {
 			task.consecutiveMistakeCount = 0
 
 			await task.say("completion_result", result, undefined, false)
+			// Force another durable write so closing VS Code without navigating home
+			// still keeps the completion row on disk (say() already saves, but we
+			// re-flush before the long-lived completion_result ask wait).
+			await task.persistMessages()
 
 			// Check for subtask using parentTaskId (metadata-driven delegation)
 			if (task.parentTaskId) {
@@ -145,10 +149,12 @@ export class AttemptCompletionTool extends BaseTool<"attempt_completion"> {
 				}
 			}
 
+			// ask() persists the completion_result ask row when created; wait for user.
 			const { response, text, images } = await task.ask("completion_result", "", false)
 
 			if (response === "yesButtonClicked") {
 				this.emitTaskCompleted(task)
+				await task.persistMessages()
 				return
 			}
 
@@ -222,6 +228,10 @@ export class AttemptCompletionTool extends BaseTool<"attempt_completion"> {
 
 		TelemetryService.instance.captureTaskCompleted(task.taskId)
 		task.emit(RooCodeEventName.TaskCompleted, task.taskId, task.getTokenUsage(), task.toolUsage)
+		// Fire-and-forget durable flush (caller may also await persistMessages).
+		void task.persistMessages().catch((error) => {
+			console.error("[AttemptCompletionTool] Failed to persist messages after completion:", error)
+		})
 	}
 }
 

@@ -40,6 +40,16 @@ vi.mock("../../services/zoo-code-auth", () => ({
 	setZooCodeUserInfo: mockSetZooCodeUserInfo,
 }))
 
+const mockFocusZooCodeForApproval = vi.fn()
+const mockFocusTargetWorkspaceWindow = vi.fn()
+const mockIsApprovalFocusTargetThisWindow = vi.fn()
+
+vi.mock("../../integrations/notifications/approvalNotification", () => ({
+	focusZooCodeForApproval: (...args: unknown[]) => mockFocusZooCodeForApproval(...args),
+	focusTargetWorkspaceWindow: (...args: unknown[]) => mockFocusTargetWorkspaceWindow(...args),
+	isApprovalFocusTargetThisWindow: (...args: unknown[]) => mockIsApprovalFocusTargetThisWindow(...args),
+}))
+
 import { handleUri } from "../handleUri"
 
 describe("handleUri", () => {
@@ -47,6 +57,48 @@ describe("handleUri", () => {
 		vi.clearAllMocks()
 		mockGetVisibleInstance.mockReturnValue(mockVisibleProvider)
 		mockGetAllInstances.mockReturnValue([mockVisibleProvider])
+		mockIsApprovalFocusTargetThisWindow.mockReturnValue(true)
+	})
+
+	it("focuses Zoo Code for legacy focus-approval URI without ws (compat)", async () => {
+		mockFocusZooCodeForApproval.mockResolvedValue(undefined)
+		mockIsApprovalFocusTargetThisWindow.mockReturnValue(true)
+
+		await handleUri({
+			path: "/focus-approval",
+			query: "",
+		} as any)
+
+		expect(mockIsApprovalFocusTargetThisWindow).toHaveBeenCalledWith(null)
+		expect(mockFocusZooCodeForApproval).toHaveBeenCalledTimes(1)
+		expect(mockFocusTargetWorkspaceWindow).not.toHaveBeenCalled()
+	})
+
+	it("focuses Zoo Code when focus-approval ws matches this window", async () => {
+		mockFocusZooCodeForApproval.mockResolvedValue(undefined)
+		mockIsApprovalFocusTargetThisWindow.mockReturnValue(true)
+
+		await handleUri({
+			path: "/focus-approval",
+			query: "ws=E%3A%2FZoo-Code&k=12345-Zoo-Code",
+		} as any)
+
+		expect(mockIsApprovalFocusTargetThisWindow).toHaveBeenCalledWith("E:/Zoo-Code")
+		expect(mockFocusZooCodeForApproval).toHaveBeenCalledTimes(1)
+		expect(mockFocusTargetWorkspaceWindow).not.toHaveBeenCalled()
+	})
+
+	it("forwards with --reuse-window and does not focus sidebar when ws mismatches", async () => {
+		mockIsApprovalFocusTargetThisWindow.mockReturnValue(false)
+
+		await handleUri({
+			path: "/focus-approval",
+			query: "ws=E%3A%2FOther-Project&k=999-Other",
+		} as any)
+
+		expect(mockIsApprovalFocusTargetThisWindow).toHaveBeenCalledWith("E:/Other-Project")
+		expect(mockFocusZooCodeForApproval).not.toHaveBeenCalled()
+		expect(mockFocusTargetWorkspaceWindow).toHaveBeenCalledWith("E:/Other-Project")
 	})
 
 	it("ignores legacy cloud auth callback", async () => {

@@ -140,6 +140,7 @@ export function isNonBlockingAsk(ask: ClineAsk): ask is NonBlockingAsk {
  * - `condense_context_error`: Error occurred during context condensation
  * - `codebase_search_result`: Results from searching the codebase
  * - `too_many_tools_warning`: Warning that too many MCP tools are enabled, which may confuse the LLM
+ * - `task_manually_stopped`: User manually stopped/cancelled the task
  */
 export const clineSays = [
 	"error",
@@ -171,6 +172,7 @@ export const clineSays = [
 	"user_edit_todos",
 	"too_many_tools_warning",
 	"tool",
+	"task_manually_stopped",
 ] as const
 
 export const clineSaySchema = z.enum(clineSays)

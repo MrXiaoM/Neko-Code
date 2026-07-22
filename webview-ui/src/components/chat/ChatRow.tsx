@@ -74,6 +74,7 @@ import {
 	ArrowRight,
 	Check,
 	ChevronUp,
+	CircleStop,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { PathTooltip } from "../ui/PathTooltip"
@@ -1419,6 +1420,22 @@ export const ChatRowContent = ({
 							/>
 						</div>
 					)
+				case "task_manually_stopped": {
+					const stopInfo = safeJsonParse<{ mode?: string; modeName?: string }>(message.text)
+					const modeLabel = stopInfo?.modeName || stopInfo?.mode || ""
+					const timeLabel = formatFullTimestamp(message.ts)
+					const detailText = modeLabel
+						? t("chat:task.manuallyStoppedDetail", { time: timeLabel, mode: modeLabel })
+						: `${t("chat:task.manuallyStopped")} · ${timeLabel}`
+					return (
+						<div
+							className="flex items-center gap-2 text-sm text-vscode-descriptionForeground"
+							title={detailText}>
+							<CircleStop className="size-4 shrink-0" aria-hidden="true" />
+							<span className="font-medium">{detailText}</span>
+						</div>
+					)
+				}
 				case "error":
 					// Check if this is a model response error based on marker strings from backend
 					const isNoToolsUsedError = message.text === "MODEL_NO_TOOLS_USED"

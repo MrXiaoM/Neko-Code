@@ -43,6 +43,10 @@ vi.mock("../diagnosticsHandler", () => ({
 	generateErrorDiagnostics: vi.fn().mockResolvedValue({ success: true, filePath: "/tmp/diagnostics.json" }),
 }))
 
+vi.mock("../../../integrations/notifications/approvalNotification", () => ({
+	notifyApprovalIfWindowUnfocused: vi.fn().mockResolvedValue(undefined),
+}))
+
 vi.mock("../rulesMessageHandler", () => ({
 	handleRequestRules: vi.fn(),
 	handleCreateRule: vi.fn(),
@@ -58,6 +62,7 @@ import type { ClineProvider } from "../ClineProvider"
 import { flushModels, getModels } from "../../../api/providers/fetchers/modelCache"
 import { getLMStudioModels } from "../../../api/providers/fetchers/lmstudio"
 import { getCommands } from "../../../services/command/commands"
+import { notifyApprovalIfWindowUnfocused } from "../../../integrations/notifications/approvalNotification"
 import {
 	handleCreateRule,
 	handleDeleteRule,

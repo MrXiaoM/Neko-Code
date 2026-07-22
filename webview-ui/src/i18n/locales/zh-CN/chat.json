@@ -17,7 +17,9 @@
 		"condenseContext": "智能压缩上下文",
 		"openApiHistory": "打开 API 历史",
 		"openUiHistory": "打开 UI 历史",
-		"backToParentTask": "父任务"
+		"backToParentTask": "父任务",
+		"manuallyStopped": "已手动停止",
+		"manuallyStoppedDetail": "已手动停止 · {{time}} · {{mode}}"
 	},
 	"unpin": "取消置顶",
 	"pin": "置顶",

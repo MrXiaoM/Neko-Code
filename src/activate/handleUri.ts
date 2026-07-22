@@ -2,6 +2,11 @@ import * as vscode from "vscode"
 
 import { getRouterUnavailableSignInMessage } from "../core/config/routerRemoval"
 import { ClineProvider } from "../core/webview/ClineProvider"
+import {
+	focusTargetWorkspaceWindow,
+	focusZooCodeForApproval,
+	isApprovalFocusTargetThisWindow,
+} from "../integrations/notifications/approvalNotification"
 import { handleAuthCallback as handleZooCodeAuthCallback, setZooCodeUserInfo } from "../services/zoo-code-auth"
 
 /**
@@ -80,6 +85,19 @@ export const handleUri = async (uri: vscode.Uri) => {
 					})
 					await propagateZooGatewayCallback(token)
 				}
+			}
+			break
+		}
+		case "/focus-approval": {
+			// Opened when the user clicks an OS-level approval toast (Windows protocol activation).
+			// URI may carry ?ws=<workspaceFsPath>&k=<instanceKey> so multi-window hosts route
+			// to the window that issued the toast instead of whichever host received the URI.
+			const targetWs = query.get("ws")
+			if (isApprovalFocusTargetThisWindow(targetWs)) {
+				await focusZooCodeForApproval()
+			} else if (targetWs) {
+				// Wrong window: do not focus sidebar here; hand off to the workspace window.
+				focusTargetWorkspaceWindow(targetWs)
 			}
 			break
 		}

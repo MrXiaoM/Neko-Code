@@ -3120,6 +3120,25 @@ export class ClineProvider
 		return this.clineStack[this.clineStack.length - 1]
 	}
 
+	/**
+	 * Flush chat timelines for every task currently on this provider's stack.
+	 * Used on extension deactivate so closing VS Code without returning home
+	 * still persists completion / manual-stop rows.
+	 */
+	public async flushAllTaskMessages(): Promise<void> {
+		for (const task of this.clineStack) {
+			try {
+				await task.persistMessages()
+			} catch (error) {
+				this.log(
+					`[flushAllTaskMessages] Failed for task ${task.taskId}: ${
+						error instanceof Error ? error.message : String(error)
+					}`,
+				)
+			}
+		}
+	}
+
 	private logWebviewHiddenDiagnostics(): void {
 		const task = this.getCurrentTask()
 		if (!task || task.abort || task.abandoned) {

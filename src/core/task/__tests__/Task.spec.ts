@@ -1601,6 +1601,71 @@ describe("Cline", () => {
 			expect(emitSpy).toHaveBeenCalledWith("taskAborted")
 		})
 
+		it("should append task_manually_stopped when abortReason is user_cancelled", async () => {
+			const task = new Task({
+				provider: mockProvider,
+				apiConfiguration: mockApiConfig,
+				task: "test task",
+				startTask: false,
+			})
+
+			vi.spyOn(task, "dispose").mockImplementation(() => {})
+			vi.spyOn(task as any, "saveClineMessages").mockResolvedValue(undefined)
+
+			// Simulate provider cancel path.
+			task.abortReason = "user_cancelled"
+			// Mode is async-initialized for new tasks; seed it for deterministic payload.
+			;(task as any)._taskMode = "code"
+
+			await task.abortTask()
+
+			const stopMsg = task.clineMessages.find((m) => m.say === "task_manually_stopped")
+			expect(stopMsg).toBeDefined()
+			expect(stopMsg?.type).toBe("say")
+			const payload = JSON.parse(stopMsg!.text || "{}")
+			expect(payload.mode).toBe("code")
+			expect(typeof payload.modeName).toBe("string")
+			expect(payload.modeName.length).toBeGreaterThan(0)
+			expect(typeof stopMsg!.ts).toBe("number")
+		})
+
+		it("should not append task_manually_stopped when abort is not user-initiated", async () => {
+			const task = new Task({
+				provider: mockProvider,
+				apiConfiguration: mockApiConfig,
+				task: "test task",
+				startTask: false,
+			})
+
+			vi.spyOn(task, "dispose").mockImplementation(() => {})
+			vi.spyOn(task as any, "saveClineMessages").mockResolvedValue(undefined)
+
+			await task.abortTask()
+
+			expect(task.clineMessages.some((m) => m.say === "task_manually_stopped")).toBe(false)
+		})
+
+		it("should not duplicate task_manually_stopped on repeated user cancel aborts", async () => {
+			const task = new Task({
+				provider: mockProvider,
+				apiConfiguration: mockApiConfig,
+				task: "test task",
+				startTask: false,
+			})
+
+			vi.spyOn(task, "dispose").mockImplementation(() => {})
+			vi.spyOn(task as any, "saveClineMessages").mockResolvedValue(undefined)
+			task.abortReason = "user_cancelled"
+			;(task as any)._taskMode = "architect"
+
+			await task.abortTask()
+			// Reset abort so second call can run; still user_cancelled.
+			task.abort = false
+			await task.abortTask()
+
+			expect(task.clineMessages.filter((m) => m.say === "task_manually_stopped")).toHaveLength(1)
+		})
+
 		it("should be equivalent to clicking Cancel button functionality", async () => {
 			const task = new Task({
 				provider: mockProvider,
@@ -2795,6 +2860,12 @@ describe("Cline", () => {
 })
 
 describe("Queued message processing after condense", () => {
+	beforeEach(() => {
+		if (!TelemetryService.hasInstance()) {
+			TelemetryService.createInstance([])
+		}
+	})
+
 	function createProvider(): any {
 		const storageUri = { fsPath: path.join(os.tmpdir(), "test-storage") }
 		const ctx = {
@@ -2867,6 +2938,63 @@ describe("Queued message processing after condense", () => {
 
 		expect(submitSpy).toHaveBeenCalledWith("queued text", ["img1.png"])
 		expect(task.messageQueueService.isEmpty()).toBe(true)
+	})
+
+	it("does not drain queue while assistant turn is still presenting tools", async () => {
+		const provider = createProvider()
+		const task = new Task({
+			provider,
+			apiConfiguration: apiConfig,
+			task: "initial task",
+			startTask: false,
+		})
+		const submitSpy = vi.spyOn(task, "submitUserMessage").mockResolvedValue(undefined)
+
+		// Simulate mid-turn after apply_diff: more tool blocks may still run.
+		task.userMessageContentReady = false
+		task.assistantMessageContent = [{ type: "tool_use", name: "apply_diff", params: {}, partial: false } as any]
+		task.messageQueueService.addMessage("please also fix the tests")
+
+		vi.useFakeTimers()
+		task.processQueuedMessages()
+		vi.runAllTimers()
+		vi.useRealTimers()
+
+		expect(submitSpy).not.toHaveBeenCalled()
+		expect(task.messageQueueService.isEmpty()).toBe(false)
+		expect(task.messageQueueService.messages[0]?.text).toBe("please also fix the tests")
+	})
+
+	it("does not drain queue while blocked on tool approval ask", async () => {
+		const provider = createProvider()
+		const task = new Task({
+			provider,
+			apiConfiguration: apiConfig,
+			task: "initial task",
+			startTask: false,
+		})
+		const submitSpy = vi.spyOn(task, "submitUserMessage").mockResolvedValue(undefined)
+
+		task.userMessageContentReady = true
+		task.assistantMessageContent = []
+		task.clineMessages = [
+			{
+				ts: Date.now(),
+				type: "ask",
+				ask: "tool",
+				text: JSON.stringify({ tool: "appliedDiff" }),
+				partial: false,
+			} as any,
+		]
+		task.messageQueueService.addMessage("queued during tool approval")
+
+		vi.useFakeTimers()
+		task.processQueuedMessages()
+		vi.runAllTimers()
+		vi.useRealTimers()
+
+		expect(submitSpy).not.toHaveBeenCalled()
+		expect(task.messageQueueService.isEmpty()).toBe(false)
 	})
 
 	it("does not cross-drain queues between separate tasks", async () => {
