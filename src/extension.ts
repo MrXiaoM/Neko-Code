@@ -31,6 +31,7 @@ import { ClineProvider } from "./core/webview/ClineProvider"
 import { DIFF_VIEW_URI_SCHEME } from "./integrations/editor/DiffViewProvider"
 import { Terminal } from "./integrations/terminal/Terminal"
 import { TerminalRegistry } from "./integrations/terminal/TerminalRegistry"
+import { initializeWindowsApprovalNotificationCallback } from "./integrations/notifications/approvalNotification"
 import { openAiCodexOAuthManager } from "./integrations/openai-codex/oauth"
 import { McpServerManager } from "./services/mcp/McpServerManager"
 import { CodeIndexManager } from "./services/code-index/manager"
@@ -282,6 +283,7 @@ export async function activate(context: vscode.ExtensionContext) {
 	)
 
 	context.subscriptions.push(vscode.window.registerUriHandler({ handleUri }))
+	await initializeWindowsApprovalNotificationCallback(context)
 
 	// Register code actions provider.
 	context.subscriptions.push(

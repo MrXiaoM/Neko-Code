@@ -1,6 +1,7 @@
 // npx vitest run integrations/notifications/__tests__/approvalNotification.spec.ts
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import nock from "nock"
 import * as vscode from "vscode"
 import * as fs from "fs"
 
@@ -17,6 +18,7 @@ import {
 	formatProcessOutputForLog,
 	getApprovalToastId,
 	getInstanceKey,
+	initializeWindowsApprovalNotificationCallback,
 	isApprovalFocusTargetThisWindow,
 	normalizeWorkspacePath,
 	notifyApprovalIfWindowUnfocused,
@@ -31,10 +33,11 @@ import {
 	writeWindowsToastPs1,
 } from "../approvalNotification"
 
-const { execaMock, execaCalls } = vi.hoisted(() => {
+const { execaMock, execaCalls, windowStateChangeHandlers } = vi.hoisted(() => {
 	const execaCalls: Array<{ options: Record<string, unknown>; command: string }> = []
 	const execaMock = vi.fn()
-	return { execaMock, execaCalls }
+	const windowStateChangeHandlers: Array<(state: { focused: boolean }) => void> = []
+	return { execaMock, execaCalls, windowStateChangeHandlers }
 })
 
 vi.mock("execa", () => ({
@@ -67,7 +70,10 @@ vi.mock("fs", async (importOriginal) => {
 vi.mock("vscode", () => ({
 	window: {
 		state: { focused: true },
-		onDidChangeWindowState: vi.fn(() => ({ dispose: vi.fn() })),
+		onDidChangeWindowState: vi.fn((handler) => {
+			windowStateChangeHandlers.push(handler)
+			return { dispose: vi.fn() }
+		}),
 	},
 	workspace: {
 		workspaceFolders: [{ name: "Zoo-Code", uri: { fsPath: "E:/Zoo-Code" } }],
@@ -186,6 +192,7 @@ describe("approvalNotification", () => {
 	beforeEach(() => {
 		vi.clearAllMocks()
 		execaCalls.length = 0
+		windowStateChangeHandlers.length = 0
 		__resetApprovalNotificationStateForTests()
 		;(vscode.window.state as { focused: boolean }).focused = true
 		Object.defineProperty(process, "platform", { value: "win32", configurable: true })
@@ -705,6 +712,73 @@ describe("approvalNotification", () => {
 			const copy = buildApprovalNotificationCopy({ ask: "completion_result", text: long })
 			expect(copy.body).toContain("...")
 			expect(copy.body.length).toBeLessThan(long.length + 40)
+		})
+	})
+
+	describe("Windows approval callback", () => {
+		it("uses a one-time loopback callback URL without routing through another VS Code window", async () => {
+			nock.enableNetConnect("127.0.0.1")
+			const context = { subscriptions: [] } as unknown as vscode.ExtensionContext
+			try {
+				await initializeWindowsApprovalNotificationCallback(context)
+				showWindowsSystemToast({ title: "标题", body: "正文" })
+
+				const written = String(vi.mocked(fs.writeFileSync).mock.calls.at(-1)?.[1] ?? "")
+				const match = written.match(/launch="(http:\/\/127\.0\.0\.1:\d+\/approval-focus\/[a-f0-9]+)"/)
+				expect(match).toBeTruthy()
+				expect(written).not.toContain("vscode://")
+
+				const invalidResponse = await fetch(`${match![1]}0`)
+				expect(invalidResponse.status).toBe(404)
+				expect(vscode.commands.executeCommand).not.toHaveBeenCalled()
+
+				const firstResponse = await fetch(match![1])
+				expect(firstResponse.status).toBe(200)
+				await Promise.resolve()
+				await Promise.resolve()
+				expect(vscode.commands.executeCommand).toHaveBeenCalledWith(`${Package.name}.SidebarProvider.focus`)
+				expect(vscode.commands.executeCommand).toHaveBeenCalledWith(`${Package.name}.focusInput`)
+
+				const repeatedResponse = await fetch(match![1])
+				expect(repeatedResponse.status).toBe(404)
+				expect(vscode.commands.executeCommand).toHaveBeenCalledTimes(2)
+			} finally {
+				for (const subscription of context.subscriptions) {
+					subscription.dispose()
+				}
+				nock.disableNetConnect()
+			}
+		})
+
+		it("activates its own workspace before focusing UI when the callback instance is unfocused", async () => {
+			nock.enableNetConnect("127.0.0.1")
+			const context = { subscriptions: [] } as unknown as vscode.ExtensionContext
+			;(vscode.window.state as { focused: boolean }).focused = false
+			try {
+				await initializeWindowsApprovalNotificationCallback(context)
+				await notifyApprovalIfWindowUnfocused({ force: true, title: "标题", body: "正文" })
+				const written = String(vi.mocked(fs.writeFileSync).mock.calls.at(-1)?.[1] ?? "")
+				const callbackUrl = written.match(/launch="(http:\/\/127\.0\.0\.1:\d+\/approval-focus\/[a-f0-9]+)"/)![1]
+
+				expect((await fetch(callbackUrl)).status).toBe(200)
+				expect(
+					findExecaCommand(
+						(command) => command.includes("--reuse-window") && command.includes("E:/Zoo-Code"),
+					),
+				).toBeTruthy()
+				expect(vscode.commands.executeCommand).not.toHaveBeenCalled()
+				;(vscode.window.state as { focused: boolean }).focused = true
+				windowStateChangeHandlers.at(-1)?.({ focused: true })
+				await Promise.resolve()
+				await Promise.resolve()
+				expect(vscode.commands.executeCommand).toHaveBeenCalledWith(`${Package.name}.SidebarProvider.focus`)
+				expect(vscode.commands.executeCommand).toHaveBeenCalledWith(`${Package.name}.focusInput`)
+			} finally {
+				for (const subscription of context.subscriptions) {
+					subscription.dispose()
+				}
+				nock.disableNetConnect()
+			}
 		})
 	})
 

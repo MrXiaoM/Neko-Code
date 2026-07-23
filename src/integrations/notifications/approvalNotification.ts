@@ -1,6 +1,7 @@
-import { createHash } from "crypto"
+import { createHash, randomBytes } from "crypto"
 import { execa } from "execa"
 import * as fs from "fs"
+import * as http from "http"
 import * as os from "os"
 import * as path from "path"
 import * as vscode from "vscode"
@@ -11,6 +12,15 @@ import { t } from "../../i18n"
 /** When true, the next time this VS Code window gains OS focus we open Zoo Code UI. */
 let pendingFocusOnWindowFocus = false
 let windowStateListenerRegistered = false
+let approvalFocusInProgress = false
+let windowsApprovalCallbackServer: http.Server | undefined
+let windowsApprovalCallbackPort: number | undefined
+const windowsApprovalCallbackTokens = new Map<string, number>()
+
+const APPROVAL_CALLBACK_TOKEN_TTL_MS = 24 * 60 * 60 * 1000
+const APPROVAL_CALLBACK_PATH_PREFIX = "/approval-focus/"
+const APPROVAL_CALLBACK_SUCCESS_HTML =
+	'<!doctype html><html><head><meta charset="utf-8"><title>Zoo Code</title></head><body><script>window.close()</script></body></html>'
 
 /**
  * Normalize workspace folder paths for equality checks across windows.
@@ -254,7 +264,7 @@ export function focusTargetWorkspaceWindow(workspaceFolder: string): void {
 }
 
 /**
- * Protocol URI opened when the user clicks the Windows system toast.
+ * Legacy protocol URI used when the Windows loopback callback server is unavailable.
  * Carries the originating workspace so multi-window hosts can route precisely:
  *   vscode://publisher.name/focus-approval?ws=<fsPath>&k=<instanceKey>
  * VS Code / Cursor protocol handler → handleUri → match ws → focusZooCodeForApproval
@@ -272,6 +282,130 @@ export function buildApprovalFocusUri(): string {
 	return query ? `${base}?${query}` : base
 }
 
+function isLoopbackRequest(request: http.IncomingMessage): boolean {
+	const address = request.socket.remoteAddress
+	return address === "127.0.0.1" || address === "::1" || address === "::ffff:127.0.0.1"
+}
+
+function pruneExpiredApprovalCallbackTokens(now = Date.now()): void {
+	for (const [token, expiresAt] of windowsApprovalCallbackTokens) {
+		if (expiresAt <= now) {
+			windowsApprovalCallbackTokens.delete(token)
+		}
+	}
+}
+
+function buildWindowsApprovalCallbackUrl(): string | undefined {
+	if (!windowsApprovalCallbackPort) {
+		return undefined
+	}
+
+	pruneExpiredApprovalCallbackTokens()
+	const token = randomBytes(32).toString("hex")
+	windowsApprovalCallbackTokens.set(token, Date.now() + APPROVAL_CALLBACK_TOKEN_TTL_MS)
+	return `http://127.0.0.1:${windowsApprovalCallbackPort}${APPROVAL_CALLBACK_PATH_PREFIX}${token}`
+}
+
+function requestApprovalUiFocus(): void {
+	if (approvalFocusInProgress) {
+		return
+	}
+	approvalFocusInProgress = true
+	void focusZooCodeForApproval().finally(() => {
+		approvalFocusInProgress = false
+	})
+}
+
+function handleWindowsApprovalCallback(): void {
+	if (vscode.window.state.focused) {
+		requestApprovalUiFocus()
+		return
+	}
+
+	pendingFocusOnWindowFocus = true
+	const workspaceFolder = getWorkspaceFolderPath()
+	if (workspaceFolder) {
+		focusTargetWorkspaceWindow(workspaceFolder)
+	}
+}
+
+function handleWindowsApprovalCallbackRequest(request: http.IncomingMessage, response: http.ServerResponse): void {
+	if (!isLoopbackRequest(request) || request.method !== "GET") {
+		response.writeHead(404)
+		response.end()
+		return
+	}
+
+	const url = new URL(request.url ?? "", `http://127.0.0.1:${windowsApprovalCallbackPort ?? 0}`)
+	if (!url.pathname.startsWith(APPROVAL_CALLBACK_PATH_PREFIX)) {
+		response.writeHead(404)
+		response.end()
+		return
+	}
+
+	const token = url.pathname.slice(APPROVAL_CALLBACK_PATH_PREFIX.length)
+	const expiresAt = windowsApprovalCallbackTokens.get(token)
+	if (!expiresAt) {
+		response.writeHead(404)
+		response.end()
+		return
+	}
+	windowsApprovalCallbackTokens.delete(token)
+	if (expiresAt <= Date.now()) {
+		response.writeHead(410)
+		response.end()
+		return
+	}
+
+	response.writeHead(200, {
+		"Content-Type": "text/html; charset=utf-8",
+		"Content-Security-Policy": "default-src 'none'; script-src 'unsafe-inline'",
+	})
+	response.end(APPROVAL_CALLBACK_SUCCESS_HTML)
+	handleWindowsApprovalCallback()
+}
+
+export async function initializeWindowsApprovalNotificationCallback(context: vscode.ExtensionContext): Promise<void> {
+	if (process.platform !== "win32" || windowsApprovalCallbackServer) {
+		return
+	}
+
+	const server = http.createServer(handleWindowsApprovalCallbackRequest)
+	try {
+		await new Promise<void>((resolve, reject) => {
+			const onError = (error: Error) => {
+				server.off("listening", onListening)
+				reject(error)
+			}
+			const onListening = () => {
+				server.off("error", onError)
+				resolve()
+			}
+			server.once("error", onError)
+			server.once("listening", onListening)
+			server.listen(0, "127.0.0.1")
+		})
+
+		const address = server.address()
+		if (!address || typeof address === "string") {
+			throw new Error("Windows approval callback server did not expose a TCP port")
+		}
+		windowsApprovalCallbackServer = server
+		windowsApprovalCallbackPort = address.port
+		context.subscriptions.push({
+			dispose: () => {
+				windowsApprovalCallbackTokens.clear()
+				windowsApprovalCallbackPort = undefined
+				windowsApprovalCallbackServer = undefined
+				server.close()
+			},
+		})
+	} catch (error) {
+		server.close()
+		console.error("[approvalNotification] Failed to start Windows approval callback server:", error)
+	}
+}
+
 function ensureWindowFocusListener(): void {
 	if (windowStateListenerRegistered) {
 		return
@@ -280,7 +414,7 @@ function ensureWindowFocusListener(): void {
 	vscode.window.onDidChangeWindowState((state) => {
 		if (state.focused && pendingFocusOnWindowFocus) {
 			pendingFocusOnWindowFocus = false
-			void focusZooCodeForApproval()
+			requestApprovalUiFocus()
 		}
 	})
 }
@@ -404,7 +538,9 @@ export function sanitizeToastDisplayText(value: string): string {
 }
 
 /**
- * Build toast payload XML. Click (body or button) launches protocol URI via protocol activation.
+ * Build toast payload XML. Click (body or button) opens the supplied activation URI.
+ * On Windows this is normally an instance-specific loopback HTTP callback; the legacy editor
+ * protocol URI is used only if callback-server startup failed.
  * Tag is instance-scoped so multi-window toasts do not fully clobber each other in Action Center.
  */
 export function buildWindowsToastXml(options: {
@@ -602,13 +738,15 @@ export type WindowsToastOptions = {
 }
 
 /**
- * Windows system toast via short-lived PowerShell WinRT Show() + protocol focus.
+ * Windows system toast via short-lived PowerShell WinRT Show() + loopback callback focus.
  *
  * Abandoned: snoretoast -application (.lnk and .exe) — host: click exits 0/4 but never focuses.
  * Chain:
  *   write toast-show-<instance>.ps1 → execa powershell -NoProfile -WindowStyle Hidden -File
  *   CreateToastNotifier(host AUMID e.g. Microsoft.VisualStudioCode) → Show() → settle → exit
- *   click → vscode://publisher.name/focus-approval → handleUri → focusZooCodeForApproval
+ *   click → http://127.0.0.1:<instance-port>/approval-focus/<one-time-token>
+ *   → current extension instance activates its own workspace → focusZooCodeForApproval
+ *   callback server unavailable → legacy vscode://.../focus-approval fallback
  *
  * AppId is the host editor (VS Code / Insiders / Cursor), not Zoo Code (extension is not a
  * standalone Windows app). PowerShell AUMID is only a Show() fallback if host AUMID fails.
@@ -628,7 +766,12 @@ export function showWindowsSystemToast(options: WindowsToastOptions): void {
 				? [reviewLabel]
 				: ["Review"]
 
-	const launchUri = buildApprovalFocusUri()
+	const launchUri = buildWindowsApprovalCallbackUrl() ?? buildApprovalFocusUri()
+	if (launchUri.startsWith("http://")) {
+		appendToastLog(`winrt toast callback=${launchUri.replace(/\/approval-focus\/.+$/, "/approval-focus/<token>")}`)
+	} else {
+		appendToastLog("winrt toast callback server unavailable; falling back to vscode protocol URI")
+	}
 	const xml = buildWindowsToastXml({
 		title,
 		body,
@@ -645,9 +788,6 @@ export function showWindowsSystemToast(options: WindowsToastOptions): void {
 	appendToastLog(
 		`winrt toast script=${scriptPath} id=${toastId} appId=${appId} launch=${launchUri} actions=${actions.join("|") || "(none)"} title=${title} instance=${getInstanceKey()}`,
 	)
-
-	pendingFocusOnWindowFocus = true
-	ensureWindowFocusListener()
 
 	let child: ReturnType<typeof execa>
 	try {
@@ -919,4 +1059,9 @@ export async function focusZooCodeForApproval(): Promise<void> {
 export function __resetApprovalNotificationStateForTests(): void {
 	pendingFocusOnWindowFocus = false
 	windowStateListenerRegistered = false
+	approvalFocusInProgress = false
+	windowsApprovalCallbackTokens.clear()
+	windowsApprovalCallbackPort = undefined
+	windowsApprovalCallbackServer?.close()
+	windowsApprovalCallbackServer = undefined
 }
