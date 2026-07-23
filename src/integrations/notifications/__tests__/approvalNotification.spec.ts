@@ -14,6 +14,7 @@ import {
 	focusTargetWorkspaceWindow,
 	focusZooCodeForApproval,
 	formatLocalLogTimestamp,
+	formatProcessOutputForLog,
 	getApprovalToastId,
 	getInstanceKey,
 	isApprovalFocusTargetThisWindow,
@@ -22,9 +23,11 @@ import {
 	resolveEditorExecutablePath,
 	resolveWindowsToastAppId,
 	sanitizeToastDisplayText,
+	sanitizeWindowsToastTag,
 	showWindowsSystemToast,
 	WINDOWS_TOAST_HOST_AUMIDS,
 	WINDOWS_TOAST_POWERSHELL_AUMID,
+	WINDOWS_TOAST_TAG_MAX_LENGTH,
 	writeWindowsToastPs1,
 } from "../approvalNotification"
 
@@ -46,8 +49,17 @@ vi.mock("fs", async (importOriginal) => {
 		mkdirSync: vi.fn(),
 		appendFileSync: vi.fn(),
 		existsSync: vi.fn((p: string) => {
-			const s = String(p).toLowerCase()
-			return s.endsWith("icon.png")
+			const s = String(p).toLowerCase().replace(/\\/g, "/")
+			// Toast icon + host CLI wrappers used by multi-window focus routing.
+			return (
+				s.endsWith("icon.png") ||
+				s.endsWith("/bin/code.cmd") ||
+				s.endsWith("/bin/code-insiders.cmd") ||
+				s.endsWith("/bin/cursor.cmd") ||
+				s.endsWith("/bin/code") ||
+				s.endsWith("/bin/code-insiders") ||
+				s.endsWith("/bin/cursor")
+			)
 		}),
 	}
 })
@@ -63,6 +75,7 @@ vi.mock("vscode", () => ({
 	env: {
 		uriScheme: "vscode",
 		appName: "Visual Studio Code",
+		appRoot: "C:/Program Files/Microsoft VS Code/resources/app",
 	},
 	commands: {
 		executeCommand: vi.fn(),
@@ -176,6 +189,19 @@ describe("approvalNotification", () => {
 		__resetApprovalNotificationStateForTests()
 		;(vscode.window.state as { focused: boolean }).focused = true
 		Object.defineProperty(process, "platform", { value: "win32", configurable: true })
+		// Restore default existsSync after tests that override CLI-wrapper detection.
+		vi.mocked(fs.existsSync).mockImplementation((p: fs.PathLike) => {
+			const s = String(p).toLowerCase().replace(/\\/g, "/")
+			return (
+				s.endsWith("icon.png") ||
+				s.endsWith("/bin/code.cmd") ||
+				s.endsWith("/bin/code-insiders.cmd") ||
+				s.endsWith("/bin/cursor.cmd") ||
+				s.endsWith("/bin/code") ||
+				s.endsWith("/bin/code-insiders") ||
+				s.endsWith("/bin/cursor")
+			)
+		})
 		mockExecaChild()
 	})
 
@@ -230,14 +256,50 @@ describe("approvalNotification", () => {
 		})
 	})
 
+	describe("resolveEditorExecutablePath", () => {
+		it("prefers bin/code.cmd over Code.exe on Windows (CLI accepts --reuse-window)", () => {
+			Object.defineProperty(process, "platform", { value: "win32", configurable: true })
+			const cli = resolveEditorExecutablePath(
+				"C:\\Program Files\\Microsoft VS Code\\Code.exe",
+				"C:\\Program Files\\Microsoft VS Code\\resources\\app",
+			)
+			expect(cli.replace(/\\/g, "/").toLowerCase()).toContain("/bin/code.cmd")
+			expect(cli.toLowerCase()).not.toMatch(/code\.exe$/i)
+		})
+
+		it("prefers code-insiders.cmd for Insiders Electron binary", () => {
+			Object.defineProperty(process, "platform", { value: "win32", configurable: true })
+			const cli = resolveEditorExecutablePath(
+				"C:\\Users\\x\\AppData\\Local\\Programs\\Microsoft VS Code Insiders\\Code - Insiders.exe",
+				"C:\\Users\\x\\AppData\\Local\\Programs\\Microsoft VS Code Insiders\\resources\\app",
+			)
+			expect(cli.replace(/\\/g, "/").toLowerCase()).toContain("/bin/code-insiders.cmd")
+		})
+
+		it("falls back to execPath when no CLI wrapper exists", () => {
+			Object.defineProperty(process, "platform", { value: "win32", configurable: true })
+			vi.mocked(fs.existsSync).mockImplementation((p: fs.PathLike) => {
+				const s = String(p).toLowerCase()
+				return s.endsWith("icon.png")
+			})
+			const exec = "C:\\custom\\host\\Code.exe"
+			expect(resolveEditorExecutablePath(exec, undefined)).toBe(exec)
+		})
+	})
+
 	describe("focusTargetWorkspaceWindow", () => {
-		it("execas editor --reuse-window with the target folder (tagged template + shell)", () => {
-			const editor = resolveEditorExecutablePath()
+		it("execas host CLI --reuse-window with the target folder (not Code.exe)", () => {
+			Object.defineProperty(process, "platform", { value: "win32", configurable: true })
+			const editor = resolveEditorExecutablePath(
+				"C:\\Program Files\\Microsoft VS Code\\Code.exe",
+				"C:\\Program Files\\Microsoft VS Code\\resources\\app",
+			)
 			focusTargetWorkspaceWindow("E:/Other-Project")
 			expect(execaMock).toHaveBeenCalled()
 			const call = findExecaCommand((cmd) => cmd.includes("--reuse-window") && cmd.includes("E:/Other-Project"))
 			expect(call).toBeTruthy()
-			expect(call!.command).toContain(editor)
+			// Prefer CLI wrapper so --reuse-window is accepted (Code.exe → bad option).
+			expect(call!.command.toLowerCase().replace(/\\/g, "/")).toContain("/bin/code.cmd")
 			expect(call!.command).toContain("--reuse-window")
 			expect(call!.command).toContain("E:/Other-Project")
 			expect(call!.options).toEqual(
@@ -245,19 +307,63 @@ describe("approvalNotification", () => {
 					shell: "C:\\Windows\\System32\\cmd.exe",
 					all: true,
 					stdin: "ignore",
+					reject: false,
 				}),
 			)
-			// Same fire-and-forget style as showWindowsSystemToast — no detached/unref/reject:false
 			expect(call!.options).not.toHaveProperty("detached")
-			expect(call!.options).not.toHaveProperty("reject")
 			expect(call!.options).not.toHaveProperty("stdio")
+			// Sanity: resolved editor for logging should also be the CLI path when present.
+			expect(editor.replace(/\\/g, "/").toLowerCase()).toContain("/bin/code.cmd")
 		})
 	})
 
 	describe("multi-instance isolation", () => {
 		it("includes process.pid in toast id and instance key", () => {
 			expect(getInstanceKey()).toContain(String(process.pid))
-			expect(getApprovalToastId()).toBe(`zoo-code-approval-${getInstanceKey()}`)
+			expect(getApprovalToastId()).toContain(String(process.pid))
+			expect(getApprovalToastId()).toMatch(new RegExp(`^zoo-code-${process.pid}-[a-f0-9]{8}$`))
+		})
+
+		it("keeps toast Tag within the Windows 64-char limit even for long workspace paths", () => {
+			const longFolder =
+				"E:/very/long/path/to/i_.development_commercial_project-management_and_more_extra_segments"
+			const id = sanitizeWindowsToastTag(
+				`zoo-code-approval-${process.pid}-${longFolder.replace(/[^a-zA-Z0-9._-]+/g, "_")}`,
+			)
+			expect(id.length).toBeLessThanOrEqual(WINDOWS_TOAST_TAG_MAX_LENGTH)
+			expect(getApprovalToastId().length).toBeLessThanOrEqual(WINDOWS_TOAST_TAG_MAX_LENGTH)
+		})
+	})
+
+	describe("sanitizeWindowsToastTag", () => {
+		it("strips unsafe characters and enforces the 64-char hard limit", () => {
+			expect(sanitizeWindowsToastTag("a b/c")).toBe("a_b_c")
+			const long = `zoo-code-${"x".repeat(80)}`
+			const sanitized = sanitizeWindowsToastTag(long)
+			expect(sanitized.length).toBe(WINDOWS_TOAST_TAG_MAX_LENGTH)
+			expect(sanitized).toMatch(/^[a-zA-Z0-9._-]+$/)
+		})
+
+		it("falls back to zoo-code for empty input after sanitize", () => {
+			expect(sanitizeWindowsToastTag("!!!")).toBe("zoo-code")
+			expect(sanitizeWindowsToastTag("")).toBe("zoo-code")
+		})
+	})
+
+	describe("formatProcessOutputForLog", () => {
+		it("prefers combined output and flattens newlines for single-line logs", () => {
+			expect(
+				formatProcessOutputForLog({
+					exitCode: 1,
+					all: "设置“Tag”时发生异常:\n通知标签的大小过大。",
+				}),
+			).toBe("code=1 设置“Tag”时发生异常: | 通知标签的大小过大。")
+		})
+
+		it("falls back to stderr/stdout/message when all is empty", () => {
+			expect(formatProcessOutputForLog({ exitCode: 2, stderr: "boom" })).toBe("code=2 boom")
+			expect(formatProcessOutputForLog({ message: "spawn failed" })).toBe("spawn failed")
+			expect(formatProcessOutputForLog({})).toBe("(no output)")
 		})
 	})
 
@@ -345,6 +451,12 @@ describe("approvalNotification", () => {
 			expect(written.charCodeAt(0)).toBe(0xfeff)
 			expect(written).toContain("ToastNotificationManager")
 			expect(written).toContain("Show($toast)")
+			expect(written).toContain("$toast.Tag = 'tag-1'")
+			// UTF-8 console encoding so Chinese exceptions are not GBK-mojibake in Node logs.
+			expect(written).toContain("[Console]::OutputEncoding")
+			expect(written).toContain("chcp 65001")
+			expect(written).toContain("last-toast-ps-error.log")
+			expect(written).toContain("UTF8Encoding")
 			// Primary AppId is host editor (VS Code), not PowerShell branding.
 			expect(written).toContain(WINDOWS_TOAST_HOST_AUMIDS.vscode)
 			expect(written).toContain(
@@ -356,9 +468,25 @@ describe("approvalNotification", () => {
 			expect(primaryIdx).toBeGreaterThan(-1)
 			expect(fallbackIdx).toBeGreaterThan(primaryIdx)
 			expect(written).toContain("exit 0")
+			expect(written).toContain("exit 1")
 			expect(written).not.toContain("snoretoast")
 			expect(written).not.toContain("start /wait")
 			expect(written).not.toContain("show-and-focus")
+		})
+
+		it("sanitizes long toast tags in the written PS1 so WinRT Tag stays ≤ 64", () => {
+			const longTag = `zoo-code-approval-19104-i_.development_commercial_project-management_extra`
+			writeWindowsToastPs1({
+				xml: "<toast></toast>",
+				tag: longTag,
+				outPath: "C:\\tmp\\toast-long-tag.ps1",
+			})
+			const written = String(vi.mocked(fs.writeFileSync).mock.calls.at(-1)?.[1] ?? "")
+			const match = written.match(/\$toast\.Tag = '([^']*)'/)
+			expect(match).toBeTruthy()
+			expect(match![1].length).toBeLessThanOrEqual(WINDOWS_TOAST_TAG_MAX_LENGTH)
+			expect(match![1]).toBe(sanitizeWindowsToastTag(longTag))
+			expect(written).not.toContain(longTag)
 		})
 
 		it("accepts an explicit appId override in the written script", () => {
@@ -426,16 +554,16 @@ describe("approvalNotification", () => {
 			expect(call!.command).toContain("Hidden")
 			expect(call!.command).toContain("-File")
 			expect(call!.command).toContain(`toast-show-${getInstanceKey()}.ps1`)
-			// Master's correct pattern: shell + all + stdin ignore (not detached/stdio/reject)
+			// shell + all + stdin ignore; reject:false keeps stderr available for UTF-8 diagnostics
 			expect(call!.options).toEqual(
 				expect.objectContaining({
 					shell: "C:\\Windows\\System32\\cmd.exe",
 					all: true,
 					stdin: "ignore",
+					reject: false,
 				}),
 			)
 			expect(call!.options).not.toHaveProperty("detached")
-			expect(call!.options).not.toHaveProperty("reject")
 			expect(call!.options).not.toHaveProperty("stdio")
 
 			// No snoretoast / cmd wait / show-and-focus main path

@@ -10,9 +10,8 @@
 !package.json
 !package.nls.*
 
-# Include the built extension (includes dist/assets/snoretoast/*.exe copied at build)
+# Include the built extension
 !dist
-!dist/**
 
 # Include the built webview
 !**/*.map

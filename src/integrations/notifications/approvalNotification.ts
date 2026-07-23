@@ -1,3 +1,4 @@
+import { createHash } from "crypto"
 import { execa } from "execa"
 import * as fs from "fs"
 import * as os from "os"
@@ -55,11 +56,81 @@ export function isApprovalFocusTargetThisWindow(
 }
 
 /**
- * Editor binary used for multi-window routing (`--reuse-window <folder>`).
- * Extension host `process.execPath` is the host editor (Code / Cursor / etc.).
+ * Resolve the host editor *CLI* entry used for multi-window routing
+ * (`--reuse-window <folder>`).
+ *
+ * Extension host `process.execPath` is the Electron binary (Code.exe). Invoking
+ * that binary directly rejects CLI flags (`bad option: --reuse-window`). The
+ * installer's `bin/code.cmd` (or `bin/code` / Cursor equivalents) sets
+ * ELECTRON_RUN_AS_NODE and forwards into cli.js — that is the path we need.
  */
-export function resolveEditorExecutablePath(): string {
-	return process.execPath
+export function resolveEditorExecutablePath(
+	execPath: string = process.execPath,
+	appRoot: string | undefined = (() => {
+		try {
+			return vscode.env?.appRoot
+		} catch {
+			return undefined
+		}
+	})(),
+): string {
+	const candidates: string[] = []
+	const push = (p: string | undefined) => {
+		if (p && !candidates.includes(p)) {
+			candidates.push(p)
+		}
+	}
+
+	const dir = path.dirname(execPath)
+	const base = path.basename(execPath).toLowerCase()
+	const isInsiders = base.includes("insider")
+	const isCursor = base.includes("cursor")
+
+	if (process.platform === "win32") {
+		const cliName = isInsiders ? "code-insiders.cmd" : isCursor ? "cursor.cmd" : "code.cmd"
+		const cliNameNoExt = isInsiders ? "code-insiders" : isCursor ? "cursor" : "code"
+		// Standard layout: <installRoot>/Code.exe + <installRoot>/bin/code.cmd
+		push(path.join(dir, "bin", cliName))
+		push(path.join(dir, "bin", cliNameNoExt))
+		// Sometimes execPath is nested; also probe parent.
+		push(path.join(dir, "..", "bin", cliName))
+	} else {
+		const cliName = isInsiders ? "code-insiders" : isCursor ? "cursor" : "code"
+		push(path.join(dir, "bin", cliName))
+		push(path.join(dir, cliName))
+		push(path.join(dir, "..", "bin", cliName))
+	}
+
+	// vscode.env.appRoot → .../resources/app → install root is two levels up on desktop builds.
+	if (appRoot) {
+		const installRoot = path.resolve(appRoot, "..", "..")
+		if (process.platform === "win32") {
+			const cliName = isInsiders ? "code-insiders.cmd" : isCursor ? "cursor.cmd" : "code.cmd"
+			// Prefer matching host; also try common names as fallback.
+			push(path.join(installRoot, "bin", cliName))
+			push(path.join(installRoot, "bin", "code.cmd"))
+			push(path.join(installRoot, "bin", "cursor.cmd"))
+			push(path.join(installRoot, "bin", "code-insiders.cmd"))
+		} else {
+			const cliName = isInsiders ? "code-insiders" : isCursor ? "cursor" : "code"
+			push(path.join(installRoot, "bin", cliName))
+			push(path.join(appRoot, "bin", cliName))
+			push(path.join(appRoot, "bin", "code"))
+		}
+	}
+
+	for (const candidate of candidates) {
+		try {
+			if (fs.existsSync(candidate)) {
+				return candidate
+			}
+		} catch {
+			// continue
+		}
+	}
+
+	// Last resort: Electron binary (may reject CLI flags on Windows).
+	return execPath
 }
 
 /**
@@ -82,42 +153,103 @@ function quoteShellArg(value: string): string {
  * Spawn a short-lived shell command with the same execa style as showWindowsSystemToast.
  * Callers should `void child.then(...)` for logging; do not detach/unref.
  */
-function spawnNotificationShellCommand(command: string, options?: { cwd?: string }): ReturnType<typeof execa> {
+function spawnNotificationShellCommand(
+	command: string,
+	options?: { cwd?: string; reject?: boolean },
+): ReturnType<typeof execa> {
 	return execa({
 		shell: getNotificationExecaShell(),
 		cwd: options?.cwd,
 		all: true,
 		stdin: "ignore",
+		// Only set reject when explicitly requested (toast uses false to keep stderr on non-zero).
+		...(options?.reject !== undefined ? { reject: options.reject } : {}),
 		env: {
+			...process.env,
+			// Prefer UTF-8 for child tools; PowerShell still needs explicit console encoding in-script.
 			LANG: "en_US.UTF-8",
 			LC_ALL: "en_US.UTF-8",
+			PYTHONIOENCODING: "utf-8",
 		},
 	})`${command}`
+}
+
+/** Flatten execa stdout/stderr/all for toast diagnostics (single-line friendly). */
+export function formatProcessOutputForLog(result: {
+	exitCode?: number | null
+	stdout?: string | unknown
+	stderr?: string | unknown
+	all?: string | unknown
+	shortMessage?: string
+	message?: string
+}): string {
+	const asText = (value: unknown): string => {
+		if (value == null) {
+			return ""
+		}
+		if (typeof value === "string") {
+			return value
+		}
+		if (Buffer.isBuffer(value)) {
+			return value.toString("utf8")
+		}
+		return String(value)
+	}
+
+	const chunks = [asText(result.all), asText(result.stderr), asText(result.stdout)]
+		.map((s) => s.replace("\u0000", "").trim())
+		.filter(Boolean)
+	// Prefer combined `all`, else stderr then stdout; de-dupe identical blobs.
+	const unique: string[] = []
+	for (const chunk of chunks) {
+		if (!unique.includes(chunk)) {
+			unique.push(chunk)
+		}
+	}
+	// Use || so empty strings fall through to shortMessage/message.
+	const body = unique[0] || asText(result.shortMessage) || asText(result.message)
+	const flat = body.replace(/\r\n/g, "\n").replace(/\n+/g, " | ").trim()
+	const code = result.exitCode
+	if (code === undefined || code === null) {
+		return flat || "(no output)"
+	}
+	return flat ? `code=${code} ${flat}` : `code=${code}`
 }
 
 /**
  * Bring the VS Code window that already has `workspaceFolder` open to the front.
  * Used only when protocol activation landed in the wrong window (multi-window).
- * Does not focus Zoo Code UI here — the matching window may also receive the URI.
+ * Does not focus Zoo Code UI here — the originating window already set
+ * pendingFocusOnWindowFocus and will open the sidebar when it gains OS focus.
  */
 export function focusTargetWorkspaceWindow(workspaceFolder: string): void {
 	const editor = resolveEditorExecutablePath()
 	try {
+		// Must use CLI wrapper (bin/code.cmd), not Code.exe — see resolveEditorExecutablePath.
 		const command = `${quoteShellArg(editor)} --reuse-window ${quoteShellArg(workspaceFolder)}`
-		const child = spawnNotificationShellCommand(command)
+		// reject:false so we can log stderr when the host CLI rejects flags / paths.
+		const child = spawnNotificationShellCommand(command, { reject: false })
 		appendToastLog(`reuse-window forward editor=${editor} folder=${workspaceFolder} pid=${child.pid ?? "unknown"}`)
 		void child.then(
 			(result) => {
-				appendToastLog(`reuse-window forward close code=${result.exitCode}`)
+				const detail = formatProcessOutputForLog(result)
+				if (result.exitCode === 0) {
+					appendToastLog(`reuse-window forward close ${detail}`)
+					return
+				}
+				console.error("[approvalNotification] Failed to reuse-window target workspace:", detail)
+				appendToastLog(`reuse-window forward failed: ${detail}`)
 			},
 			(error) => {
-				console.error("[approvalNotification] Failed to reuse-window target workspace:", error)
-				appendToastLog(`reuse-window forward failed: ${String(error)}`)
+				const detail = formatProcessOutputForLog(error as { message?: string })
+				console.error("[approvalNotification] Failed to reuse-window target workspace:", detail)
+				appendToastLog(`reuse-window forward failed: ${detail}`)
 			},
 		)
 	} catch (error) {
-		console.error("[approvalNotification] Failed to reuse-window target workspace:", error)
-		appendToastLog(`reuse-window forward failed: ${String(error)}`)
+		const detail = formatProcessOutputForLog(error as { message?: string })
+		console.error("[approvalNotification] Failed to reuse-window target workspace:", detail)
+		appendToastLog(`reuse-window forward failed: ${detail}`)
 	}
 }
 
@@ -179,7 +311,9 @@ function toastTempDir(): string {
 
 function appendToastLog(message: string): void {
 	try {
-		fs.appendFileSync(path.join(toastTempDir(), "last-toast.log"), `[${formatLocalLogTimestamp()}] ${message}\n`)
+		const logPath = path.join(toastTempDir(), "last-toast.log")
+		// Always UTF-8 so Chinese PowerShell diagnostics stay readable in editors that expect UTF-8.
+		fs.appendFileSync(logPath, `[${formatLocalLogTimestamp()}] ${message}\n`, { encoding: "utf8" })
 	} catch {
 		// ignore
 	}
@@ -187,6 +321,8 @@ function appendToastLog(message: string): void {
 
 /**
  * Per-VS-Code-instance identity so concurrent windows do not clobber each other.
+ * Used for focus URI `k=` and temporary script filenames — not for ToastNotification.Tag
+ * (Windows Tag is limited to 64 characters; see {@link getApprovalToastId}).
  */
 export function getInstanceKey(): string {
 	const folder = getWorkspaceFolderPath() || "noworkspace"
@@ -194,8 +330,36 @@ export function getInstanceKey(): string {
 	return `${process.pid}-${safeFolder}`
 }
 
+/** Windows.UI.Notifications.ToastNotification.Tag hard limit. */
+export const WINDOWS_TOAST_TAG_MAX_LENGTH = 64
+
+/**
+ * Sanitize a toast Tag for WinRT: keep safe characters and enforce the 64-char cap.
+ * Prefer a short stable form; never throw on length.
+ */
+export function sanitizeWindowsToastTag(tag: string): string {
+	const safe = tag
+		.replace(/[^a-zA-Z0-9._-]+/g, "_")
+		.replace(/_+/g, "_")
+		.replace(/^_|_$/g, "")
+	if (!safe) {
+		return "zoo-code"
+	}
+	if (safe.length <= WINDOWS_TOAST_TAG_MAX_LENGTH) {
+		return safe
+	}
+	return safe.slice(0, WINDOWS_TOAST_TAG_MAX_LENGTH)
+}
+
+/**
+ * Toast Tag for Action Center replace/dedupe. Must stay ≤ 64 chars (Windows API).
+ * Format: zoo-code-{pid}-{hash8} so multi-window isolation stays stable without path bloat.
+ */
 export function getApprovalToastId(): string {
-	return `zoo-code-approval-${getInstanceKey()}`
+	const folder = getWorkspaceFolderPath() || "noworkspace"
+	const workspaceKey = normalizeWorkspacePath(folder)
+	const hash8 = createHash("sha256").update(workspaceKey).digest("hex").slice(0, 8)
+	return sanitizeWindowsToastTag(`zoo-code-${process.pid}-${hash8}`)
 }
 
 export function resolveToastIconPath(): string | undefined {
@@ -370,7 +534,8 @@ export function writeWindowsToastPs1(options: {
 }): string {
 	// Keep LoadXml('...') a single PS string literal even if body once had newlines.
 	const xmlLiteral = options.xml.replace(/\r?\n/g, " ").replace(/'/g, "''")
-	const tagLiteral = options.tag.replace(/'/g, "''")
+	// WinRT rejects Tag longer than 64 chars — always sanitize before embedding.
+	const tagLiteral = sanitizeWindowsToastTag(options.tag).replace(/'/g, "''")
 
 	// Prefer host editor AUMID so Action Center shows "Visual Studio Code" (etc.), not PowerShell.
 	const primaryAumid = (options.appId ?? resolveWindowsToastAppId()).replace(/'/g, "''")
@@ -379,27 +544,47 @@ export function writeWindowsToastPs1(options: {
 		"# Zoo Code approval toast — short-lived PS after Show(); click uses protocol activation.",
 		"# AppId is the host editor AUMID so Action Center attributes the toast to VS Code, not PowerShell.",
 		"$ErrorActionPreference = 'Stop'",
-		"[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null",
-		"[Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime] | Out-Null",
-		`$xml = New-Object Windows.Data.Xml.Dom.XmlDocument`,
-		`$xml.LoadXml('${xmlLiteral}')`,
-		"$toast = [Windows.UI.Notifications.ToastNotification]::new($xml)",
-		`$toast.Tag = '${tagLiteral}'`,
-		`$toast.Group = 'zoo-code-approval'`,
-		`$appIds = @('${primaryAumid}', '${fallbackAumid}')`,
-		"$shown = $false",
-		"foreach ($appId in $appIds) {",
-		"  try {",
-		"    $notifier = [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($appId)",
-		"    $notifier.Show($toast)",
-		"    $shown = $true",
-		"    break",
-		"  } catch {",
-		"    # Try next AppId (e.g. unregistered host AUMID → PowerShell fallback).",
+		"# Force UTF-8 console/pipeline so Chinese exception text is not GBK-decoded as mojibake in Node logs.",
+		"try {",
+		"  $utf8 = New-Object System.Text.UTF8Encoding $false",
+		"  [Console]::OutputEncoding = $utf8",
+		"  [Console]::InputEncoding = $utf8",
+		"  $OutputEncoding = $utf8",
+		"  $null = cmd /c chcp 65001 >nul 2>&1",
+		"} catch {}",
+		"try {",
+		"  [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null",
+		"  [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime] | Out-Null",
+		"  $xml = New-Object Windows.Data.Xml.Dom.XmlDocument",
+		`  $xml.LoadXml('${xmlLiteral}')`,
+		"  $toast = [Windows.UI.Notifications.ToastNotification]::new($xml)",
+		`  $toast.Tag = '${tagLiteral}'`,
+		"  $toast.Group = 'zoo-code-approval'",
+		`  $appIds = @('${primaryAumid}', '${fallbackAumid}')`,
+		"  $shown = $false",
+		"  foreach ($appId in $appIds) {",
+		"    try {",
+		"      $notifier = [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($appId)",
+		"      $notifier.Show($toast)",
+		"      $shown = $true",
+		"      break",
+		"    } catch {",
+		"      # Try next AppId (e.g. unregistered host AUMID → PowerShell fallback).",
+		"    }",
 		"  }",
+		"  if (-not $shown) { throw 'ToastNotification.Show failed for all AppIds' }",
+		"  exit 0",
+		"} catch {",
+		"  $errText = ($_ | Out-String).Trim()",
+		"  if (-not $errText) { $errText = [string]$_ }",
+		"  try { [Console]::Error.WriteLine($errText) } catch { Write-Error $errText }",
+		"  try {",
+		"    $errLog = Join-Path $PSScriptRoot 'last-toast-ps-error.log'",
+		"    $utf8Bom = New-Object System.Text.UTF8Encoding $true",
+		"    [System.IO.File]::WriteAllText($errLog, $errText, $utf8Bom)",
+		"  } catch {}",
+		"  exit 1",
 		"}",
-		"if (-not $shown) { throw 'ToastNotification.Show failed for all AppIds' }",
-		"exit 0",
 		"",
 	].join("\r\n")
 
@@ -432,7 +617,8 @@ export type WindowsToastOptions = {
 export function showWindowsSystemToast(options: WindowsToastOptions): void {
 	const title = options.title
 	const body = options.body
-	const toastId = options.id ?? getApprovalToastId()
+	// Tag must be ≤ 64 chars; sanitize even if caller passes a custom id.
+	const toastId = sanitizeWindowsToastTag(options.id ?? getApprovalToastId())
 	const iconPath = resolveToastIconPath()
 	const reviewLabel = t("common:approvalNotification.review")
 	const actions =
@@ -466,12 +652,13 @@ export function showWindowsSystemToast(options: WindowsToastOptions): void {
 	let child: ReturnType<typeof execa>
 	try {
 		// Hidden window; exits right after Show(). Not a waiter for toast lifetime.
-		const command = `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File ${scriptPath}`
-		child = spawnNotificationShellCommand(command)
-		//child.unref()
+		// -File + UTF-8 BOM script; script itself forces console UTF-8 for Chinese errors.
+		const command = `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File ${quoteShellArg(scriptPath)}`
+		// reject:false so non-zero exits still yield stdout/stderr for last-toast.log (no mojibake-only String(error)).
+		child = spawnNotificationShellCommand(command, { reject: false })
 	} catch (error) {
 		console.error("[approvalNotification] Failed to spawn PowerShell toast:", error)
-		appendToastLog(`spawn powershell toast threw: ${String(error)}`)
+		appendToastLog(`spawn powershell toast threw: ${formatProcessOutputForLog(error as { message?: string })}`)
 		return
 	}
 
@@ -479,13 +666,30 @@ export function showWindowsSystemToast(options: WindowsToastOptions): void {
 
 	void child.then(
 		(result) => {
-			appendToastLog(
-				`powershell toast close code=${result.exitCode} (expected ~0; toast lifetime is Action Center, not this process)`,
-			)
+			const detail = formatProcessOutputForLog(result)
+			if (result.exitCode === 0) {
+				appendToastLog(
+					`powershell toast close ${detail} (expected ~0; toast lifetime is Action Center, not this process)`,
+				)
+				return
+			}
+			// Prefer UTF-8 sidecar written by the script when stderr still mis-decodes.
+			let sidecar = ""
+			try {
+				const errLog = path.join(toastTempDir(), "last-toast-ps-error.log")
+				if (fs.existsSync(errLog)) {
+					sidecar = fs.readFileSync(errLog, "utf8").replace(/\r\n/g, "\n").replace(/\n+/g, " | ").trim()
+				}
+			} catch {
+				// ignore
+			}
+			const message = sidecar ? `${detail} ps-error=${sidecar}` : detail
+			console.error("[approvalNotification] PowerShell toast failed:", message)
+			appendToastLog(`powershell toast failed ${message}`)
 		},
 		(error) => {
 			console.error("[approvalNotification] PowerShell toast process error:", error)
-			appendToastLog(`powershell toast child error: ${String(error)}`)
+			appendToastLog(`powershell toast child error: ${formatProcessOutputForLog(error as { message?: string })}`)
 		},
 	)
 }

@@ -80,13 +80,6 @@ async function main() {
 							["assets/marketplace", "dist/assets/marketplace"],
 							// Toast icon used by Windows notifications. Directory copy ensures parent dirs exist.
 							["assets/icons", "dist/assets/icons", { optional: true }],
-							// SnoreToast binaries for Windows (optional fallback path). Copied from node-notifier
-							// at build time so *.exe stay out of git; vsix still gets them via dist/.
-							[
-								"node_modules/node-notifier/vendor/snoreToast",
-								"dist/assets/snoretoast",
-								{ optional: true },
-							],
 						],
 						srcDir,
 						buildDir,
