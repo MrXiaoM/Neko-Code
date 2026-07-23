@@ -106,4 +106,12 @@ describe("WarningRow", () => {
 
 		expect(mockOnAction).toHaveBeenCalledTimes(1)
 	})
+
+	it("renders a thick warning-colored left border for the message", () => {
+		const { container } = render(<WarningRow title="Test Warning" message="This is a test message" />)
+
+		expect(
+			container.querySelector('[class~="border-l-2"][class~="border-vscode-editorWarning-foreground/50"]'),
+		).toBeInTheDocument()
+	})
 })

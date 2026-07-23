@@ -958,7 +958,7 @@ export const ChatRowContent = ({
 									/>
 								</span>
 							</div>
-							<div className="border-l border-muted-foreground/80 ml-2 pl-4 pb-1">
+							<div className="border-l-2 border-vscode-editorWarning-foreground/50 ml-2 pl-4 pb-1">
 								<MarkdownBlock markdown={tool.content} />
 								<div>
 									{childTaskId && !isFollowedBySubtaskResult && (
@@ -1155,7 +1155,7 @@ export const ChatRowContent = ({
 					// Get the child task ID that produced this result
 					const completedChildTaskId = currentTaskItem?.completedByChildId
 					return (
-						<div className="border-l border-muted-foreground/80 ml-2 pl-4 pt-2 pb-1 -mt-5">
+						<div className="border-l-2 border-vscode-textLink-foreground/50 ml-2 pl-4 pt-2 pb-1 -mt-5">
 							<div style={headerStyle}>
 								<span style={{ fontWeight: "bold" }}>{t("chat:subtasks.resultContent")}</span>
 								<Check className="size-3" />
@@ -1476,7 +1476,7 @@ export const ChatRowContent = ({
 								<div style={{ flexGrow: 1 }} />
 								<OpenMarkdownPreviewButton markdown={message.text} />
 							</div>
-							<div className="border-l border-green-600/30 ml-2 pl-4 pb-1">
+							<div className="border-l-2 border-green-600/30 ml-2 pl-4 pb-1">
 								<Markdown markdown={message.text} />
 								{!message.partial && enableCheckpoints !== false && completionCheckpoint ? (
 									<SeeNewChangesButtons key={completionCheckpoint.ts} />

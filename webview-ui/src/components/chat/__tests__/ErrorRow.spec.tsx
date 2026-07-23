@@ -79,4 +79,12 @@ describe("ErrorRow diagnostics download", () => {
 		// Timestamp is generated at runtime, but should be a string
 		expect(typeof payload.values.timestamp).toBe("string")
 	})
+
+	it("renders a thick error-colored left border for the message", () => {
+		const { container } = render(<ErrorRow type="error" message="Something went wrong" />)
+
+		expect(
+			container.querySelector('[class~="border-l-2"][class~="border-vscode-errorForeground/50"]'),
+		).toBeInTheDocument()
+	})
 })

@@ -51,7 +51,7 @@ export const WarningRow: React.FC<WarningRowProps> = ({ title, message, docsURL,
 					</a>
 				)}
 			</div>
-			<div className="cursor-default ml-2 pl-4 mt-1 pt-0.5 border-l border-vscode-editorWarning-foreground/50">
+			<div className="cursor-default ml-2 pl-4 mt-1 pt-0.5 border-l-2 border-vscode-editorWarning-foreground/50">
 				<p className="my-0 font-light whitespace-pre-wrap break-words text-vscode-descriptionForeground">
 					{message}
 					{actionText && onAction && (

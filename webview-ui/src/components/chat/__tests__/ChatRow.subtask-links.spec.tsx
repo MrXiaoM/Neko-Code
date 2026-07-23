@@ -184,6 +184,24 @@ describe("ChatRow - subtask links", () => {
 			const goToSubtaskButton = screen.queryByText("Go to subtask")
 			expect(goToSubtaskButton).toBeNull()
 		})
+		it("renders a thick amber left border for subtask creation content", () => {
+			const message = {
+				ts: Date.now(),
+				type: "ask" as const,
+				ask: "tool" as const,
+				text: JSON.stringify({
+					tool: "newTask",
+					mode: "code",
+					content: "Implement feature X",
+				}),
+			}
+
+			const { container } = renderChatRow(message)
+
+			expect(
+				container.querySelector('[class~="border-l-2"][class~="border-vscode-editorWarning-foreground/50"]'),
+			).toBeInTheDocument()
+		})
 	})
 
 	describe("subtask_result say message", () => {
@@ -222,6 +240,21 @@ describe("ChatRow - subtask links", () => {
 
 			const goToSubtaskButton = screen.queryByText("Go to subtask")
 			expect(goToSubtaskButton).toBeNull()
+		})
+
+		it("renders a thick blue left border for subtask result content", () => {
+			const message = {
+				ts: Date.now(),
+				type: "say" as const,
+				say: "subtask_result" as const,
+				text: "The subtask has been completed successfully.",
+			}
+
+			const { container } = renderChatRow(message)
+
+			expect(
+				container.querySelector('[class~="border-l-2"][class~="border-vscode-textLink-foreground/50"]'),
+			).toBeInTheDocument()
 		})
 	})
 })
