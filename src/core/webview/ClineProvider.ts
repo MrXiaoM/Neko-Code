@@ -3380,6 +3380,38 @@ export class ClineProvider
 	}
 
 	private async cancelTaskInternal(task: Task): Promise<void> {
+		// Preserve parent and root task information for history item.
+		let rootTask = task.rootTask
+		let parentTask = task.parentTask
+
+		// Mark this as a user-initiated cancellation so provider-only rehydration can occur
+		task.abortReason = "user_cancelled"
+
+		// Capture the current instance to detect if rehydrate already occurred elsewhere
+		const originalInstanceId = task.instanceId
+
+		// Stop execution before any history I/O. History reads and abort persistence can be
+		// delayed, but the stop button must still terminate a stuck tool immediately.
+		task.cancelCurrentRequest()
+		try {
+			task.terminalProcess?.abort()
+		} catch (error) {
+			this.log(
+				`[cancelTask] Failed to abort terminal process for ${task.taskId}.${task.instanceId}: ${
+					error instanceof Error ? error.message : String(error)
+				}`,
+			)
+		}
+
+		// Kick off abort (sets abort flag synchronously; stream exit and final saveClineMessages
+		// happen asynchronously). We capture the promise so we can await its completion below —
+		// this ensures task.initialStatus ("active") cannot overwrite "interrupted" after we
+		// persist it (issue #560).
+		const abortPromise = task.abortTask()
+
+		// Immediately mark the original instance as abandoned to prevent any residual activity
+		task.abandoned = true
+
 		let historyItem: HistoryItem | undefined
 		try {
 			const history = await this.getTaskWithId(task.taskId)
@@ -3391,32 +3423,10 @@ export class ClineProvider
 			if (error instanceof Error && error.message === "Task not found") {
 				this.log(`[cancelTask] task history missing for ${task.taskId}; skipping rehydrate`)
 			} else {
+				await abortPromise.catch(() => {})
 				throw error
 			}
 		}
-
-		// Preserve parent and root task information for history item.
-		let rootTask = task.rootTask
-		let parentTask = task.parentTask
-
-		// Mark this as a user-initiated cancellation so provider-only rehydration can occur
-		task.abortReason = "user_cancelled"
-
-		// Capture the current instance to detect if rehydrate already occurred elsewhere
-		const originalInstanceId = task.instanceId
-
-		// Immediately cancel the underlying HTTP request if one is in progress
-		// This ensures the stream fails quickly rather than waiting for network timeout
-		task.cancelCurrentRequest()
-
-		// Kick off abort (sets abort flag synchronously; stream exit and final saveClineMessages
-		// happen asynchronously). We capture the promise so we can await its completion below —
-		// this ensures task.initialStatus ("active") cannot overwrite "interrupted" after we
-		// persist it (issue #560).
-		const abortPromise = task.abortTask()
-
-		// Immediately mark the original instance as abandoned to prevent any residual activity
-		task.abandoned = true
 
 		await pWaitFor(
 			() =>

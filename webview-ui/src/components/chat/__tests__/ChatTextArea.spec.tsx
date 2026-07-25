@@ -1205,4 +1205,51 @@ describe("ChatTextArea", () => {
 			expect(sendButton).toHaveClass("pointer-events-auto")
 		})
 	})
+
+	describe("task stop button", () => {
+		it("keeps the stop action visible when the task is stoppable but not streaming", () => {
+			const onStop = vi.fn()
+			const { container } = render(
+				<ChatTextArea {...defaultProps} isStreaming={false} canStopTask={true} onStop={onStop} />,
+			)
+
+			const stopButton = Array.from(container.querySelectorAll("button")).find(
+				(button) => button.querySelector(".lucide-square") !== null,
+			)
+
+			expect(stopButton).toBeInTheDocument()
+			expect(stopButton).toHaveClass("opacity-100")
+			expect(stopButton).toHaveClass("pointer-events-auto")
+
+			fireEvent.click(stopButton!)
+
+			expect(onStop).toHaveBeenCalledTimes(1)
+			expect(defaultProps.onSend).not.toHaveBeenCalled()
+		})
+
+		it("restores the send action when the task is no longer stoppable", () => {
+			const onStop = vi.fn()
+			const onSend = vi.fn()
+			const { container } = render(
+				<ChatTextArea
+					{...defaultProps}
+					inputValue="Continue"
+					isStreaming={false}
+					canStopTask={false}
+					onStop={onStop}
+					onSend={onSend}
+				/>,
+			)
+
+			const sendButton = Array.from(container.querySelectorAll("button")).find(
+				(button) => button.querySelector(".lucide-send-horizontal") !== null,
+			)
+
+			expect(sendButton).toBeInTheDocument()
+			fireEvent.click(sendButton!)
+
+			expect(onSend).toHaveBeenCalledTimes(1)
+			expect(onStop).not.toHaveBeenCalled()
+		})
+	})
 })

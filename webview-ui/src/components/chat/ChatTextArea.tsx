@@ -54,6 +54,7 @@ interface ChatTextAreaProps {
 	onCancel?: () => void
 	// Stop/Queue functionality
 	isStreaming?: boolean
+	canStopTask?: boolean
 	onStop?: () => void
 	onEnqueueMessage?: () => void
 }
@@ -77,6 +78,7 @@ export const ChatTextArea = forwardRef<HTMLTextAreaElement, ChatTextAreaProps>(
 			isEditMode = false,
 			onCancel,
 			isStreaming = false,
+			canStopTask = isStreaming,
 			onStop,
 			onEnqueueMessage,
 		},
@@ -1219,12 +1221,12 @@ export const ChatTextArea = forwardRef<HTMLTextAreaElement, ChatTextAreaProps>(
 										</button>
 									</StandardTooltip>
 								)}
-								{/* Send/Stop button - morphs based on streaming state, always visible in edit mode */}
+								{/* Send/Stop button - stop remains available while the task can still own resources. */}
 								<StandardTooltip
 									content={
 										isEditMode
 											? t("chat:pressToSend", { keyCombination: sendKeyCombination })
-											: isStreaming
+											: canStopTask
 												? t("chat:stop.title")
 												: t("chat:pressToSend", { keyCombination: sendKeyCombination })
 									}>
@@ -1232,31 +1234,31 @@ export const ChatTextArea = forwardRef<HTMLTextAreaElement, ChatTextAreaProps>(
 										aria-label={
 											isEditMode
 												? t("chat:pressToSend", { keyCombination: sendKeyCombination })
-												: isStreaming
+												: canStopTask
 													? t("chat:stop.title")
 													: t("chat:pressToSend", { keyCombination: sendKeyCombination })
 										}
 										disabled={false}
-										onClick={isStreaming ? onStop : onSend}
+										onClick={canStopTask ? onStop : onSend}
 										className={cn(
 											"relative inline-flex items-center justify-center",
 											"bg-transparent border-none p-1.5",
 											"rounded-full min-w-[28px] min-h-[28px]",
 											"text-vscode-descriptionForeground hover:text-vscode-foreground",
 											"transition-all duration-200",
-											isEditMode || isStreaming || hasInputContent
+											isEditMode || canStopTask || hasInputContent
 												? "opacity-100 hover:opacity-100 pointer-events-auto"
 												: "opacity-0 pointer-events-none",
-											(isEditMode || isStreaming || hasInputContent) &&
+											(isEditMode || canStopTask || hasInputContent) &&
 												"hover:bg-[rgba(255,255,255,0.03)] hover:border-[rgba(255,255,255,0.15)]",
 											"focus:outline-none focus-visible:ring-1 focus-visible:ring-vscode-focusBorder",
-											(isEditMode || isStreaming || hasInputContent) &&
+											(isEditMode || canStopTask || hasInputContent) &&
 												"active:bg-[rgba(255,255,255,0.1)]",
-											(isEditMode || isStreaming || hasInputContent) && "cursor-pointer",
-											isStreaming &&
+											(isEditMode || canStopTask || hasInputContent) && "cursor-pointer",
+											canStopTask &&
 												"bg-vscode-button-background hover:bg-vscode-button-background",
 										)}>
-										{isStreaming ? (
+										{canStopTask ? (
 											<Square className="size-4 stroke-none fill-vscode-button-foreground" />
 										) : (
 											<SendHorizontal className="size-4" />

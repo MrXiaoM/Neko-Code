@@ -630,6 +630,34 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 		return false
 	}, [modifiedMessages, clineAsk, enableButtons, primaryButtonText])
 
+	const canStopTask = useMemo(() => {
+		if (!task || currentTaskItem?.status === "completed" || currentTaskItem?.status === "interrupted") {
+			return false
+		}
+
+		const lastMessage = messages.at(-1)
+		if (
+			(lastMessage?.type === "say" && lastMessage.say === "task_manually_stopped") ||
+			clineAsk === "completion_result" ||
+			clineAsk === "resume_task" ||
+			clineAsk === "resume_completed_task"
+		) {
+			return false
+		}
+
+		// Preserve the send action while the extension is explicitly waiting for a
+		// user decision or answer. command_output is different: the command still
+		// owns execution resources, so the task-level stop action must remain available.
+		const isWaitingForUserInteraction =
+			clineAsk === "followup" ||
+			(clineAsk !== undefined &&
+				clineAsk !== "command_output" &&
+				enableButtons &&
+				primaryButtonText !== undefined)
+
+		return !isWaitingForUserInteraction
+	}, [task, currentTaskItem?.status, messages, clineAsk, enableButtons, primaryButtonText])
+
 	const markFollowUpAsAnswered = useCallback(() => {
 		const lastFollowUpMessage = messagesRef.current.findLast((msg: ClineMessage) => msg.ask === "followup")
 		if (lastFollowUpMessage) {
@@ -1912,6 +1940,7 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 					setMode={setMode}
 					modeShortcutText={modeShortcutText}
 					isStreaming={isStreaming}
+					canStopTask={canStopTask}
 					onStop={handleStopTask}
 					onEnqueueMessage={handleEnqueueCurrentMessage}
 				/>

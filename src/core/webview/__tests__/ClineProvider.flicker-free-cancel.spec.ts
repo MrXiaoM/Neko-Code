@@ -379,6 +379,50 @@ describe("ClineProvider flicker-free cancel", () => {
 		await provider.dispose()
 	})
 
+	it("aborts active execution before waiting for task history", async () => {
+		const callOrder: string[] = []
+		let resolveHistory!: (value: { historyItem: HistoryItem }) => void
+		const historyPromise = new Promise<{ historyItem: HistoryItem }>((resolve) => {
+			resolveHistory = resolve
+		})
+		const historyItem: HistoryItem = {
+			id: "task-1",
+			number: 1,
+			task: "test task",
+			ts: Date.now(),
+			tokensIn: 0,
+			tokensOut: 0,
+			totalCost: 0,
+			workspace: "/test/workspace",
+		}
+
+		Object.assign(mockTask1, {
+			cancelCurrentRequest: vi.fn(() => callOrder.push("request")),
+			terminalProcess: { abort: vi.fn(() => callOrder.push("terminal")) },
+			abortTask: vi.fn().mockImplementation(async () => {
+				callOrder.push("task")
+			}),
+			isStreaming: false,
+			didFinishAbortingStream: true,
+			isWaitingForFirstChunk: false,
+		})
+		;(provider as any).clineStack = [mockTask1]
+		provider.getTaskWithId = vi.fn().mockImplementation(() => {
+			callOrder.push("history")
+			return historyPromise
+		}) as any
+		vi.spyOn(provider, "createTaskWithHistoryItem").mockResolvedValue(undefined as any)
+
+		const cancelPromise = provider.cancelTask()
+		await Promise.resolve()
+
+		expect(callOrder).toEqual(["request", "terminal", "task", "history"])
+		expect(mockTask1.terminalProcess.abort).toHaveBeenCalledTimes(1)
+
+		resolveHistory({ historyItem })
+		await cancelPromise
+	})
+
 	it("should not remove current task from stack when rehydrating same taskId", async () => {
 		// Setup: Add a task to the stack first
 		;(provider as any).clineStack = [mockTask1]
