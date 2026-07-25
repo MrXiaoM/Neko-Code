@@ -2,7 +2,12 @@ import React from "react"
 import { Fzf } from "fzf"
 import { Check, X } from "lucide-react"
 
-import { type ModeConfig, type CustomModePrompts, TelemetryEventName } from "@roo-code/types"
+import {
+	type ModeConfig,
+	type CustomModePrompts,
+	type ProviderSettingsEntry,
+	TelemetryEventName,
+} from "@roo-code/types"
 
 import { type Mode, getAllModes, defaultModeSlug } from "@roo/modes"
 
@@ -27,6 +32,8 @@ interface ModeSelectorProps {
 	modeShortcutText: string
 	customModes?: ModeConfig[]
 	customModePrompts?: CustomModePrompts
+	modeApiConfigs?: Record<string, string>
+	listApiConfigMeta?: ProviderSettingsEntry[]
 	disableSearch?: boolean
 }
 
@@ -39,6 +46,8 @@ export const ModeSelector = ({
 	modeShortcutText,
 	customModes,
 	customModePrompts,
+	modeApiConfigs = {},
+	listApiConfigMeta = [],
 	disableSearch = false,
 }: ModeSelectorProps) => {
 	const [open, setOpen] = React.useState(false)
@@ -71,6 +80,14 @@ export const ModeSelector = ({
 			description: customModePrompts?.[mode.slug]?.description ?? mode.description,
 		}))
 	}, [customModes, customModePrompts])
+
+	const modelIdByMode = React.useMemo(() => {
+		const configById = new Map(listApiConfigMeta.map((config) => [config.id, config]))
+
+		return Object.fromEntries(
+			Object.entries(modeApiConfigs).map(([modeSlug, configId]) => [modeSlug, configById.get(configId)?.modelId]),
+		)
+	}, [listApiConfigMeta, modeApiConfigs])
 
 	// Find the selected mode, falling back to default if current mode doesn't exist (e.g., after workspace switch)
 	const selectedMode = React.useMemo(() => {
@@ -293,14 +310,28 @@ export const ModeSelector = ({
 											)}
 											data-testid="mode-selector-item">
 											<div className="flex-1 min-w-0">
-												<div className="font-bold truncate">{mode.name}</div>
+												<div className="flex items-center gap-3 min-w-0">
+													<div className="font-bold truncate flex-1 min-w-0">{mode.name}</div>
+													{modelIdByMode[mode.slug] && (
+														<div
+															className="text-xs text-vscode-descriptionForeground truncate text-right max-w-[55%]"
+															data-testid={`mode-selector-model-${mode.slug}`}>
+															{modelIdByMode[mode.slug]}
+														</div>
+													)}
+												</div>
 												{mode.description && (
 													<div className="text-xs text-vscode-descriptionForeground truncate">
 														{mode.description}
 													</div>
 												)}
 											</div>
-											{isSelected && <Check className="ml-auto size-4 p-0.5" />}
+											{isSelected && (
+												<Check
+													className="ml-2 size-4 p-0.5 shrink-0"
+													data-testid="selected-mode-check"
+												/>
+											)}
 										</div>
 									)
 								})}

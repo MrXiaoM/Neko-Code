@@ -403,6 +403,30 @@ describe("ProviderSettingsManager", () => {
 		})
 	})
 
+	describe("GetModeConfigs", () => {
+		it("returns a copy of all persisted mode associations", async () => {
+			mockSecrets.get.mockResolvedValue(
+				JSON.stringify({
+					currentApiConfigName: "default",
+					apiConfigs: { default: { id: "default" } },
+					modeApiConfigs: {
+						code: "code-config-id",
+						architect: "architect-config-id",
+					},
+				}),
+			)
+
+			const modeConfigs = await providerSettingsManager.getModeConfigs()
+			modeConfigs.code = "modified"
+
+			expect(modeConfigs).toEqual({ code: "modified", architect: "architect-config-id" })
+			expect(await providerSettingsManager.getModeConfigs()).toEqual({
+				code: "code-config-id",
+				architect: "architect-config-id",
+			})
+		})
+	})
+
 	describe("SaveConfig", () => {
 		it("should save new config", async () => {
 			mockSecrets.get.mockResolvedValue(

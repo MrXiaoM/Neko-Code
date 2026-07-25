@@ -2456,6 +2456,7 @@ export class ClineProvider
 			currentApiConfigName,
 			listApiConfigMeta,
 			pinnedApiConfigs,
+			modeApiConfigs,
 			mode,
 			customModePrompts,
 			customSupportPrompts,
@@ -2613,6 +2614,7 @@ export class ClineProvider
 			currentApiConfigName: currentApiConfigName ?? "default",
 			listApiConfigMeta: listApiConfigMeta ?? [],
 			pinnedApiConfigs: pinnedApiConfigs ?? {},
+			modeApiConfigs: modeApiConfigs ?? {},
 			mode: mode ?? defaultModeSlug,
 			customModePrompts: customModePrompts ?? {},
 			customSupportPrompts: customSupportPrompts ?? {},
@@ -2730,6 +2732,17 @@ export class ClineProvider
 	> {
 		const stateValues = this.contextProxy.getValues()
 		const customModes = await this.customModesManager.getCustomModes()
+		let modeApiConfigs = stateValues.modeApiConfigs ?? ({} as Record<Mode, string>)
+
+		if (typeof this.providerSettingsManager.getModeConfigs === "function") {
+			try {
+				modeApiConfigs = await this.providerSettingsManager.getModeConfigs()
+			} catch (error) {
+				console.error(
+					`[getState] failed to get mode API configs: ${error instanceof Error ? error.message : String(error)}`,
+				)
+			}
+		}
 
 		// Determine apiProvider with the same logic as before, while filtering retired providers.
 		const apiProvider: ProviderName =
@@ -2845,7 +2858,7 @@ export class ClineProvider
 			currentApiConfigName: stateValues.currentApiConfigName ?? "default",
 			listApiConfigMeta: stateValues.listApiConfigMeta ?? [],
 			pinnedApiConfigs: stateValues.pinnedApiConfigs ?? {},
-			modeApiConfigs: stateValues.modeApiConfigs ?? ({} as Record<Mode, string>),
+			modeApiConfigs,
 			customModePrompts: stateValues.customModePrompts ?? {},
 			customSupportPrompts: stateValues.customSupportPrompts ?? {},
 			enhancementApiConfigId: stateValues.enhancementApiConfigId,

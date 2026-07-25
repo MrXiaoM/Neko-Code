@@ -297,4 +297,84 @@ describe("ModeSelector", () => {
 		const trigger = screen.getByTestId("mode-selector-trigger")
 		expect(trigger).toHaveTextContent("Code")
 	})
+
+	test("shows each mode's configured model ID without showing the config name", () => {
+		mockModes = [
+			{
+				slug: "code",
+				name: "Code",
+				description: "Code mode",
+				roleDefinition: "Role definition",
+				groups: ["read", "edit"],
+			},
+			{
+				slug: "architect",
+				name: "Architect",
+				description: "Architect mode",
+				roleDefinition: "Role definition",
+				groups: ["read"],
+			},
+		]
+
+		render(
+			<ModeSelector
+				title="Mode Selector"
+				value={"code" as Mode}
+				onChange={vi.fn()}
+				modeShortcutText="Ctrl+M"
+				modeApiConfigs={{ code: "code-config", architect: "architect-config" }}
+				listApiConfigMeta={[
+					{
+						id: "code-config",
+						name: "Verbose Code Configuration Name",
+						modelId: "anthropic/claude-sonnet-4",
+					},
+					{ id: "architect-config", name: "Architecture Profile", modelId: "openai/gpt-5" },
+				]}
+			/>,
+		)
+
+		fireEvent.click(screen.getByTestId("mode-selector-trigger"))
+
+		expect(screen.getByTestId("mode-selector-model-code")).toHaveTextContent("anthropic/claude-sonnet-4")
+		expect(screen.getByTestId("mode-selector-model-architect")).toHaveTextContent("openai/gpt-5")
+		expect(screen.queryByText("Verbose Code Configuration Name")).not.toBeInTheDocument()
+		expect(screen.queryByText("Architecture Profile")).not.toBeInTheDocument()
+		expect(screen.getByTestId("selected-mode-check")).toBeInTheDocument()
+	})
+
+	test("leaves the model area empty when a mode binding or model ID is missing", () => {
+		mockModes = [
+			{
+				slug: "code",
+				name: "Code",
+				description: "Code mode",
+				roleDefinition: "Role definition",
+				groups: ["read", "edit"],
+			},
+			{
+				slug: "architect",
+				name: "Architect",
+				description: "Architect mode",
+				roleDefinition: "Role definition",
+				groups: ["read"],
+			},
+		]
+
+		render(
+			<ModeSelector
+				title="Mode Selector"
+				value={"code" as Mode}
+				onChange={vi.fn()}
+				modeShortcutText="Ctrl+M"
+				modeApiConfigs={{ code: "code-config" }}
+				listApiConfigMeta={[{ id: "code-config", name: "Code Profile" }]}
+			/>,
+		)
+
+		fireEvent.click(screen.getByTestId("mode-selector-trigger"))
+
+		expect(screen.queryByTestId("mode-selector-model-code")).not.toBeInTheDocument()
+		expect(screen.queryByTestId("mode-selector-model-architect")).not.toBeInTheDocument()
+	})
 })

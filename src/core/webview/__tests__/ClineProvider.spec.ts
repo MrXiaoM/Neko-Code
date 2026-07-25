@@ -972,6 +972,22 @@ describe("ClineProvider", () => {
 		expect(state).toHaveProperty("writeDelayMs")
 	})
 
+	test("getState reads mode config associations from provider profile storage", async () => {
+		const persistedModeConfigs = {
+			code: "code-config-id",
+			architect: "architect-config-id",
+		}
+		const getModeConfigsSpy = vi
+			.spyOn(provider.providerSettingsManager, "getModeConfigs")
+			.mockResolvedValue(persistedModeConfigs)
+		await provider.contextProxy.setValue("modeApiConfigs", {})
+
+		const state = await provider.getState()
+
+		expect(getModeConfigsSpy).toHaveBeenCalledOnce()
+		expect(state.modeApiConfigs).toEqual(persistedModeConfigs)
+	})
+
 	test("language is set to VSCode language", async () => {
 		// Mock VSCode language as Spanish
 		;(vscode.env as any).language = "pt-BR"
