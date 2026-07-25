@@ -35,7 +35,6 @@ export const BatchFilePermission = memo(({ files = [], onPermissionResponse, ts 
 								<ToolUseBlockHeader
 									onClick={() => vscode.postMessage({ type: "openFile", text: file.content })}>
 									<MiddleTruncatedPath path={file.path} additionalContent={file.lineSnippet} />
-									<div className="flex-grow"></div>
 									<span className="codicon codicon-link-external text-[13.5px] my-[1px]" />
 								</ToolUseBlockHeader>
 							</ToolUseBlock>

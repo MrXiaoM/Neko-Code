@@ -54,11 +54,18 @@ describe("BatchFilePermission", () => {
 			</TranslationProvider>,
 		)
 
-		// File names remain identifiable in the non-shrinking path suffix.
-		const suffixes = screen.getAllByTestId("path-suffix")
-		expect(suffixes[0]).toHaveTextContent("/Button.tsx")
-		expect(suffixes[1]).toHaveTextContent("/config.json")
-		expect(suffixes[2]).toHaveTextContent("/Button.test.tsx")
+		const paths = screen.getAllByTestId("path-display")
+		expect(paths[0]).toHaveTextContent("src/components/Button.tsx")
+		expect(paths[1]).toHaveTextContent("../outside/config.json")
+		expect(paths[2]).toHaveTextContent("tests/Button.test.tsx")
+		for (const pathDisplay of paths) {
+			const competingSibling = Array.from(pathDisplay.parentElement?.children ?? []).find(
+				(element) =>
+					element !== pathDisplay &&
+					["flex-1", "flex-grow", "flex-grow-1"].some((className) => element.classList.contains(className)),
+			)
+			expect(competingSibling).toBeUndefined()
+		}
 
 		// Check that line snippets are shown
 		expect(screen.getByText(/export const Button = \(\) => \{/)).toBeInTheDocument()
@@ -97,7 +104,7 @@ describe("BatchFilePermission", () => {
 			</TranslationProvider>,
 		)
 
-		const filePathElement = screen.getAllByTestId("path-suffix")[0]
+		const filePathElement = screen.getAllByTestId("path-display")[0]
 		const headerElement = filePathElement.closest(".flex.items-center.select-none")
 
 		if (headerElement) {
@@ -130,8 +137,7 @@ describe("BatchFilePermission", () => {
 			</TranslationProvider>,
 		)
 
-		expect(screen.getByTestId("path-prefix")).toHaveTextContent("./src")
-		expect(screen.getByTestId("path-suffix")).toHaveTextContent("/index.ts")
+		expect(screen.getByTestId("path-display")).toHaveTextContent("./src/index.ts")
 	})
 
 	it("re-renders when timestamp changes", () => {
@@ -142,7 +148,7 @@ describe("BatchFilePermission", () => {
 		)
 
 		// Initial render
-		expect(screen.getAllByTestId("path-suffix")[0]).toHaveTextContent("/Button.tsx")
+		expect(screen.getAllByTestId("path-display")[0]).toHaveTextContent("src/components/Button.tsx")
 
 		// Re-render with new timestamp
 		rerender(
@@ -152,7 +158,7 @@ describe("BatchFilePermission", () => {
 		)
 
 		// Should still show files
-		expect(screen.getAllByTestId("path-suffix")[0]).toHaveTextContent("/Button.tsx")
+		expect(screen.getAllByTestId("path-display")[0]).toHaveTextContent("src/components/Button.tsx")
 	})
 
 	it("displays external link icon for all files", () => {

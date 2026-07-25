@@ -136,8 +136,7 @@ describe("FileChangesPanel", () => {
 		// Expand panel so file row is in DOM (CollapsibleContent may not render when closed in some setups)
 		fireEvent.click(screen.getByText("1 file(s) changed in this conversation").closest("button")!)
 		expect(screen.getByTestId("accordian-path")).toHaveTextContent("src/foo.ts")
-		expect(screen.getByTestId("path-prefix")).toHaveTextContent("src")
-		expect(screen.getByTestId("path-suffix")).toHaveTextContent("/foo.ts")
+		expect(screen.getByTestId("path-display")).toHaveTextContent("src/foo.ts")
 	})
 
 	it("renders one row per unique path when multiple files edited", () => {

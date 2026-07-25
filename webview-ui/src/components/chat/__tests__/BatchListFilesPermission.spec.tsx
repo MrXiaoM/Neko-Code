@@ -31,10 +31,18 @@ describe("BatchListFilesPermission", () => {
 			</TranslationProvider>,
 		)
 
-		const suffixes = screen.getAllByTestId("path-suffix")
-		expect(suffixes[0]).toHaveTextContent("/cli")
-		expect(suffixes[1]).toHaveTextContent("/vscode-e2e")
-		expect(suffixes[2]).toHaveTextContent("/core")
+		const paths = screen.getAllByTestId("path-display")
+		expect(paths[0]).toHaveTextContent("apps/cli")
+		expect(paths[1]).toHaveTextContent("apps/vscode-e2e")
+		expect(paths[2]).toHaveTextContent("packages/core")
+		for (const pathDisplay of paths) {
+			const competingSibling = Array.from(pathDisplay.parentElement?.children ?? []).find(
+				(element) =>
+					element !== pathDisplay &&
+					["flex-1", "flex-grow", "flex-grow-1"].some((className) => element.classList.contains(className)),
+			)
+			expect(competingSibling).toBeUndefined()
+		}
 	})
 
 	it("renders nothing when dirs array is empty", () => {
@@ -54,7 +62,7 @@ describe("BatchListFilesPermission", () => {
 			</TranslationProvider>,
 		)
 
-		expect(screen.getAllByTestId("path-suffix")[0]).toHaveTextContent("/cli")
+		expect(screen.getAllByTestId("path-display")[0]).toHaveTextContent("apps/cli")
 
 		rerender(
 			<TranslationProvider>
@@ -62,7 +70,7 @@ describe("BatchListFilesPermission", () => {
 			</TranslationProvider>,
 		)
 
-		expect(screen.getAllByTestId("path-suffix")[0]).toHaveTextContent("/cli")
+		expect(screen.getAllByTestId("path-display")[0]).toHaveTextContent("apps/cli")
 	})
 
 	it("renders all directories in a single container", () => {
@@ -73,7 +81,7 @@ describe("BatchListFilesPermission", () => {
 		)
 
 		// All directories should be within a single bordered container
-		const container = screen.getAllByTestId("path-suffix")[0].closest(".border.border-border.rounded-md")
+		const container = screen.getAllByTestId("path-display")[0].closest(".border.border-border.rounded-md")
 		expect(container).toBeInTheDocument()
 
 		// All 3 dirs should be inside this container
@@ -94,10 +102,10 @@ describe("BatchListFilesPermission", () => {
 			</TranslationProvider>,
 		)
 
-		expect(screen.getByTestId("path-suffix")).toHaveTextContent("/cli")
+		expect(screen.getByTestId("path-display")).toHaveTextContent("apps/cli")
 
 		// Single directory should still be rendered inside the container
-		const bordered = screen.getByTestId("path-suffix").closest(".border.border-border.rounded-md")
+		const bordered = screen.getByTestId("path-display").closest(".border.border-border.rounded-md")
 		expect(bordered).toBeInTheDocument()
 		expect(bordered?.querySelectorAll(".flex.items-center.gap-2")).toHaveLength(1)
 	})

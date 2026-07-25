@@ -39,20 +39,22 @@ export function MiddleTruncatedPath({ path, additionalContent, className }: Midd
 
 	return (
 		<PathTooltip content={tooltipContent}>
-			<span className={cn("flex min-w-0 flex-1 items-baseline whitespace-nowrap text-left mr-2", className)}>
+			<span
+				data-testid="path-display"
+				className={cn("flex min-w-0 flex-1 items-baseline whitespace-nowrap text-left mr-2", className)}>
 				{prefix && (
-					<span data-testid="path-prefix" className="min-w-[2ch] overflow-hidden text-ellipsis">
+					<span data-testid="path-directories" className="min-w-0 flex-1 overflow-hidden text-ellipsis">
 						{prefix}
 					</span>
 				)}
-				<span data-testid="path-suffix" className="flex min-w-0 max-w-[70%] shrink-0 overflow-hidden">
+				<span data-testid="path-file" className="flex max-w-full shrink-0 overflow-hidden">
 					<span className="shrink-0">{separator}</span>
 					{start && (
-						<span data-testid="path-name-start" className="min-w-[1ch] overflow-hidden text-ellipsis">
+						<span data-testid="path-file-start" className="min-w-[1ch] overflow-hidden text-ellipsis">
 							{start}
 						</span>
 					)}
-					<span data-testid="path-name-end" className="shrink-0">
+					<span data-testid="path-file-end" className="shrink-0">
 						{end}
 					</span>
 				</span>

@@ -27,7 +27,6 @@ export const BatchListFilesPermission = memo(({ dirs = [], ts }: BatchListFilesP
 							<ToolUseBlock className="flex-1">
 								<ToolUseBlockHeader>
 									<MiddleTruncatedPath path={dir.path} />
-									<div className="flex-grow"></div>
 								</ToolUseBlockHeader>
 							</ToolUseBlock>
 						</div>

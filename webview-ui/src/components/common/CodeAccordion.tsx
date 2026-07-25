@@ -80,7 +80,7 @@ const CodeAccordion = ({
 							</span>
 						</PathTooltip>
 					)}
-					<div className="flex-grow-1" />
+					{(header || isFeedback) && <div className="flex-1" />}
 					{/* Prefer diff stats over generic progress indicator if available */}
 					{hasValidStats ? (
 						<div className="flex items-center gap-2 mr-1">

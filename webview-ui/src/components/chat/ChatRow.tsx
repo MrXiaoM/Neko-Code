@@ -696,7 +696,6 @@ export const ChatRowContent = ({
 										{tool.path && (
 											<MiddleTruncatedPath path={tool.path} additionalContent={tool.reason} />
 										)}
-										<div style={{ flexGrow: 1 }}></div>
 										<SquareArrowOutUpRight
 											className="w-4 shrink-0 codicon codicon-link-external opacity-0 group-hover:opacity-100 transition-opacity"
 											style={{ fontSize: 13.5, margin: "1px 0" }}
