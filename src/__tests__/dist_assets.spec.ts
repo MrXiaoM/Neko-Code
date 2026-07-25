@@ -61,10 +61,8 @@ describe("dist assets", () => {
 	})
 
 	describe("Windows toast bridge", () => {
-		it("includes the private callback bridge and hidden workspace focus launchers", () => {
-			expect(fs.existsSync(path.join(distPath, "assets", "windows", "zoo-code-toast-bridge.ps1"))).toBe(true)
+		it("includes the single-process low-latency private protocol bridge", () => {
 			expect(fs.existsSync(path.join(distPath, "assets", "windows", "zoo-code-toast-bridge.vbs"))).toBe(true)
-			expect(fs.existsSync(path.join(distPath, "assets", "windows", "zoo-code-focus-workspace.vbs"))).toBe(true)
 		})
 	})
 

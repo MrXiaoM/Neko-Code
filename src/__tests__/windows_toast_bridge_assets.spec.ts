@@ -7,38 +7,47 @@ function readAsset(fileName: string): string {
 	return fs.readFileSync(path.join(assetsDir, fileName), "utf8")
 }
 
-describe("Windows toast bridge assets", () => {
-	it("parses the authenticated callback as four preserved lines and delegates focus", () => {
-		const script = readAsset("zoo-code-toast-bridge.ps1")
+describe("Windows toast bridge asset", () => {
+	it("performs the authenticated loopback request directly with WinHTTP", () => {
+		const script = readAsset("zoo-code-toast-bridge.vbs")
 
-		expect(script).toContain("| Out-String).TrimEnd()")
-		expect(script).toContain('$body -split "`r`n|`n|`r"')
-		expect(script).toContain("$lines.Count -ne 4")
-		expect(script).toContain("[Convert]::FromBase64String")
-		expect(script).toContain('Write-BridgeLog "callback accepted editor=')
-		expect(script).toContain('Write-BridgeLog "focus launcher start"')
-		expect(script).toContain('Write-BridgeLog "focus launcher exit=$focusExitCode"')
-		expect(script).toContain("System32\\wscript.exe")
+		expect(script).toContain('CreateObject("WinHttp.WinHttpRequest.5.1")')
+		expect(script).toContain('callbackUrl = "http://127.0.0.1:"')
+		expect(script).toContain('request.SetRequestHeader "X-Zoo-Code-Toast-Bridge", "1"')
+		expect(script).toContain("request.SetTimeouts 1000, 1000, 1000, 3000")
+		expect(script).toContain('AppendLog "http start url="')
+		expect(script).toContain('AppendLog "http complete status="')
 	})
 
-	it("contains no HWND foreground activation code", () => {
-		const source = [
-			readAsset("zoo-code-toast-bridge.ps1"),
-			readAsset("zoo-code-toast-bridge.vbs"),
-			readAsset("zoo-code-focus-workspace.vbs"),
-		].join("\n")
+	it("strictly validates the private URI and three-line response", () => {
+		const script = readAsset("zoo-code-toast-bridge.vbs")
 
-		expect(source).not.toMatch(/SetForegroundWindow|AttachThreadInput|GetForegroundWindow|HWND/i)
+		expect(script).toContain('uriPattern.Pattern = "^zoo-code-toast://approval/([0-9]{1,5})/([a-f0-9]{64})$"')
+		expect(script).toContain("If port < 1024 Or port > 65535 Then")
+		expect(script).toContain('If UBound(lines) <> 2 Or lines(0) <> "ok" Then')
+		expect(script).toContain("If Not fso.FileExists(editorPath) Then")
+		expect(script).toContain("If Not fso.FolderExists(workspaceFolder) Then")
 	})
 
-	it("runs host CLI workspace routing hidden and emits stage logs", () => {
-		const launcher = readAsset("zoo-code-focus-workspace.vbs")
+	it("starts host CLI hidden without waiting and emits millisecond stage logs", () => {
+		const script = readAsset("zoo-code-toast-bridge.vbs")
 
-		expect(launcher).toContain('command = QuoteArg(editorPath) & " --reuse-window " & QuoteArg(workspaceFolder)')
-		expect(launcher).toContain("exitCode = shell.Run(command, 0, True)")
-		expect(launcher).toContain('AppendLog "start editor="')
-		expect(launcher).toContain('AppendLog "host cli exit=" & exitCode')
-		expect(launcher).toContain('AppendLog "reject missing editor="')
-		expect(launcher).toContain('AppendLog "reject missing workspace="')
+		expect(script).toContain('command = QuoteArg(editorPath) & " --reuse-window " & QuoteArg(workspaceFolder)')
+		expect(script).toContain("processId = shell.Run(command, 0, False)")
+		expect(script).toContain('AppendLog "cli launch editor="')
+		expect(script).toContain('AppendLog "cli launch requested"')
+		expect(script).toContain("PadNumber(millis, 3)")
+	})
+
+	it("contains no slow PowerShell, second-stage bridge, HWND, browser, or vscode protocol path", () => {
+		const script = readAsset("zoo-code-toast-bridge.vbs")
+		const executableSource = script
+			.split(/\r?\n/)
+			.filter((line) => !line.trimStart().startsWith("'"))
+			.join("\n")
+
+		expect(executableSource).not.toMatch(/powershell|zoo-code-focus-workspace/i)
+		expect(executableSource).not.toMatch(/SetForegroundWindow|AttachThreadInput|HWND/i)
+		expect(executableSource).not.toMatch(/activationUri\s*=.*vscode:\/\//i)
 	})
 })

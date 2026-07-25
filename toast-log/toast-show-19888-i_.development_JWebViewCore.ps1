@@ -13,9 +13,9 @@ try {
   [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null
   [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime] | Out-Null
   $xml = New-Object Windows.Data.Xml.Dom.XmlDocument
-  $xml.LoadXml('<toast launch="zoo-code-toast://approval/8753/f18f5677fa38887edd07373143157829ead463d2433c01db225aef0fcf22702c" activationType="protocol"><visual><binding template="ToastGeneric"><text>主人快来帮我！</text><text>Mirai 想要执行：rm -f build/visual-tmp/FontCacheProbe.java build/visual-tmp/FontCacheProbe.class build/visual-tmp/VariableFontProbe.j...</text><image placement="appLogoOverride" src="file:///c:/Users/24312/.vscode/extensions/zoocodeorganization.zoo-code-3.70.0/dist/assets/icons/icon.png" hint-crop="none"/></binding></visual><actions><action content="查看" arguments="zoo-code-toast://approval/8753/f18f5677fa38887edd07373143157829ead463d2433c01db225aef0fcf22702c" activationType="protocol"/></actions><!-- tag=zoo-code-26064-5e4bb066 --></toast>')
+  $xml.LoadXml('<toast launch="zoo-code-toast://approval/1407/03679d86152c30572d72027433ed1afc99ff792f85c2c82036aa7d685a404e1d" activationType="protocol"><visual><binding template="ToastGeneric"><text>主人快来帮我！</text><text>Mirai 想要执行：./gradlew :jwebview-tests:test --tests dev.mcio.webview.core.Phase3LayoutPaintTest &amp;&amp; ./gradlew :jwebview-tests:visua...</text><image placement="appLogoOverride" src="file:///c:/Users/24312/.vscode/extensions/zoocodeorganization.zoo-code-3.70.0/dist/assets/icons/icon.png" hint-crop="none"/></binding></visual><actions><action content="查看" arguments="zoo-code-toast://approval/1407/03679d86152c30572d72027433ed1afc99ff792f85c2c82036aa7d685a404e1d" activationType="protocol"/></actions><!-- tag=zoo-code-19888-5e4bb066 --></toast>')
   $toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
-  $toast.Tag = 'zoo-code-26064-5e4bb066'
+  $toast.Tag = 'zoo-code-19888-5e4bb066'
   $toast.Group = 'zoo-code-approval'
   $appIds = @('Microsoft.VisualStudioCode', '{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell\v1.0\powershell.exe')
   $shown = $false

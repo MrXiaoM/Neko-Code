@@ -59,9 +59,7 @@ vi.mock("fs", async (importOriginal) => {
 				s.endsWith("/bin/code.cmd") ||
 				s.endsWith("/bin/code-insiders.cmd") ||
 				s.endsWith("/bin/cursor.cmd") ||
-				s.endsWith("zoo-code-toast-bridge.ps1") ||
 				s.endsWith("zoo-code-toast-bridge.vbs") ||
-				s.endsWith("zoo-code-focus-workspace.vbs") ||
 				s.endsWith("/bin/code") ||
 				s.endsWith("/bin/code-insiders") ||
 				s.endsWith("/bin/cursor")
@@ -212,9 +210,7 @@ describe("approvalNotification", () => {
 				s.endsWith("/bin/code.cmd") ||
 				s.endsWith("/bin/code-insiders.cmd") ||
 				s.endsWith("/bin/cursor.cmd") ||
-				s.endsWith("zoo-code-toast-bridge.ps1") ||
 				s.endsWith("zoo-code-toast-bridge.vbs") ||
-				s.endsWith("zoo-code-focus-workspace.vbs") ||
 				s.endsWith("/bin/code") ||
 				s.endsWith("/bin/code-insiders") ||
 				s.endsWith("/bin/cursor")
@@ -812,7 +808,7 @@ describe("approvalNotification", () => {
 			}
 		})
 
-		it("returns hidden host CLI focus instructions and defers UI focus until the window is focused", async () => {
+		it("returns direct VBS host CLI focus instructions and defers UI focus until the window is focused", async () => {
 			nock.enableNetConnect("127.0.0.1")
 			;(vscode.window.state as { focused: boolean }).focused = false
 			try {
@@ -823,14 +819,11 @@ describe("approvalNotification", () => {
 
 				const response = await fetch(callbackUrl, { headers: { "X-Zoo-Code-Toast-Bridge": "1" } })
 				expect(response.status).toBe(200)
-				const [status, editor64, workspace64, launcher64] = (await response.text()).split("\n")
+				const [status, editorPath, workspaceFolder] = (await response.text()).split("\n")
 				expect(status).toBe("ok")
-				expect(Buffer.from(editor64, "base64").toString("utf8").replace(/\\/g, "/").toLowerCase()).toContain(
-					"/bin/code.cmd",
-				)
-				expect(Buffer.from(workspace64, "base64").toString("utf8")).toBe("E:/Zoo-Code")
-				expect(Buffer.from(launcher64, "base64").toString("utf8")).toContain("zoo-code-focus-workspace.vbs")
-				// The extension process must not directly spawn cmd/code.cmd; the already-hidden bridge does that.
+				expect(editorPath.replace(/\\/g, "/").toLowerCase()).toContain("/bin/code.cmd")
+				expect(workspaceFolder).toBe("E:/Zoo-Code")
+				// The extension process must not directly spawn cmd/code.cmd; the user-activated VBS does that hidden.
 				expect(
 					findExecaCommand(
 						(command) => command.includes("--reuse-window") && command.includes("E:/Zoo-Code"),

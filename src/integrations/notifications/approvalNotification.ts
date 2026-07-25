@@ -17,7 +17,6 @@ let windowsApprovalCallbackServer: http.Server | undefined
 let windowsApprovalCallbackPort: number | undefined
 const windowsApprovalCallbackTokens = new Map<string, number>()
 let windowsApprovalProtocolReady = false
-let windowsFocusLauncherPath: string | undefined
 
 const APPROVAL_CALLBACK_TOKEN_TTL_MS = 24 * 60 * 60 * 1000
 const APPROVAL_CALLBACK_PATH_PREFIX = "/approval-focus/"
@@ -180,7 +179,7 @@ function spawnNotificationShellCommand(
 		...(options?.reject !== undefined ? { reject: options.reject } : {}),
 		env: {
 			...process.env,
-			// Prefer UTF-8 for child tools; PowerShell still needs explicit console encoding in-script.
+			// Prefer UTF-8 for child notification tools.
 			LANG: "en_US.UTF-8",
 			LC_ALL: "en_US.UTF-8",
 			PYTHONIOENCODING: "utf-8",
@@ -313,23 +312,16 @@ function buildWindowsApprovalBridgeUri(): string | undefined {
 	return `${WINDOWS_TOAST_PROTOCOL}://approval/${windowsApprovalCallbackPort}/${token}`
 }
 
-/**
- * Resolve the private-protocol launcher, callback bridge, and hidden workspace
- * focus launcher. All are required before Windows toasts can be shown.
- */
-function getWindowsToastBridgeAssets(
-	extensionPath: string,
-): { launcherPath: string; scriptPath: string; focusLauncherPath: string } | undefined {
+/** Resolve the single-process private-protocol VBS bridge. */
+function getWindowsToastBridgeAssets(extensionPath: string): { launcherPath: string } | undefined {
 	const candidateDirs = [
 		path.join(extensionPath, "dist", "assets", "windows"),
 		path.join(extensionPath, "assets", "windows"),
 	]
 	for (const dir of candidateDirs) {
 		const launcherPath = path.join(dir, "zoo-code-toast-bridge.vbs")
-		const scriptPath = path.join(dir, "zoo-code-toast-bridge.ps1")
-		const focusLauncherPath = path.join(dir, "zoo-code-focus-workspace.vbs")
-		if (fs.existsSync(launcherPath) && fs.existsSync(scriptPath) && fs.existsSync(focusLauncherPath)) {
-			return { launcherPath, scriptPath, focusLauncherPath }
+		if (fs.existsSync(launcherPath)) {
+			return { launcherPath }
 		}
 	}
 	return undefined
@@ -427,9 +419,9 @@ function handleWindowsApprovalCallbackRequest(request: http.IncomingMessage, res
 
 	const workspaceFolder = getWorkspaceFolderPath()
 	const editorPath = resolveEditorExecutablePath()
-	if (!workspaceFolder || !windowsFocusLauncherPath || !fs.existsSync(editorPath)) {
+	if (!workspaceFolder || !fs.existsSync(editorPath)) {
 		appendToastLog(
-			`approval callback failed focus prerequisites workspace=${workspaceFolder ?? "none"} editor=${editorPath} launcher=${windowsFocusLauncherPath ?? "missing"}`,
+			`approval callback failed focus prerequisites workspace=${workspaceFolder ?? "none"} editor=${editorPath}`,
 		)
 		response.writeHead(503)
 		response.end("focus prerequisites unavailable")
@@ -439,10 +431,9 @@ function handleWindowsApprovalCallbackRequest(request: http.IncomingMessage, res
 	appendToastLog(
 		`approval callback accepted focused=${vscode.window.state.focused} editor=${editorPath} workspace=${workspaceFolder}`,
 	)
-	// The authenticated bridge decodes these UTF-8 Base64 values and starts the
-	// host CLI through wscript window style 0. No HWND or direct vscode:// routing.
-	const encode = (value: string) => Buffer.from(value, "utf8").toString("base64")
-	const body = ["ok", encode(editorPath), encode(workspaceFolder), encode(windowsFocusLauncherPath)].join("\n")
+	// The authenticated VBS bridge validates these paths, then starts the host
+	// CLI hidden. No PowerShell, HWND, Base64, browser, or vscode:// routing.
+	const body = ["ok", editorPath, workspaceFolder].join("\n")
 	response.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" })
 	response.end(body)
 	handleWindowsApprovalCallback()
@@ -455,7 +446,7 @@ export async function initializeWindowsApprovalNotificationCallback(context: vsc
 
 	const bridgeAssets = getWindowsToastBridgeAssets(context.extensionPath)
 	if (!bridgeAssets) {
-		appendToastLog("Windows approval toast disabled: private protocol bridge launcher or script is unavailable")
+		appendToastLog("Windows approval toast disabled: direct private-protocol VBS bridge is unavailable")
 		return
 	}
 
@@ -481,12 +472,10 @@ export async function initializeWindowsApprovalNotificationCallback(context: vsc
 		}
 		windowsApprovalCallbackServer = server
 		windowsApprovalCallbackPort = address.port
-		windowsFocusLauncherPath = bridgeAssets.focusLauncherPath
 		windowsApprovalProtocolReady = await registerWindowsToastProtocol(bridgeAssets.launcherPath)
 		if (!windowsApprovalProtocolReady) {
 			windowsApprovalCallbackPort = undefined
 			windowsApprovalCallbackServer = undefined
-			windowsFocusLauncherPath = undefined
 			server.close()
 			appendToastLog("Windows approval toast disabled: private protocol registration failed")
 			return
@@ -498,7 +487,6 @@ export async function initializeWindowsApprovalNotificationCallback(context: vsc
 				windowsApprovalProtocolReady = false
 				windowsApprovalCallbackPort = undefined
 				windowsApprovalCallbackServer = undefined
-				windowsFocusLauncherPath = undefined
 				server.close()
 			},
 		})
@@ -549,7 +537,7 @@ function toastTempDir(): string {
 function appendToastLog(message: string): void {
 	try {
 		const logPath = path.join(toastTempDir(), "last-toast.log")
-		// Always UTF-8 so Chinese PowerShell diagnostics stay readable in editors that expect UTF-8.
+		// Always UTF-8 so Chinese notification diagnostics stay readable.
 		fs.appendFileSync(logPath, `[${formatLocalLogTimestamp()}] ${message}\n`, { encoding: "utf8" })
 	} catch {
 		// ignore
@@ -848,9 +836,10 @@ export type WindowsToastOptions = {
  *   write toast-show-<instance>.ps1 → execa powershell -NoProfile -WindowStyle Hidden -File
  *   CreateToastNotifier(host AUMID e.g. Microsoft.VisualStudioCode) → Show() → settle → exit
  *   click → zoo-code-toast://approval/<instance-port>/<one-time-token>
- *   → wscript (silent) → hidden PowerShell bridge → authenticated loopback callback
- *   → hidden focus VBS → host CLI --reuse-window <workspace> → correct window gains focus
- *   → correct extension instance focuses Zoo Code UI (no visible terminal, no HWND)
+ *   → wscript direct bridge → WinHTTP authenticated loopback callback
+ *   → same VBS starts host CLI --reuse-window <workspace> hidden, without waiting
+ *   → correct window gains focus → extension focuses Zoo Code UI
+ *   (click path has no PowerShell, visible terminal, browser, vscode://, or HWND)
  *   private protocol bridge unavailable → suppress the toast (no fallback URI)
  *
  * AppId is the host editor (VS Code / Insiders / Cursor), not Zoo Code (extension is not a
@@ -1173,5 +1162,4 @@ export function __resetApprovalNotificationStateForTests(): void {
 	windowsApprovalCallbackPort = undefined
 	windowsApprovalCallbackServer?.close()
 	windowsApprovalCallbackServer = undefined
-	windowsFocusLauncherPath = undefined
 }
