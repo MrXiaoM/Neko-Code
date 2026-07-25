@@ -253,6 +253,20 @@ describe("isToolAllowedForMode", () => {
 					"mcp",
 				],
 			})
+
+			const instructions = researcherMode?.customInstructions
+			expect(instructions).toContain("默认优先使用 Bing")
+			expect(instructions).toContain("已知的官方文档、代码仓库或原始资料可以直接访问")
+			expect(instructions).toContain("避开 Google 搜索")
+			expect(instructions).toContain("中国大陆通常无法访问的网站")
+			expect(instructions).toContain("`curl`")
+			expect(instructions).toContain("`--output`")
+			expect(instructions).toContain("将响应保存为本地文件")
+			expect(instructions).toContain("禁止将下载内容直接传入管道")
+			expect(instructions).toContain("工作区的 `.research/` 专用目录")
+			expect(instructions).toContain("`build/`、`dist/`、`out/`")
+			expect(instructions).toContain("资料的保留与处置由用户决定")
+
 			expect(isToolAllowedForMode("read_file", "researcher", [])).toBe(true)
 			expect(isToolAllowedForMode("execute_command", "researcher", [])).toBe(true)
 			expect(isToolAllowedForMode("read_command_output", "researcher", [])).toBe(true)
