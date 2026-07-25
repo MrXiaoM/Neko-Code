@@ -241,6 +241,36 @@ describe("isToolAllowedForMode", () => {
 			expect(isToolAllowedForMode("use_mcp_tool", "architect", [])).toBe(true)
 		})
 
+		it("configures researcher mode for research commands and markdown-only editing", () => {
+			const researcherMode = modes.find((mode) => mode.slug === "researcher")
+
+			expect(researcherMode).toMatchObject({
+				name: "🔬 研究员",
+				groups: [
+					"read",
+					["edit", { fileRegex: "\\.md$", description: "Markdown files only" }],
+					"command",
+					"mcp",
+				],
+			})
+			expect(isToolAllowedForMode("read_file", "researcher", [])).toBe(true)
+			expect(isToolAllowedForMode("execute_command", "researcher", [])).toBe(true)
+			expect(isToolAllowedForMode("read_command_output", "researcher", [])).toBe(true)
+			expect(isToolAllowedForMode("use_mcp_tool", "researcher", [])).toBe(true)
+			expect(
+				isToolAllowedForMode("write_to_file", "researcher", [], undefined, {
+					path: "plans/research.md",
+					content: "# Research",
+				}),
+			).toBe(true)
+			expect(() =>
+				isToolAllowedForMode("write_to_file", "researcher", [], undefined, {
+					path: "src/research.ts",
+					content: "export {}",
+				}),
+			).toThrow(FileRestrictionError)
+		})
+
 		it("applies restrictions to apply_diff", () => {
 			// Native-only: file restrictions for apply_diff are enforced against the top-level `path`.
 
@@ -685,12 +715,10 @@ describe("FileRestrictionError", () => {
 			)
 		})
 
-		it("falls back to first mode for non-existent mode", async () => {
+		it("falls back to the default architect mode for non-existent mode", async () => {
 			const result = await getFullModeDetails("non-existent")
-			expect(result).toMatchObject({
-				...modes[0],
-				// The first mode (architect) has its own customInstructions
-			})
+			const defaultMode = modes.find((mode) => mode.slug === "architect")!
+			expect(result).toMatchObject(defaultMode)
 		})
 	})
 
@@ -792,7 +820,7 @@ describe("getModeSelection", () => {
 
 	test("should fall back to default mode if slug does not exist in custom, prompt, or built-in modes", () => {
 		const selection = getModeSelection("non-existent-mode", undefined, customModesList)
-		const defaultMode = modes[0] // First mode is the default
+		const defaultMode = modes.find((mode) => mode.slug === "architect")!
 		expect(selection.roleDefinition).toBe(defaultMode.roleDefinition)
 		expect(selection.baseInstructions).toBe(defaultMode.customInstructions || "")
 	})

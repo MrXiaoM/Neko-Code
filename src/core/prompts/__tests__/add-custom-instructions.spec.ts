@@ -232,6 +232,35 @@ describe("addCustomInstructions", () => {
 		expect(prompt).toMatchFileSnapshot("./__snapshots__/add-custom-instructions/architect-mode-prompt.snap")
 	})
 
+	it("should generate a research-focused prompt with command boundaries for researcher mode", async () => {
+		const prompt = await SYSTEM_PROMPT(
+			mockContext,
+			"/test/path",
+			false, // supportsImages
+			undefined, // mcpHub
+			undefined, // diffStrategy
+			"researcher", // mode
+			undefined, // customModePrompts
+			undefined, // customModes
+			undefined, // globalCustomInstructions
+			undefined, // experiments
+			undefined, // language
+			undefined, // rooIgnoreInstructions
+			undefined, // partialReadsEnabled
+		)
+
+		expect(prompt).toContain("一只严谨的技术研究猫娘")
+		expect(prompt).toContain("execute_command")
+		expect(prompt).toContain("通过网络请求下载公开文档")
+		expect(prompt).toContain("不要使用命令修改项目源代码")
+		expect(prompt).toContain("安装或更新依赖")
+		expect(prompt).toContain("运行项目构建或测试")
+		expect(prompt).toContain("执行 Git 写操作")
+		expect(prompt).toContain("用户对命令的批准不代表可以超出这些用途")
+		expect(prompt).toContain("update_todo_list")
+		expect(prompt).toContain("switch_mode")
+	})
+
 	it("should generate correct prompt for ask mode", async () => {
 		const prompt = await SYSTEM_PROMPT(
 			mockContext,
@@ -275,17 +304,20 @@ describe("addCustomInstructions", () => {
 	})
 
 	it("should prioritize mode-specific rules for code mode", async () => {
-		const instructions = await addCustomInstructions("", "", "/test/path", defaultModeSlug)
+		const codeMode = modes.find((mode) => mode.slug === "code")!
+		const instructions = await addCustomInstructions("", "", "/test/path", codeMode.slug)
 		expect(instructions).toMatchFileSnapshot("./__snapshots__/add-custom-instructions/code-mode-rules.snap")
 	})
 
 	it("should prioritize mode-specific rules for ask mode", async () => {
-		const instructions = await addCustomInstructions("", "", "/test/path", modes[2].slug)
+		const askMode = modes.find((mode) => mode.slug === "ask")!
+		const instructions = await addCustomInstructions("", "", "/test/path", askMode.slug)
 		expect(instructions).toMatchFileSnapshot("./__snapshots__/add-custom-instructions/ask-mode-rules.snap")
 	})
 
 	it("should prioritize mode-specific rules for architect mode", async () => {
-		const instructions = await addCustomInstructions("", "", "/test/path", modes[1].slug)
+		const architectMode = modes.find((mode) => mode.slug === "architect")!
+		const instructions = await addCustomInstructions("", "", "/test/path", architectMode.slug)
 		expect(instructions).toMatchFileSnapshot("./__snapshots__/add-custom-instructions/architect-mode-rules.snap")
 	})
 
