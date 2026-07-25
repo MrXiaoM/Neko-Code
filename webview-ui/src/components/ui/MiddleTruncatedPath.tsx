@@ -43,7 +43,7 @@ export function MiddleTruncatedPath({ path, additionalContent, className }: Midd
 				data-testid="path-display"
 				className={cn("flex min-w-0 flex-1 items-baseline whitespace-nowrap text-left mr-2", className)}>
 				{prefix && (
-					<span data-testid="path-directories" className="min-w-0 flex-1 overflow-hidden text-ellipsis">
+					<span data-testid="path-directories" className="min-w-0 shrink overflow-hidden text-ellipsis">
 						{prefix}
 					</span>
 				)}

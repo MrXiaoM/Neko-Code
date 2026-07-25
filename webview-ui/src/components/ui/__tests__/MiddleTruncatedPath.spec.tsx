@@ -18,7 +18,8 @@ describe("MiddleTruncatedPath", () => {
 		const directories = screen.getByTestId("path-directories")
 		const file = screen.getByTestId("path-file")
 
-		expect(directories).toHaveClass("flex-1", "min-w-0", "text-ellipsis")
+		expect(directories).toHaveClass("shrink", "min-w-0", "text-ellipsis")
+		expect(directories).not.toHaveClass("flex-1", "grow")
 		expect(file).toHaveClass("shrink-0", "max-w-full")
 		expect(file).toHaveTextContent("/file-name.ext")
 	})
