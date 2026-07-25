@@ -17,9 +17,7 @@ let windowsApprovalCallbackServer: http.Server | undefined
 let windowsApprovalCallbackPort: number | undefined
 const windowsApprovalCallbackTokens = new Map<string, number>()
 let windowsApprovalProtocolReady = false
-/** Decimal HWND of this VS Code main window; returned to the silent protocol bridge for SetForegroundWindow. */
-let windowsMainWindowHwnd: string | undefined
-let windowsHwndRefreshInFlight: Promise<void> | undefined
+let windowsFocusLauncherPath: string | undefined
 
 const APPROVAL_CALLBACK_TOKEN_TTL_MS = 24 * 60 * 60 * 1000
 const APPROVAL_CALLBACK_PATH_PREFIX = "/approval-focus/"
@@ -316,14 +314,12 @@ function buildWindowsApprovalBridgeUri(): string | undefined {
 }
 
 /**
- * Resolve the silent private-protocol launcher (VBS), the PowerShell bridge,
- * and the HWND helper. All are required before Windows toasts can be shown:
- * the protocol handler must never point at powershell.exe directly (console
- * subsystem can flash Windows Terminal).
+ * Resolve the private-protocol launcher, callback bridge, and hidden workspace
+ * focus launcher. All are required before Windows toasts can be shown.
  */
 function getWindowsToastBridgeAssets(
 	extensionPath: string,
-): { launcherPath: string; scriptPath: string; hwndScriptPath: string } | undefined {
+): { launcherPath: string; scriptPath: string; focusLauncherPath: string } | undefined {
 	const candidateDirs = [
 		path.join(extensionPath, "dist", "assets", "windows"),
 		path.join(extensionPath, "assets", "windows"),
@@ -331,73 +327,12 @@ function getWindowsToastBridgeAssets(
 	for (const dir of candidateDirs) {
 		const launcherPath = path.join(dir, "zoo-code-toast-bridge.vbs")
 		const scriptPath = path.join(dir, "zoo-code-toast-bridge.ps1")
-		const hwndScriptPath = path.join(dir, "zoo-code-toast-get-hwnd.ps1")
-		if (fs.existsSync(launcherPath) && fs.existsSync(scriptPath) && fs.existsSync(hwndScriptPath)) {
-			return { launcherPath, scriptPath, hwndScriptPath }
+		const focusLauncherPath = path.join(dir, "zoo-code-focus-workspace.vbs")
+		if (fs.existsSync(launcherPath) && fs.existsSync(scriptPath) && fs.existsSync(focusLauncherPath)) {
+			return { launcherPath, scriptPath, focusLauncherPath }
 		}
 	}
 	return undefined
-}
-
-function isValidHwndToken(value: string | undefined): value is string {
-	return typeof value === "string" && /^[1-9][0-9]{0,17}$/.test(value)
-}
-
-/**
- * Capture / refresh this VS Code window's main HWND via a short-lived hidden
- * PowerShell helper (no terminal flash). Prefer the real foreground window when
- * this instance is focused; otherwise walk the extension-host process tree.
- */
-async function refreshWindowsMainWindowHwnd(extensionPath: string, reason: string): Promise<void> {
-	if (process.platform !== "win32") {
-		return
-	}
-	const assets = getWindowsToastBridgeAssets(extensionPath)
-	if (!assets) {
-		return
-	}
-
-	const systemRoot = process.env.SystemRoot || "C:\\Windows"
-	const powershellPath = path.join(systemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
-	const mode = vscode.window.state.focused ? "Foreground" : "ForProcess"
-	const command =
-		mode === "Foreground"
-			? `${quoteShellArg(powershellPath)} -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File ${quoteShellArg(assets.hwndScriptPath)} -Mode Foreground`
-			: `${quoteShellArg(powershellPath)} -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File ${quoteShellArg(assets.hwndScriptPath)} -Mode ForProcess -ProcessId ${process.pid}`
-
-	try {
-		const result = await spawnNotificationShellCommand(command, { reject: false })
-		const stdout =
-			typeof result.stdout === "string"
-				? result.stdout
-				: Buffer.isBuffer(result.stdout)
-					? result.stdout.toString("utf8")
-					: String(result.stdout ?? "")
-		const hwnd = stdout
-			.split(/\r?\n/)
-			.map((line) => line.trim())
-			.find((line) => isValidHwndToken(line))
-		if (hwnd) {
-			windowsMainWindowHwnd = hwnd
-			appendToastLog(`hwnd refresh ok reason=${reason} mode=${mode} hwnd=${hwnd}`)
-			return
-		}
-		appendToastLog(`hwnd refresh empty reason=${reason} mode=${mode} ${formatProcessOutputForLog(result)}`)
-	} catch (error) {
-		appendToastLog(
-			`hwnd refresh threw reason=${reason} ${formatProcessOutputForLog(error as { message?: string })}`,
-		)
-	}
-}
-
-function scheduleWindowsMainWindowHwndRefresh(extensionPath: string, reason: string): void {
-	if (process.platform !== "win32") {
-		return
-	}
-	windowsHwndRefreshInFlight = (windowsHwndRefreshInFlight ?? Promise.resolve())
-		.catch(() => undefined)
-		.then(() => refreshWindowsMainWindowHwnd(extensionPath, reason))
-	void windowsHwndRefreshInFlight
 }
 
 async function registerWindowsToastProtocol(launcherPath: string): Promise<boolean> {
@@ -432,24 +367,26 @@ async function registerWindowsToastProtocol(launcherPath: string): Promise<boole
 
 function requestApprovalUiFocus(): void {
 	if (approvalFocusInProgress) {
+		appendToastLog("approval UI focus skipped: already in progress")
 		return
 	}
 	approvalFocusInProgress = true
+	appendToastLog("approval UI focus start")
 	void focusZooCodeForApproval().finally(() => {
 		approvalFocusInProgress = false
+		appendToastLog("approval UI focus complete")
 	})
 }
 
 function handleWindowsApprovalCallback(): void {
 	if (vscode.window.state.focused) {
+		appendToastLog("approval callback instance already focused")
 		requestApprovalUiFocus()
 		return
 	}
 
-	// Correct instance already received the loopback callback. Do not shell
-	// `code.cmd --reuse-window` here — that path flashes a terminal window.
-	// OS foreground raise is deferred to a later phase (HWND / SetForegroundWindow).
 	pendingFocusOnWindowFocus = true
+	appendToastLog("approval callback waiting for host CLI window focus")
 }
 
 function handleWindowsApprovalCallbackRequest(request: http.IncomingMessage, response: http.ServerResponse): void {
@@ -488,11 +425,24 @@ function handleWindowsApprovalCallbackRequest(request: http.IncomingMessage, res
 		return
 	}
 
-	const hwnd = isValidHwndToken(windowsMainWindowHwnd) ? windowsMainWindowHwnd : undefined
-	appendToastLog(`approval callback accepted focused=${vscode.window.state.focused} hwnd=${hwnd ?? "none"}`)
-	// Body for silent bridge: first line "ok", optional second line decimal HWND.
-	// Bridge performs SetForegroundWindow so we never shell code.cmd (no terminal flash).
-	const body = hwnd ? `ok\n${hwnd}` : "ok"
+	const workspaceFolder = getWorkspaceFolderPath()
+	const editorPath = resolveEditorExecutablePath()
+	if (!workspaceFolder || !windowsFocusLauncherPath || !fs.existsSync(editorPath)) {
+		appendToastLog(
+			`approval callback failed focus prerequisites workspace=${workspaceFolder ?? "none"} editor=${editorPath} launcher=${windowsFocusLauncherPath ?? "missing"}`,
+		)
+		response.writeHead(503)
+		response.end("focus prerequisites unavailable")
+		return
+	}
+
+	appendToastLog(
+		`approval callback accepted focused=${vscode.window.state.focused} editor=${editorPath} workspace=${workspaceFolder}`,
+	)
+	// The authenticated bridge decodes these UTF-8 Base64 values and starts the
+	// host CLI through wscript window style 0. No HWND or direct vscode:// routing.
+	const encode = (value: string) => Buffer.from(value, "utf8").toString("base64")
+	const body = ["ok", encode(editorPath), encode(workspaceFolder), encode(windowsFocusLauncherPath)].join("\n")
 	response.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" })
 	response.end(body)
 	handleWindowsApprovalCallback()
@@ -531,30 +481,24 @@ export async function initializeWindowsApprovalNotificationCallback(context: vsc
 		}
 		windowsApprovalCallbackServer = server
 		windowsApprovalCallbackPort = address.port
+		windowsFocusLauncherPath = bridgeAssets.focusLauncherPath
 		windowsApprovalProtocolReady = await registerWindowsToastProtocol(bridgeAssets.launcherPath)
 		if (!windowsApprovalProtocolReady) {
 			windowsApprovalCallbackPort = undefined
 			windowsApprovalCallbackServer = undefined
+			windowsFocusLauncherPath = undefined
 			server.close()
 			appendToastLog("Windows approval toast disabled: private protocol registration failed")
 			return
 		}
-		// Capture HWND early so toast clicks can raise this window without code.cmd.
-		scheduleWindowsMainWindowHwndRefresh(context.extensionPath, "activate")
-		// Keep HWND fresh when the user focuses this window (most reliable foreground capture).
-		const focusHwndSub = vscode.window.onDidChangeWindowState((state) => {
-			if (state.focused) {
-				scheduleWindowsMainWindowHwndRefresh(context.extensionPath, "window-focused")
-			}
-		})
-		context.subscriptions.push(focusHwndSub)
+		appendToastLog(`toast callback ready port=${windowsApprovalCallbackPort} launcher=${bridgeAssets.launcherPath}`)
 		context.subscriptions.push({
 			dispose: () => {
 				windowsApprovalCallbackTokens.clear()
 				windowsApprovalProtocolReady = false
 				windowsApprovalCallbackPort = undefined
 				windowsApprovalCallbackServer = undefined
-				windowsMainWindowHwnd = undefined
+				windowsFocusLauncherPath = undefined
 				server.close()
 			},
 		})
@@ -570,6 +514,7 @@ function ensureWindowFocusListener(): void {
 	}
 	windowStateListenerRegistered = true
 	vscode.window.onDidChangeWindowState((state) => {
+		appendToastLog(`window state changed focused=${state.focused} pending=${pendingFocusOnWindowFocus}`)
 		if (state.focused && pendingFocusOnWindowFocus) {
 			pendingFocusOnWindowFocus = false
 			requestApprovalUiFocus()
@@ -904,7 +849,8 @@ export type WindowsToastOptions = {
  *   CreateToastNotifier(host AUMID e.g. Microsoft.VisualStudioCode) → Show() → settle → exit
  *   click → zoo-code-toast://approval/<instance-port>/<one-time-token>
  *   → wscript (silent) → hidden PowerShell bridge → authenticated loopback callback
- *   → correct extension instance focuses Zoo Code UI (no code.cmd / terminal flash)
+ *   → hidden focus VBS → host CLI --reuse-window <workspace> → correct window gains focus
+ *   → correct extension instance focuses Zoo Code UI (no visible terminal, no HWND)
  *   private protocol bridge unavailable → suppress the toast (no fallback URI)
  *
  * AppId is the host editor (VS Code / Insiders / Cursor), not Zoo Code (extension is not a
@@ -1203,14 +1149,18 @@ export async function notifyApprovalIfWindowUnfocused(options?: {
 export async function focusZooCodeForApproval(): Promise<void> {
 	try {
 		await vscode.commands.executeCommand(`${Package.name}.SidebarProvider.focus`)
+		appendToastLog("approval UI sidebar focus command complete")
 	} catch (error) {
 		console.error("[approvalNotification] Failed to focus SidebarProvider:", error)
+		appendToastLog(`approval UI sidebar focus command failed: ${String(error)}`)
 	}
 
 	try {
 		await vscode.commands.executeCommand(`${Package.name}.focusInput`)
+		appendToastLog("approval UI input focus command complete")
 	} catch (error) {
 		console.error("[approvalNotification] Failed to focus input:", error)
+		appendToastLog(`approval UI input focus command failed: ${String(error)}`)
 	}
 }
 
@@ -1223,18 +1173,5 @@ export function __resetApprovalNotificationStateForTests(): void {
 	windowsApprovalCallbackPort = undefined
 	windowsApprovalCallbackServer?.close()
 	windowsApprovalCallbackServer = undefined
-	windowsMainWindowHwnd = undefined
-	windowsHwndRefreshInFlight = undefined
-}
-
-/** Test helper: seed the cached main-window HWND returned to the toast bridge. */
-export function __setWindowsMainWindowHwndForTests(hwnd: string | undefined): void {
-	windowsMainWindowHwnd = hwnd
-}
-
-/** Wait for any in-flight HWND refresh so tests can clear execa mocks without races. */
-export async function __flushWindowsHwndRefreshForTests(): Promise<void> {
-	if (windowsHwndRefreshInFlight) {
-		await windowsHwndRefreshInFlight.catch(() => undefined)
-	}
+	windowsFocusLauncherPath = undefined
 }

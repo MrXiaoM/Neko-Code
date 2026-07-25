@@ -7,9 +7,7 @@ import * as fs from "fs"
 
 import { Package } from "../../../shared/package"
 import {
-	__flushWindowsHwndRefreshForTests,
 	__resetApprovalNotificationStateForTests,
-	__setWindowsMainWindowHwndForTests,
 	buildApprovalFocusUri,
 	buildApprovalNotificationCopy,
 	buildWindowsToastXml,
@@ -63,7 +61,7 @@ vi.mock("fs", async (importOriginal) => {
 				s.endsWith("/bin/cursor.cmd") ||
 				s.endsWith("zoo-code-toast-bridge.ps1") ||
 				s.endsWith("zoo-code-toast-bridge.vbs") ||
-				s.endsWith("zoo-code-toast-get-hwnd.ps1") ||
+				s.endsWith("zoo-code-focus-workspace.vbs") ||
 				s.endsWith("/bin/code") ||
 				s.endsWith("/bin/code-insiders") ||
 				s.endsWith("/bin/cursor")
@@ -178,10 +176,6 @@ function mockExecaChild(): MockExecaChild {
 			if (lower.includes("reg.exe add")) {
 				return Promise.resolve({ exitCode: 0 })
 			}
-			// HWND helper is fire-and-forget during init/focus; resolve quickly without blocking toast tests.
-			if (lower.includes("zoo-code-toast-get-hwnd.ps1")) {
-				return Promise.resolve({ exitCode: 0, stdout: "123456\n" })
-			}
 			return child
 		}
 	})
@@ -220,7 +214,7 @@ describe("approvalNotification", () => {
 				s.endsWith("/bin/cursor.cmd") ||
 				s.endsWith("zoo-code-toast-bridge.ps1") ||
 				s.endsWith("zoo-code-toast-bridge.vbs") ||
-				s.endsWith("zoo-code-toast-get-hwnd.ps1") ||
+				s.endsWith("zoo-code-focus-workspace.vbs") ||
 				s.endsWith("/bin/code") ||
 				s.endsWith("/bin/code-insiders") ||
 				s.endsWith("/bin/cursor")
@@ -232,8 +226,6 @@ describe("approvalNotification", () => {
 			subscriptions: [],
 		} as unknown as vscode.ExtensionContext
 		await initializeWindowsApprovalNotificationCallback(notificationContext)
-		// HWND refresh is scheduled on activate; wait so later "not called" assertions stay clean.
-		await __flushWindowsHwndRefreshForTests()
 		execaCalls.length = 0
 		execaMock.mockClear()
 	})
@@ -820,10 +812,9 @@ describe("approvalNotification", () => {
 			}
 		})
 
-		it("defers UI focus until the window is focused without shelling code.cmd when unfocused", async () => {
+		it("returns hidden host CLI focus instructions and defers UI focus until the window is focused", async () => {
 			nock.enableNetConnect("127.0.0.1")
 			;(vscode.window.state as { focused: boolean }).focused = false
-			__setWindowsMainWindowHwndForTests("424242")
 			try {
 				await notifyApprovalIfWindowUnfocused({ force: true, title: "标题", body: "正文" })
 				const written = String(vi.mocked(fs.writeFileSync).mock.calls.at(-1)?.[1] ?? "")
@@ -832,9 +823,14 @@ describe("approvalNotification", () => {
 
 				const response = await fetch(callbackUrl, { headers: { "X-Zoo-Code-Toast-Bridge": "1" } })
 				expect(response.status).toBe(200)
-				// Bridge receives ok + HWND so it can SetForegroundWindow without code.cmd.
-				expect(await response.text()).toBe("ok\n424242")
-				// Correct-instance toast path must not flash a terminal via code.cmd --reuse-window.
+				const [status, editor64, workspace64, launcher64] = (await response.text()).split("\n")
+				expect(status).toBe("ok")
+				expect(Buffer.from(editor64, "base64").toString("utf8").replace(/\\/g, "/").toLowerCase()).toContain(
+					"/bin/code.cmd",
+				)
+				expect(Buffer.from(workspace64, "base64").toString("utf8")).toBe("E:/Zoo-Code")
+				expect(Buffer.from(launcher64, "base64").toString("utf8")).toContain("zoo-code-focus-workspace.vbs")
+				// The extension process must not directly spawn cmd/code.cmd; the already-hidden bridge does that.
 				expect(
 					findExecaCommand(
 						(command) => command.includes("--reuse-window") && command.includes("E:/Zoo-Code"),

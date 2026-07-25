@@ -22,71 +22,10 @@ function Write-BridgeLog {
 	}
 }
 
-function Activate-WindowByHwnd {
-	param([UInt64]$HwndValue)
-	if ($HwndValue -eq 0) { return $false }
-
-	Add-Type -TypeDefinition @"
-using System;
-using System.Runtime.InteropServices;
-
-public static class ZooFg {
-	[DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
-	[DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
-	[DllImport("user32.dll")] public static extern bool IsIconic(IntPtr hWnd);
-	[DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr hWnd);
-	[DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
-	[DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
-	[DllImport("user32.dll")] public static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
-	[DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();
-	[DllImport("user32.dll")] public static extern bool AllowSetForegroundWindow(int dwProcessId);
-
-	const int SW_RESTORE = 9;
-	const int SW_SHOW = 5;
-
-	public static bool Activate(UInt64 hwndValue) {
-		IntPtr hWnd = new IntPtr(unchecked((long)hwndValue));
-		if (hWnd == IntPtr.Zero) return false;
-
-		AllowSetForegroundWindow(-1); // ASFW_ANY
-		if (IsIconic(hWnd)) {
-			ShowWindow(hWnd, SW_RESTORE);
-		} else {
-			ShowWindow(hWnd, SW_SHOW);
-		}
-		BringWindowToTop(hWnd);
-
-		if (SetForegroundWindow(hWnd)) return true;
-
-		// Fallback: attach input queues of current (protocol) thread and target window thread.
-		uint targetPid;
-		uint targetThread = GetWindowThreadProcessId(hWnd, out targetPid);
-		uint currentThread = GetCurrentThreadId();
-		IntPtr foreground = GetForegroundWindow();
-		uint fgPid;
-		uint fgThread = GetWindowThreadProcessId(foreground, out fgPid);
-		bool attachedFg = false;
-		bool attachedTarget = false;
-		try {
-			if (fgThread != 0 && fgThread != currentThread) {
-				attachedFg = AttachThreadInput(currentThread, fgThread, true);
-			}
-			if (targetThread != 0 && targetThread != currentThread) {
-				attachedTarget = AttachThreadInput(currentThread, targetThread, true);
-			}
-			BringWindowToTop(hWnd);
-			return SetForegroundWindow(hWnd);
-		} finally {
-			if (attachedTarget) AttachThreadInput(currentThread, targetThread, false);
-			if (attachedFg) AttachThreadInput(currentThread, fgThread, false);
-		}
-	}
-}
-"@
-
-	$ok = [ZooFg]::Activate($HwndValue)
-	Write-BridgeLog "SetForegroundWindow hwnd=$HwndValue ok=$ok"
-	return $ok
+function Decode-BridgeValue {
+	param([string]$EncodedValue)
+	$bytes = [Convert]::FromBase64String($EncodedValue)
+	return [Text.Encoding]::UTF8.GetString($bytes)
 }
 
 try {
@@ -120,27 +59,53 @@ try {
 
 	$callbackUrl = "http://127.0.0.1:$port/approval-focus/$token"
 	Write-BridgeLog "curl GET $callbackUrl"
-	$body = & $curlPath --silent --show-error --fail --noproxy "*" --max-time "3" --header "X-Zoo-Code-Toast-Bridge: 1" $callbackUrl 2>&1
+	# Out-String is required here: assigning native-process output directly to a
+	# variable makes PowerShell store one array item per line and "$body" joins
+	# those items with spaces, turning `ok\n<value>` into `ok <value>`.
+	$body = (& $curlPath --silent --show-error --fail --noproxy "*" --max-time "3" --header "X-Zoo-Code-Toast-Bridge: 1" $callbackUrl 2>&1 | Out-String).TrimEnd()
 	$exitCode = $LASTEXITCODE
-	Write-BridgeLog "curl exit=$exitCode body=$body"
+	$lines = @($body -split "`r`n|`n|`r" | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" })
+	$firstLine = if ($lines.Count -gt 0) { $lines[0] } else { "" }
+	Write-BridgeLog "curl exit=$exitCode lines=$($lines.Count) first=$firstLine body=$body"
 
 	if ($exitCode -ne 0) {
 		exit $exitCode
 	}
 
-	$lines = @("$body" -split "(`r`n|`n|`r)" | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" })
-	if ($lines.Count -lt 1 -or $lines[0] -ne "ok") {
-		Write-BridgeLog "reject unexpected response body"
+	if ($lines.Count -ne 4 -or $lines[0] -ne "ok") {
+		Write-BridgeLog "reject unexpected response body lines=$($lines.Count)"
 		exit 1
 	}
 
-	if ($lines.Count -ge 2 -and $lines[1] -match '^[1-9][0-9]{0,17}$') {
-		$null = Activate-WindowByHwnd -HwndValue ([UInt64]$lines[1])
-	} else {
-		Write-BridgeLog "no hwnd in response; skip SetForegroundWindow"
+	$editorPath = Decode-BridgeValue $lines[1]
+	$workspaceFolder = Decode-BridgeValue $lines[2]
+	$focusLauncherPath = Decode-BridgeValue $lines[3]
+	Write-BridgeLog "callback accepted editor=$editorPath workspace=$workspaceFolder launcher=$focusLauncherPath"
+
+	if (-not (Test-Path -LiteralPath $editorPath -PathType Leaf)) {
+		Write-BridgeLog "reject missing editor path=$editorPath"
+		exit 1
+	}
+	if (-not (Test-Path -LiteralPath $workspaceFolder -PathType Container)) {
+		Write-BridgeLog "reject missing workspace path=$workspaceFolder"
+		exit 1
+	}
+	if (-not (Test-Path -LiteralPath $focusLauncherPath -PathType Leaf)) {
+		Write-BridgeLog "reject missing focus launcher path=$focusLauncherPath"
+		exit 1
 	}
 
-	exit 0
+	$wscriptPath = Join-Path $systemRoot "System32\wscript.exe"
+	if (-not (Test-Path -LiteralPath $wscriptPath -PathType Leaf)) {
+		Write-BridgeLog "reject missing wscript path=$wscriptPath"
+		exit 1
+	}
+
+	Write-BridgeLog "focus launcher start"
+	& $wscriptPath $focusLauncherPath $editorPath $workspaceFolder
+	$focusExitCode = $LASTEXITCODE
+	Write-BridgeLog "focus launcher exit=$focusExitCode"
+	exit $focusExitCode
 } catch {
 	Write-BridgeLog "exception $($_.Exception.Message)"
 	exit 1
