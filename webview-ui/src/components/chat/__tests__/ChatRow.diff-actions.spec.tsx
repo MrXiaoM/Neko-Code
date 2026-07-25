@@ -86,6 +86,8 @@ describe("ChatRow - inline diff stats and actions", () => {
 
 		expect(screen.getByText("Roo wants to edit this file")).toBeInTheDocument()
 		expect(container.querySelector(".codicon-diff")).toBeInTheDocument()
+		expect(screen.getByTestId("path-prefix")).toHaveTextContent("src")
+		expect(screen.getByTestId("path-suffix")).toHaveTextContent("/file.ts")
 		expect(screen.getByText("+1")).toBeInTheDocument()
 		expect(screen.getByText("-1")).toBeInTheDocument()
 	})
@@ -212,8 +214,12 @@ describe("ChatRow - inline diff stats and actions", () => {
 		const { container } = renderChatRow(message)
 
 		expect(screen.getByText("Roo wants to apply batch changes")).toBeInTheDocument()
-		expect(screen.getByText((text) => text.includes("src/a.ts"))).toBeInTheDocument()
-		expect(screen.getByText((text) => text.includes("src/b.ts"))).toBeInTheDocument()
+		const prefixes = screen.getAllByTestId("path-prefix")
+		const suffixes = screen.getAllByTestId("path-suffix")
+		expect(prefixes[0]).toHaveTextContent("src")
+		expect(suffixes[0]).toHaveTextContent("/a.ts")
+		expect(prefixes[1]).toHaveTextContent("src")
+		expect(suffixes[1]).toHaveTextContent("/b.ts")
 
 		const openFileIcons = container.querySelectorAll(".codicon-link-external")
 		expect(openFileIcons).toHaveLength(2)
@@ -224,5 +230,20 @@ describe("ChatRow - inline diff stats and actions", () => {
 			type: "openFile",
 			text: "./src/b.ts",
 		})
+	})
+
+	it("keeps regex file patterns out of middle path truncation", () => {
+		const message = createToolAskMessage({
+			tool: "searchFiles",
+			path: "src",
+			filePattern: "*.tsx",
+			regex: "Button",
+			content: "",
+		})
+
+		renderChatRow(message)
+
+		expect(screen.getByText("src/(*.tsx)")).toBeInTheDocument()
+		expect(screen.queryByTestId("path-prefix")).not.toBeInTheDocument()
 	})
 })

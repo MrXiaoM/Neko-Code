@@ -31,9 +31,10 @@ describe("BatchListFilesPermission", () => {
 			</TranslationProvider>,
 		)
 
-		expect(screen.getByText("apps/cli")).toBeInTheDocument()
-		expect(screen.getByText("apps/vscode-e2e")).toBeInTheDocument()
-		expect(screen.getByText("packages/core")).toBeInTheDocument()
+		const suffixes = screen.getAllByTestId("path-suffix")
+		expect(suffixes[0]).toHaveTextContent("/cli")
+		expect(suffixes[1]).toHaveTextContent("/vscode-e2e")
+		expect(suffixes[2]).toHaveTextContent("/core")
 	})
 
 	it("renders nothing when dirs array is empty", () => {
@@ -53,7 +54,7 @@ describe("BatchListFilesPermission", () => {
 			</TranslationProvider>,
 		)
 
-		expect(screen.getByText("apps/cli")).toBeInTheDocument()
+		expect(screen.getAllByTestId("path-suffix")[0]).toHaveTextContent("/cli")
 
 		rerender(
 			<TranslationProvider>
@@ -61,7 +62,7 @@ describe("BatchListFilesPermission", () => {
 			</TranslationProvider>,
 		)
 
-		expect(screen.getByText("apps/cli")).toBeInTheDocument()
+		expect(screen.getAllByTestId("path-suffix")[0]).toHaveTextContent("/cli")
 	})
 
 	it("renders all directories in a single container", () => {
@@ -72,7 +73,7 @@ describe("BatchListFilesPermission", () => {
 		)
 
 		// All directories should be within a single bordered container
-		const container = screen.getByText("apps/cli").closest(".border.border-border.rounded-md")
+		const container = screen.getAllByTestId("path-suffix")[0].closest(".border.border-border.rounded-md")
 		expect(container).toBeInTheDocument()
 
 		// All 3 dirs should be inside this container
@@ -93,10 +94,10 @@ describe("BatchListFilesPermission", () => {
 			</TranslationProvider>,
 		)
 
-		expect(screen.getByText("apps/cli")).toBeInTheDocument()
+		expect(screen.getByTestId("path-suffix")).toHaveTextContent("/cli")
 
 		// Single directory should still be rendered inside the container
-		const bordered = screen.getByText("apps/cli").closest(".border.border-border.rounded-md")
+		const bordered = screen.getByTestId("path-suffix").closest(".border.border-border.rounded-md")
 		expect(bordered).toBeInTheDocument()
 		expect(bordered?.querySelectorAll(".flex.items-center.gap-2")).toHaveLength(1)
 	})

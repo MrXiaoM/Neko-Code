@@ -23,7 +23,6 @@ import { safeJsonParse } from "@roo/core"
 import { useExtensionState } from "@src/context/ExtensionStateContext"
 import { findMatchingResourceOrTemplate } from "@src/utils/mcp"
 import { vscode } from "@src/utils/vscode"
-import { formatPathTooltip } from "@src/utils/formatPathTooltip"
 
 import { ToolUseBlock, ToolUseBlockHeader } from "../common/ToolUseBlock"
 import UpdateTodoListToolBlock from "./UpdateTodoListToolBlock"
@@ -77,7 +76,7 @@ import {
 	CircleStop,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { PathTooltip } from "../ui/PathTooltip"
+import { MiddleTruncatedPath } from "../ui/MiddleTruncatedPath"
 import { OpenMarkdownPreviewButton } from "./OpenMarkdownPreviewButton"
 import { SeeNewChangesButtons } from "./SeeNewChangesButtons"
 
@@ -694,12 +693,9 @@ export const ChatRowContent = ({
 												values: tool.startLine ? { line: tool.startLine } : undefined,
 											})
 										}>
-										{tool.path?.startsWith(".") && <span>.</span>}
-										<PathTooltip content={formatPathTooltip(tool.path, tool.reason)}>
-											<span className="whitespace-nowrap overflow-hidden text-ellipsis text-left mr-2 rtl">
-												{formatPathTooltip(tool.path, tool.reason)}
-											</span>
-										</PathTooltip>
+										{tool.path && (
+											<MiddleTruncatedPath path={tool.path} additionalContent={tool.reason} />
+										)}
 										<div style={{ flexGrow: 1 }}></div>
 										<SquareArrowOutUpRight
 											className="w-4 shrink-0 codicon codicon-link-external opacity-0 group-hover:opacity-100 transition-opacity"
@@ -887,6 +883,7 @@ export const ChatRowContent = ({
 									path={tool.path! + (tool.filePattern ? `/(${tool.filePattern})` : "")}
 									code={tool.content}
 									language="shellsession"
+									middleTruncatePath={false}
 									isExpanded={isExpanded}
 									onToggleExpand={handleToggleExpand}
 								/>

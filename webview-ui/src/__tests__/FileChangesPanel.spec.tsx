@@ -3,6 +3,7 @@ import { fireEvent, render, screen } from "@/utils/test-utils"
 import type { ClineMessage } from "@roo-code/types"
 import { TranslationProvider } from "@/i18n/__mocks__/TranslationContext"
 import FileChangesPanel from "../components/chat/FileChangesPanel"
+import { MiddleTruncatedPath } from "../components/ui/MiddleTruncatedPath"
 
 const mockPostMessage = vi.fn()
 
@@ -37,6 +38,7 @@ vi.mock("@src/components/common/CodeAccordion", () => ({
 	}) => (
 		<div data-testid="code-accordian">
 			<span data-testid="accordian-path">{path}</span>
+			{path && <MiddleTruncatedPath path={path} />}
 			<button type="button" onClick={onToggleExpand} data-testid="accordian-toggle">
 				{isExpanded ? "expanded" : "collapsed"}
 			</button>
@@ -134,6 +136,8 @@ describe("FileChangesPanel", () => {
 		// Expand panel so file row is in DOM (CollapsibleContent may not render when closed in some setups)
 		fireEvent.click(screen.getByText("1 file(s) changed in this conversation").closest("button")!)
 		expect(screen.getByTestId("accordian-path")).toHaveTextContent("src/foo.ts")
+		expect(screen.getByTestId("path-prefix")).toHaveTextContent("src")
+		expect(screen.getByTestId("path-suffix")).toHaveTextContent("/foo.ts")
 	})
 
 	it("renders one row per unique path when multiple files edited", () => {

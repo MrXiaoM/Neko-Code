@@ -2,11 +2,11 @@ import { memo, useMemo } from "react"
 import { VSCodeProgressRing } from "@vscode/webview-ui-toolkit/react"
 import { type ToolProgressStatus } from "@roo-code/types"
 import { getLanguageFromPath } from "@src/utils/getLanguageFromPath"
-import { formatPathTooltip } from "@src/utils/formatPathTooltip"
 import { ChevronUp } from "lucide-react"
 
 import { ToolUseBlock, ToolUseBlockHeader } from "./ToolUseBlock"
 import CodeBlock from "./CodeBlock"
+import { MiddleTruncatedPath } from "../ui/MiddleTruncatedPath"
 import { PathTooltip } from "../ui/PathTooltip"
 import DiffView from "./DiffView"
 
@@ -21,6 +21,7 @@ interface CodeAccordionProps {
 	onToggleExpand: () => void
 	header?: string
 	onJumpToFile?: () => void
+	middleTruncatePath?: boolean
 	// New props for diff stats
 	diffStats?: { added: number; removed: number }
 }
@@ -36,6 +37,7 @@ const CodeAccordion = ({
 	onToggleExpand,
 	header,
 	onJumpToFile,
+	middleTruncatePath = true,
 	diffStats,
 }: CodeAccordionProps) => {
 	const inferredLanguage = useMemo(() => language ?? (path ? getLanguageFromPath(path) : "txt"), [path, language])
@@ -69,15 +71,14 @@ const CodeAccordion = ({
 								{isFeedback ? "User Edits" : "Console Logs"}
 							</span>
 						</div>
+					) : middleTruncatePath && path ? (
+						<MiddleTruncatedPath path={path} />
 					) : (
-						<>
-							{path?.startsWith(".") && <span>.</span>}
-							<PathTooltip content={formatPathTooltip(path)}>
-								<span className="whitespace-nowrap overflow-hidden text-ellipsis text-left mr-2 rtl">
-									{formatPathTooltip(path)}
-								</span>
-							</PathTooltip>
-						</>
+						<PathTooltip content={path ?? ""}>
+							<span className="min-w-0 flex-1 whitespace-nowrap overflow-hidden text-ellipsis text-left mr-2">
+								{path}
+							</span>
+						</PathTooltip>
 					)}
 					<div className="flex-grow-1" />
 					{/* Prefer diff stats over generic progress indicator if available */}

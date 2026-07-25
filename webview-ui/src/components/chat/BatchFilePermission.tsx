@@ -1,9 +1,8 @@
 import { memo } from "react"
 
 import { ToolUseBlock, ToolUseBlockHeader } from "../common/ToolUseBlock"
+import { MiddleTruncatedPath } from "../ui/MiddleTruncatedPath"
 import { vscode } from "@src/utils/vscode"
-import { formatPathTooltip } from "@src/utils/formatPathTooltip"
-import { PathTooltip } from "../ui/PathTooltip"
 
 interface FilePermissionItem {
 	path: string
@@ -35,19 +34,7 @@ export const BatchFilePermission = memo(({ files = [], onPermissionResponse, ts 
 							<ToolUseBlock className="flex-1">
 								<ToolUseBlockHeader
 									onClick={() => vscode.postMessage({ type: "openFile", text: file.content })}>
-									{file.path?.startsWith(".") && <span>.</span>}
-									<PathTooltip
-										content={formatPathTooltip(
-											file.path,
-											file.lineSnippet ? ` ${file.lineSnippet}` : undefined,
-										)}>
-										<span className="whitespace-nowrap overflow-hidden text-ellipsis text-left mr-2 rtl">
-											{formatPathTooltip(
-												file.path,
-												file.lineSnippet ? ` ${file.lineSnippet}` : undefined,
-											)}
-										</span>
-									</PathTooltip>
+									<MiddleTruncatedPath path={file.path} additionalContent={file.lineSnippet} />
 									<div className="flex-grow"></div>
 									<span className="codicon codicon-link-external text-[13.5px] my-[1px]" />
 								</ToolUseBlockHeader>

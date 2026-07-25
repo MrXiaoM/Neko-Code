@@ -54,10 +54,11 @@ describe("BatchFilePermission", () => {
 			</TranslationProvider>,
 		)
 
-		// Check that all files are rendered
-		expect(screen.getByText(/Button\.tsx/)).toBeInTheDocument()
-		expect(screen.getByText(/config\.json/)).toBeInTheDocument()
-		expect(screen.getByText(/Button\.test\.tsx/)).toBeInTheDocument()
+		// File names remain identifiable in the non-shrinking path suffix.
+		const suffixes = screen.getAllByTestId("path-suffix")
+		expect(suffixes[0]).toHaveTextContent("/Button.tsx")
+		expect(suffixes[1]).toHaveTextContent("/config.json")
+		expect(suffixes[2]).toHaveTextContent("/Button.test.tsx")
 
 		// Check that line snippets are shown
 		expect(screen.getByText(/export const Button = \(\) => \{/)).toBeInTheDocument()
@@ -96,10 +97,7 @@ describe("BatchFilePermission", () => {
 			</TranslationProvider>,
 		)
 
-		// The onClick is on the ToolUseBlockHeader which contains the file path text
-		// Find the header that contains our file path and click it
-		const filePathElement = screen.getByText(/Button\.tsx.*export const Button/)
-		// The ToolUseBlockHeader is the parent div with the flex class
+		const filePathElement = screen.getAllByTestId("path-suffix")[0]
 		const headerElement = filePathElement.closest(".flex.items-center.select-none")
 
 		if (headerElement) {
@@ -132,9 +130,8 @@ describe("BatchFilePermission", () => {
 			</TranslationProvider>,
 		)
 
-		// Should render dot before the path
-		expect(screen.getByText(".")).toBeInTheDocument()
-		expect(screen.getByText(/\/src\/index\.ts/)).toBeInTheDocument()
+		expect(screen.getByTestId("path-prefix")).toHaveTextContent("./src")
+		expect(screen.getByTestId("path-suffix")).toHaveTextContent("/index.ts")
 	})
 
 	it("re-renders when timestamp changes", () => {
@@ -145,7 +142,7 @@ describe("BatchFilePermission", () => {
 		)
 
 		// Initial render
-		expect(screen.getByText(/Button\.tsx/)).toBeInTheDocument()
+		expect(screen.getAllByTestId("path-suffix")[0]).toHaveTextContent("/Button.tsx")
 
 		// Re-render with new timestamp
 		rerender(
@@ -155,7 +152,7 @@ describe("BatchFilePermission", () => {
 		)
 
 		// Should still show files
-		expect(screen.getByText(/Button\.tsx/)).toBeInTheDocument()
+		expect(screen.getAllByTestId("path-suffix")[0]).toHaveTextContent("/Button.tsx")
 	})
 
 	it("displays external link icon for all files", () => {

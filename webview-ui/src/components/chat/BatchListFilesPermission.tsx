@@ -1,7 +1,7 @@
 import { memo } from "react"
 
 import { ToolUseBlock, ToolUseBlockHeader } from "../common/ToolUseBlock"
-import { PathTooltip } from "../ui/PathTooltip"
+import { MiddleTruncatedPath } from "../ui/MiddleTruncatedPath"
 
 interface DirPermissionItem {
 	path: string
@@ -26,11 +26,7 @@ export const BatchListFilesPermission = memo(({ dirs = [], ts }: BatchListFilesP
 						<div key={`${dir.path}-${index}-${ts}`} className="flex items-center gap-2">
 							<ToolUseBlock className="flex-1">
 								<ToolUseBlockHeader>
-									<PathTooltip content={dir.path}>
-										<span className="whitespace-nowrap overflow-hidden text-ellipsis text-left mr-2 rtl">
-											{dir.path}
-										</span>
-									</PathTooltip>
+									<MiddleTruncatedPath path={dir.path} />
 									<div className="flex-grow"></div>
 								</ToolUseBlockHeader>
 							</ToolUseBlock>
