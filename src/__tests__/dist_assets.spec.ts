@@ -60,6 +60,14 @@ describe("dist assets", () => {
 		})
 	})
 
+	describe("Windows toast bridge", () => {
+		it("includes the private protocol bridge script, silent launcher, and hwnd helper", () => {
+			expect(fs.existsSync(path.join(distPath, "assets", "windows", "zoo-code-toast-bridge.ps1"))).toBe(true)
+			expect(fs.existsSync(path.join(distPath, "assets", "windows", "zoo-code-toast-bridge.vbs"))).toBe(true)
+			expect(fs.existsSync(path.join(distPath, "assets", "windows", "zoo-code-toast-get-hwnd.ps1"))).toBe(true)
+		})
+	})
+
 	describe("marketplace assets", () => {
 		const marketplaceFiles = ["modes.yml", "mcps.yml"]
 

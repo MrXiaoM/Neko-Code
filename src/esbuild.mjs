@@ -80,6 +80,9 @@ async function main() {
 							["assets/marketplace", "dist/assets/marketplace"],
 							// Toast icon used by Windows notifications. Directory copy ensures parent dirs exist.
 							["assets/icons", "dist/assets/icons", { optional: true }],
+							// Private Windows toast protocol bridge. Kept as a static script so registry activation
+							// never delegates notification clicks to a browser or VS Code URI handler.
+							["assets/windows", "dist/assets/windows", { optional: true }],
 						],
 						srcDir,
 						buildDir,

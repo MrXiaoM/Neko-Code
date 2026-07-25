@@ -7,7 +7,9 @@ import * as fs from "fs"
 
 import { Package } from "../../../shared/package"
 import {
+	__flushWindowsHwndRefreshForTests,
 	__resetApprovalNotificationStateForTests,
+	__setWindowsMainWindowHwndForTests,
 	buildApprovalFocusUri,
 	buildApprovalNotificationCopy,
 	buildWindowsToastXml,
@@ -53,12 +55,15 @@ vi.mock("fs", async (importOriginal) => {
 		appendFileSync: vi.fn(),
 		existsSync: vi.fn((p: string) => {
 			const s = String(p).toLowerCase().replace(/\\/g, "/")
-			// Toast icon + host CLI wrappers used by multi-window focus routing.
+			// Toast icon + host CLI wrappers + silent protocol bridge assets.
 			return (
 				s.endsWith("icon.png") ||
 				s.endsWith("/bin/code.cmd") ||
 				s.endsWith("/bin/code-insiders.cmd") ||
 				s.endsWith("/bin/cursor.cmd") ||
+				s.endsWith("zoo-code-toast-bridge.ps1") ||
+				s.endsWith("zoo-code-toast-bridge.vbs") ||
+				s.endsWith("zoo-code-toast-get-hwnd.ps1") ||
 				s.endsWith("/bin/code") ||
 				s.endsWith("/bin/code-insiders") ||
 				s.endsWith("/bin/cursor")
@@ -169,6 +174,14 @@ function mockExecaChild(): MockExecaChild {
 		return (strings: TemplateStringsArray, ...values: unknown[]) => {
 			const command = reconstructTaggedCommand(strings, values)
 			execaCalls.push({ options: options ?? {}, command })
+			const lower = command.toLowerCase()
+			if (lower.includes("reg.exe add")) {
+				return Promise.resolve({ exitCode: 0 })
+			}
+			// HWND helper is fire-and-forget during init/focus; resolve quickly without blocking toast tests.
+			if (lower.includes("zoo-code-toast-get-hwnd.ps1")) {
+				return Promise.resolve({ exitCode: 0, stdout: "123456\n" })
+			}
 			return child
 		}
 	})
@@ -188,8 +201,9 @@ function findExecaCommand(matcher: (command: string) => boolean) {
 
 describe("approvalNotification", () => {
 	const originalPlatform = process.platform
+	let notificationContext: vscode.ExtensionContext
 
-	beforeEach(() => {
+	beforeEach(async () => {
 		vi.clearAllMocks()
 		execaCalls.length = 0
 		windowStateChangeHandlers.length = 0
@@ -204,15 +218,30 @@ describe("approvalNotification", () => {
 				s.endsWith("/bin/code.cmd") ||
 				s.endsWith("/bin/code-insiders.cmd") ||
 				s.endsWith("/bin/cursor.cmd") ||
+				s.endsWith("zoo-code-toast-bridge.ps1") ||
+				s.endsWith("zoo-code-toast-bridge.vbs") ||
+				s.endsWith("zoo-code-toast-get-hwnd.ps1") ||
 				s.endsWith("/bin/code") ||
 				s.endsWith("/bin/code-insiders") ||
 				s.endsWith("/bin/cursor")
 			)
 		})
 		mockExecaChild()
+		notificationContext = {
+			extensionPath: "C:/test-extension",
+			subscriptions: [],
+		} as unknown as vscode.ExtensionContext
+		await initializeWindowsApprovalNotificationCallback(notificationContext)
+		// HWND refresh is scheduled on activate; wait so later "not called" assertions stay clean.
+		await __flushWindowsHwndRefreshForTests()
+		execaCalls.length = 0
+		execaMock.mockClear()
 	})
 
 	afterEach(() => {
+		for (const subscription of notificationContext.subscriptions) {
+			subscription.dispose()
+		}
 		Object.defineProperty(process, "platform", { value: originalPlatform, configurable: true })
 	})
 
@@ -221,6 +250,37 @@ describe("approvalNotification", () => {
 			const stamp = formatLocalLogTimestamp(new Date("2026-07-22T05:06:39.708Z"))
 			expect(stamp).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}[+-]\d{2}:\d{2}$/)
 			expect(stamp.endsWith("Z")).toBe(false)
+		})
+	})
+
+	describe("private Windows toast protocol registration", () => {
+		it("registers a silent wscript launcher for the bundled private bridge", async () => {
+			__resetApprovalNotificationStateForTests()
+			vi.clearAllMocks()
+			execaCalls.length = 0
+			mockExecaChild()
+			const context = {
+				extensionPath: "C:/test-extension",
+				subscriptions: [],
+			} as unknown as vscode.ExtensionContext
+
+			await initializeWindowsApprovalNotificationCallback(context)
+
+			const registrationCommands = execaCalls.filter((call) => call.command.includes("reg.exe add"))
+			expect(registrationCommands).toHaveLength(3)
+			const joined = registrationCommands.map((call) => call.command).join("\n")
+			expect(joined).toContain("HKCU\\Software\\Classes\\zoo-code-toast")
+			expect(joined).toContain("wscript.exe")
+			expect(joined).toContain("zoo-code-toast-bridge.vbs")
+			// ShellExecute treats //B as UNC \\B — must not appear in protocol open command.
+			expect(joined).not.toContain("//B")
+			expect(joined).not.toContain("//Nologo")
+			// Protocol open command must not launch powershell.exe directly (console flash).
+			expect(joined).not.toMatch(/shell\\open\\command[\s\S]*powershell\.exe/i)
+
+			for (const subscription of context.subscriptions) {
+				subscription.dispose()
+			}
 		})
 	})
 
@@ -583,8 +643,9 @@ describe("approvalNotification", () => {
 			expect(written).toContain("Mirai")
 			expect(written).toContain("echo hello")
 			expect(written).toContain("查看")
-			expect(written).toContain(escapeXmlForToast(buildApprovalFocusUri()))
-			expect(written).toContain("ws=E%3A%2FZoo-Code")
+			expect(written).toContain("zoo-code-toast://approval/")
+			expect(written).not.toContain("http://")
+			expect(written).not.toContain("vscode://")
 			expect(written).toContain('activationType="protocol"')
 			// Action Center sender uses VS Code host AUMID (mock appName is Visual Studio Code).
 			expect(written).toContain(WINDOWS_TOAST_HOST_AUMIDS.vscode)
@@ -677,7 +738,9 @@ describe("approvalNotification", () => {
 			expect(written).toContain("Task completed!")
 			expect(written).toContain("Mirai finished the task: All tests passed")
 			expect(written).toContain("查看")
-			expect(written).toContain(escapeXmlForToast(buildApprovalFocusUri()))
+			expect(written).toContain("zoo-code-toast://approval/")
+			expect(written).not.toContain("http://")
+			expect(written).not.toContain("vscode://")
 		})
 
 		it("does not show completion toast when focused", async () => {
@@ -718,54 +781,65 @@ describe("approvalNotification", () => {
 	describe("Windows approval callback", () => {
 		it("uses a one-time loopback callback URL without routing through another VS Code window", async () => {
 			nock.enableNetConnect("127.0.0.1")
-			const context = { subscriptions: [] } as unknown as vscode.ExtensionContext
 			try {
-				await initializeWindowsApprovalNotificationCallback(context)
 				showWindowsSystemToast({ title: "标题", body: "正文" })
 
 				const written = String(vi.mocked(fs.writeFileSync).mock.calls.at(-1)?.[1] ?? "")
-				const match = written.match(/launch="(http:\/\/127\.0\.0\.1:\d+\/approval-focus\/[a-f0-9]+)"/)
+				const match = written.match(/launch="zoo-code-toast:\/\/approval\/(\d+)\/([a-f0-9]{64})"/)
 				expect(match).toBeTruthy()
+				expect(written).not.toContain("http://")
 				expect(written).not.toContain("vscode://")
+				const callbackUrl = `http://127.0.0.1:${match![1]}/approval-focus/${match![2]}`
 
-				const invalidResponse = await fetch(`${match![1]}0`)
+				const unmarkedResponse = await fetch(callbackUrl)
+				expect(unmarkedResponse.status).toBe(404)
+				expect(vscode.commands.executeCommand).not.toHaveBeenCalled()
+
+				const invalidResponse = await fetch(`${callbackUrl}0`, {
+					headers: { "X-Zoo-Code-Toast-Bridge": "1" },
+				})
 				expect(invalidResponse.status).toBe(404)
 				expect(vscode.commands.executeCommand).not.toHaveBeenCalled()
 
-				const firstResponse = await fetch(match![1])
+				const firstResponse = await fetch(callbackUrl, {
+					headers: { "X-Zoo-Code-Toast-Bridge": "1" },
+				})
 				expect(firstResponse.status).toBe(200)
 				await Promise.resolve()
 				await Promise.resolve()
 				expect(vscode.commands.executeCommand).toHaveBeenCalledWith(`${Package.name}.SidebarProvider.focus`)
 				expect(vscode.commands.executeCommand).toHaveBeenCalledWith(`${Package.name}.focusInput`)
 
-				const repeatedResponse = await fetch(match![1])
+				const repeatedResponse = await fetch(callbackUrl, {
+					headers: { "X-Zoo-Code-Toast-Bridge": "1" },
+				})
 				expect(repeatedResponse.status).toBe(404)
 				expect(vscode.commands.executeCommand).toHaveBeenCalledTimes(2)
 			} finally {
-				for (const subscription of context.subscriptions) {
-					subscription.dispose()
-				}
 				nock.disableNetConnect()
 			}
 		})
 
-		it("activates its own workspace before focusing UI when the callback instance is unfocused", async () => {
+		it("defers UI focus until the window is focused without shelling code.cmd when unfocused", async () => {
 			nock.enableNetConnect("127.0.0.1")
-			const context = { subscriptions: [] } as unknown as vscode.ExtensionContext
 			;(vscode.window.state as { focused: boolean }).focused = false
+			__setWindowsMainWindowHwndForTests("424242")
 			try {
-				await initializeWindowsApprovalNotificationCallback(context)
 				await notifyApprovalIfWindowUnfocused({ force: true, title: "标题", body: "正文" })
 				const written = String(vi.mocked(fs.writeFileSync).mock.calls.at(-1)?.[1] ?? "")
-				const callbackUrl = written.match(/launch="(http:\/\/127\.0\.0\.1:\d+\/approval-focus\/[a-f0-9]+)"/)![1]
+				const match = written.match(/launch="zoo-code-toast:\/\/approval\/(\d+)\/([a-f0-9]{64})"/)!
+				const callbackUrl = `http://127.0.0.1:${match[1]}/approval-focus/${match[2]}`
 
-				expect((await fetch(callbackUrl)).status).toBe(200)
+				const response = await fetch(callbackUrl, { headers: { "X-Zoo-Code-Toast-Bridge": "1" } })
+				expect(response.status).toBe(200)
+				// Bridge receives ok + HWND so it can SetForegroundWindow without code.cmd.
+				expect(await response.text()).toBe("ok\n424242")
+				// Correct-instance toast path must not flash a terminal via code.cmd --reuse-window.
 				expect(
 					findExecaCommand(
 						(command) => command.includes("--reuse-window") && command.includes("E:/Zoo-Code"),
 					),
-				).toBeTruthy()
+				).toBeUndefined()
 				expect(vscode.commands.executeCommand).not.toHaveBeenCalled()
 				;(vscode.window.state as { focused: boolean }).focused = true
 				windowStateChangeHandlers.at(-1)?.({ focused: true })
@@ -774,10 +848,31 @@ describe("approvalNotification", () => {
 				expect(vscode.commands.executeCommand).toHaveBeenCalledWith(`${Package.name}.SidebarProvider.focus`)
 				expect(vscode.commands.executeCommand).toHaveBeenCalledWith(`${Package.name}.focusInput`)
 			} finally {
+				nock.disableNetConnect()
+			}
+		})
+		it("suppresses the toast when private protocol registration fails", async () => {
+			__resetApprovalNotificationStateForTests()
+			vi.clearAllMocks()
+			execaCalls.length = 0
+			execaMock.mockImplementation(() => {
+				return () => Promise.resolve({ exitCode: 1 })
+			})
+			const context = {
+				extensionPath: "C:/test-extension",
+				subscriptions: [],
+			} as unknown as vscode.ExtensionContext
+			const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+			try {
+				await initializeWindowsApprovalNotificationCallback(context)
+				showWindowsSystemToast({ title: "标题", body: "正文" })
+				expect(vi.mocked(fs.writeFileSync)).not.toHaveBeenCalled()
+				expect(execaCalls.some((call) => call.command.includes("toast-show-"))).toBe(false)
+			} finally {
+				consoleSpy.mockRestore()
 				for (const subscription of context.subscriptions) {
 					subscription.dispose()
 				}
-				nock.disableNetConnect()
 			}
 		})
 	})
@@ -797,8 +892,9 @@ describe("approvalNotification", () => {
 			expect(written).toContain("正文中文")
 			expect(written).toContain("Approve")
 			expect(written).toContain("Reject")
-			expect(written).toContain(escapeXmlForToast(buildApprovalFocusUri()))
-			expect(written).toContain("ws=E%3A%2FZoo-Code")
+			expect(written).toContain("zoo-code-toast://approval/")
+			expect(written).not.toContain("http://")
+			expect(written).not.toContain("vscode://")
 			expect(written).toContain(WINDOWS_TOAST_HOST_AUMIDS.vscode)
 			expect(written).not.toContain("snoretoast")
 		})
