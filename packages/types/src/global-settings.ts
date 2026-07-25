@@ -347,6 +347,7 @@ export const SECRET_STATE_KEYS = [
 	"openAiNativeApiKey",
 	"deepSeekApiKey",
 	"moonshotApiKey",
+	"kimiCodeApiKey",
 	"mistralApiKey",
 	"minimaxApiKey",
 	"requestyApiKey",

@@ -44,17 +44,18 @@ export const DEFAULT_CONSECUTIVE_MISTAKE_LIMIT = 3
  */
 
 export const dynamicProviders = [
-	"openrouter",
-	"vercel-ai-gateway",
-	"zoo-gateway",
-	"litellm",
-	"requesty",
-	"unbound",
-	"poe",
-	"deepseek",
-	"moonshot",
-	"opencode-go",
-	"kenari",
+	providerIdentifiers.openrouter,
+	providerIdentifiers.vercelAiGateway,
+	providerIdentifiers.zooGateway,
+	providerIdentifiers.litellm,
+	providerIdentifiers.requesty,
+	providerIdentifiers.unbound,
+	providerIdentifiers.poe,
+	providerIdentifiers.deepseek,
+	providerIdentifiers.moonshot,
+	providerIdentifiers.opencodeGo,
+	providerIdentifiers.kenari,
+	providerIdentifiers.kimiCode,
 ] as const
 
 export type DynamicProvider = (typeof dynamicProviders)[number]
@@ -68,7 +69,7 @@ export const isDynamicProvider = (key: string): key is DynamicProvider =>
  * Local providers require localhost API calls in order to get the model list.
  */
 
-export const localProviders = ["ollama", "lmstudio"] as const
+export const localProviders = [providerIdentifiers.ollama, providerIdentifiers.lmstudio] as const
 
 export type LocalProvider = (typeof localProviders)[number]
 
@@ -81,7 +82,7 @@ export const isLocalProvider = (key: string): key is LocalProvider => localProvi
  * model list.
  */
 
-export const internalProviders = ["vscode-lm"] as const
+export const internalProviders = [providerIdentifiers.vscodeLm] as const
 
 export type InternalProvider = (typeof internalProviders)[number]
 
@@ -94,7 +95,7 @@ export const isInternalProvider = (key: string): key is InternalProvider =>
  * Custom providers are completely configurable within Roo Code settings.
  */
 
-export const customProviders = ["openai"] as const
+export const customProviders = [providerIdentifiers.openai] as const
 
 export type CustomProvider = (typeof customProviders)[number]
 
@@ -107,7 +108,7 @@ export const isCustomProvider = (key: string): key is CustomProvider => customPr
  * model lists.
  */
 
-export const fauxProviders = ["fake-ai"] as const
+export const fauxProviders = [providerIdentifiers.fakeAi] as const
 
 export type FauxProvider = (typeof fauxProviders)[number]
 
@@ -318,6 +319,14 @@ const moonshotSchema = apiModelIdProviderModelSchema.extend({
 	moonshotApiKey: z.string().optional(),
 })
 
+export const kimiCodeAuthMethodSchema = z.enum(["oauth", "api-key"])
+export type KimiCodeAuthMethod = z.infer<typeof kimiCodeAuthMethodSchema>
+
+const kimiCodeSchema = apiModelIdProviderModelSchema.extend({
+	kimiCodeAuthMethod: kimiCodeAuthMethodSchema.optional(),
+	kimiCodeApiKey: z.string().optional(),
+})
+
 const minimaxSchema = apiModelIdProviderModelSchema.extend({
 	minimaxBaseUrl: z
 		.union([z.literal("https://api.minimax.io/v1"), z.literal("https://api.minimaxi.com/v1")])
@@ -434,6 +443,7 @@ export const providerSettingsSchemaDiscriminated = z.discriminatedUnion("apiProv
 	deepSeekSchema.merge(z.object({ apiProvider: z.literal("deepseek") })),
 	poeSchema.merge(z.object({ apiProvider: z.literal("poe") })),
 	moonshotSchema.merge(z.object({ apiProvider: z.literal("moonshot") })),
+	kimiCodeSchema.merge(z.object({ apiProvider: z.literal("kimi-code") })),
 	minimaxSchema.merge(z.object({ apiProvider: z.literal("minimax") })),
 	mimoSchema.merge(z.object({ apiProvider: z.literal("mimo") })),
 	requestySchema.merge(z.object({ apiProvider: z.literal("requesty") })),
@@ -472,6 +482,7 @@ export const providerSettingsSchema = z.object({
 	...deepSeekSchema.shape,
 	...poeSchema.shape,
 	...moonshotSchema.shape,
+	...kimiCodeSchema.shape,
 	...minimaxSchema.shape,
 	...mimoSchema.shape,
 	...requestySchema.shape,
@@ -553,6 +564,7 @@ export const modelIdKeysByProvider: Record<TypicalProvider, ModelIdKey> = {
 	"gemini-cli": "apiModelId",
 	mistral: "apiModelId",
 	moonshot: "apiModelId",
+	"kimi-code": "apiModelId",
 	minimax: "apiModelId",
 	mimo: "apiModelId",
 	deepseek: "apiModelId",
@@ -660,6 +672,11 @@ export const MODELS_BY_PROVIDER: Record<
 		id: "moonshot",
 		label: "Moonshot",
 		models: Object.keys(moonshotModels),
+	},
+	"kimi-code": {
+		id: "kimi-code",
+		label: "Kimi Code",
+		models: [],
 	},
 	minimax: {
 		id: "minimax",
