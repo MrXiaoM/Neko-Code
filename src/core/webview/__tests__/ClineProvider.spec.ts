@@ -80,6 +80,7 @@ vi.mock("../../../utils/storage", () => ({
 	getSettingsDirectoryPath: vi.fn().mockResolvedValue("/test/settings/path"),
 	getTaskDirectoryPath: vi.fn().mockResolvedValue("/test/task/path"),
 	getGlobalStoragePath: vi.fn().mockResolvedValue("/test/storage/path"),
+	getStorageBasePath: vi.fn().mockResolvedValue("/test/storage/path"),
 }))
 
 vi.mock("@modelcontextprotocol/sdk/types.js", () => ({
@@ -357,6 +358,11 @@ vi.mock("@roo-code/cloud", () => ({
 	},
 	getRooCodeApiUrl: vi.fn().mockReturnValue("https://app.roocode.com"),
 }))
+
+beforeAll(() => {
+	vi.spyOn(console, "log").mockImplementation(() => {})
+	vi.spyOn(console, "warn").mockImplementation(() => {})
+})
 
 afterAll(() => {
 	vi.restoreAllMocks()
@@ -3964,13 +3970,16 @@ describe("ClineProvider - Comprehensive Edit/Delete Edge Cases", () => {
 
 	describe("getTaskWithId", () => {
 		it("returns empty apiConversationHistory when file is missing", async () => {
-			const historyItem = { id: "missing-api-file-task", task: "test task", ts: Date.now() }
-			vi.mocked(mockContext.globalState.get).mockImplementation((key: string) => {
-				if (key === "taskHistory") {
-					return [historyItem]
-				}
-				return undefined
-			})
+			const historyItem = {
+				id: "missing-api-file-task",
+				task: "test task",
+				ts: Date.now(),
+				number: 1,
+				tokensIn: 0,
+				tokensOut: 0,
+				totalCost: 0,
+			}
+			await provider.taskHistoryStore.upsert(historyItem)
 
 			const deleteTaskSpy = vi.spyOn(provider, "deleteTaskFromState")
 
@@ -3982,13 +3991,16 @@ describe("ClineProvider - Comprehensive Edit/Delete Edge Cases", () => {
 		})
 
 		it("returns empty apiConversationHistory when file contains invalid JSON", async () => {
-			const historyItem = { id: "corrupt-api-task", task: "test task", ts: Date.now() }
-			vi.mocked(mockContext.globalState.get).mockImplementation((key: string) => {
-				if (key === "taskHistory") {
-					return [historyItem]
-				}
-				return undefined
-			})
+			const historyItem = {
+				id: "corrupt-api-task",
+				task: "test task",
+				ts: Date.now(),
+				number: 1,
+				tokensIn: 0,
+				tokensOut: 0,
+				totalCost: 0,
+			}
+			await provider.taskHistoryStore.upsert(historyItem)
 
 			// Make fileExistsAtPath return true so the read path is exercised
 			const fsUtils = await import("../../../utils/fs")

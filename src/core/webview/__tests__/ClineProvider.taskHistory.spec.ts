@@ -384,6 +384,22 @@ describe("ClineProvider Task History Synchronization", () => {
 		return calls.filter((call) => call[0]?.type === type)
 	}
 
+	describe("task history persistence", () => {
+		it("clears the legacy globalState history after file-backed storage initializes", () => {
+			expect(mockContext.globalState.update).toHaveBeenCalledWith("taskHistory", undefined)
+		})
+
+		it("persists new history only to the file-backed store", async () => {
+			vi.mocked(mockContext.globalState.update).mockClear()
+			const historyItem = createHistoryItem({ id: "disk-only-task", task: "Disk only" })
+
+			await provider.updateTaskHistory(historyItem, { broadcast: false })
+
+			expect(provider.taskHistoryStore.get("disk-only-task")).toMatchObject({ id: "disk-only-task" })
+			expect(mockContext.globalState.update).not.toHaveBeenCalledWith("taskHistory", expect.anything())
+		})
+	})
+
 	describe("updateTaskHistory", () => {
 		it("broadcasts task history update by default", async () => {
 			await provider.resolveWebviewView(mockWebviewView)
