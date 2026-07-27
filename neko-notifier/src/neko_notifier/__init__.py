@@ -1,0 +1,17 @@
+"""Neko Notifier service package."""
+
+from __future__ import annotations
+
+PROTOCOL_VERSION = 1
+DISCOVERY_FILE_NAME = "neko-notifier.json"
+DEFAULT_LEASE_TTL_SECONDS = 20.0
+DEFAULT_HEARTBEAT_INTERVAL_SECONDS = 5.0
+MAX_NOTIFICATIONS = 256
+
+__all__ = [
+    "DEFAULT_HEARTBEAT_INTERVAL_SECONDS",
+    "DEFAULT_LEASE_TTL_SECONDS",
+    "DISCOVERY_FILE_NAME",
+    "MAX_NOTIFICATIONS",
+    "PROTOCOL_VERSION",
+]

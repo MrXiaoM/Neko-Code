@@ -809,6 +809,14 @@
 			"label": "Enable text-to-speech",
 			"description": "When enabled, Zoo will read aloud its responses using text-to-speech.",
 			"speedLabel": "Speed"
+		},
+		"nekoNotifier": {
+			"label": "Neko Notifier data directory",
+			"description": "When set, Zoo validates neko-notifier.json and performs a health check before using the standalone tray service. System toasts remain enabled independently.",
+			"placeholder": "Select the service data directory",
+			"browse": "Select data directory",
+			"clear": "Clear data directory",
+			"reload": "Reload service connection"
 		}
 	},
 	"contextManagement": {

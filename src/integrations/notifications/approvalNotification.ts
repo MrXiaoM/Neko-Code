@@ -17,9 +17,11 @@ let windowsApprovalCallbackServer: http.Server | undefined
 let windowsApprovalCallbackPort: number | undefined
 const windowsApprovalCallbackTokens = new Map<string, number>()
 let windowsApprovalProtocolReady = false
+const nekoNotifierCallbackToken = randomBytes(32).toString("hex")
 
 const APPROVAL_CALLBACK_TOKEN_TTL_MS = 24 * 60 * 60 * 1000
 const APPROVAL_CALLBACK_PATH_PREFIX = "/approval-focus/"
+const NEKO_NOTIFIER_CALLBACK_PATH_PREFIX = "/neko-notifier-focus/"
 const WINDOWS_TOAST_PROTOCOL = "zoo-code-toast"
 const WINDOWS_TOAST_BRIDGE_HEADER = "x-zoo-code-toast-bridge"
 const WINDOWS_TOAST_BRIDGE_HEADER_VALUE = "1"
@@ -381,21 +383,56 @@ function handleWindowsApprovalCallback(): void {
 	appendToastLog("approval callback waiting for host CLI window focus")
 }
 
+function writeApprovalFocusInstructions(response: http.ServerResponse): void {
+	const workspaceFolder = getWorkspaceFolderPath()
+	const editorPath = resolveEditorExecutablePath()
+	if (!workspaceFolder || !fs.existsSync(editorPath)) {
+		appendToastLog(
+			`approval callback failed focus prerequisites workspace=${workspaceFolder ?? "none"} editor=${editorPath}`,
+		)
+		response.writeHead(503)
+		response.end("focus prerequisites unavailable")
+		return
+	}
+
+	appendToastLog(
+		`approval callback accepted focused=${vscode.window.state.focused} editor=${editorPath} workspace=${workspaceFolder}`,
+	)
+	const body = ["ok", editorPath, workspaceFolder].join("\n")
+	response.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" })
+	response.end(body)
+	handleWindowsApprovalCallback()
+}
+
 function handleWindowsApprovalCallbackRequest(request: http.IncomingMessage, response: http.ServerResponse): void {
-	if (
-		!isLoopbackRequest(request) ||
-		request.method !== "GET" ||
-		request.headers[WINDOWS_TOAST_BRIDGE_HEADER] !== WINDOWS_TOAST_BRIDGE_HEADER_VALUE
-	) {
-		appendToastLog("approval callback rejected: not a marked loopback GET")
+	if (!isLoopbackRequest(request)) {
 		response.writeHead(404)
 		response.end()
 		return
 	}
 
 	const url = new URL(request.url ?? "", `http://127.0.0.1:${windowsApprovalCallbackPort ?? 0}`)
-	if (!url.pathname.startsWith(APPROVAL_CALLBACK_PATH_PREFIX)) {
-		appendToastLog(`approval callback rejected: bad path ${url.pathname}`)
+	if (url.pathname.startsWith(NEKO_NOTIFIER_CALLBACK_PATH_PREFIX)) {
+		const token = url.pathname.slice(NEKO_NOTIFIER_CALLBACK_PATH_PREFIX.length)
+		if (
+			request.method !== "POST" ||
+			token !== nekoNotifierCallbackToken ||
+			request.headers.authorization !== `Bearer ${nekoNotifierCallbackToken}`
+		) {
+			response.writeHead(404)
+			response.end()
+			return
+		}
+		writeApprovalFocusInstructions(response)
+		return
+	}
+
+	if (
+		request.method !== "GET" ||
+		request.headers[WINDOWS_TOAST_BRIDGE_HEADER] !== WINDOWS_TOAST_BRIDGE_HEADER_VALUE ||
+		!url.pathname.startsWith(APPROVAL_CALLBACK_PATH_PREFIX)
+	) {
+		appendToastLog("approval callback rejected: not a marked loopback GET")
 		response.writeHead(404)
 		response.end()
 		return
@@ -417,36 +454,21 @@ function handleWindowsApprovalCallbackRequest(request: http.IncomingMessage, res
 		return
 	}
 
-	const workspaceFolder = getWorkspaceFolderPath()
-	const editorPath = resolveEditorExecutablePath()
-	if (!workspaceFolder || !fs.existsSync(editorPath)) {
-		appendToastLog(
-			`approval callback failed focus prerequisites workspace=${workspaceFolder ?? "none"} editor=${editorPath}`,
-		)
-		response.writeHead(503)
-		response.end("focus prerequisites unavailable")
-		return
-	}
+	writeApprovalFocusInstructions(response)
+}
 
-	appendToastLog(
-		`approval callback accepted focused=${vscode.window.state.focused} editor=${editorPath} workspace=${workspaceFolder}`,
-	)
-	// The authenticated VBS bridge validates these paths, then starts the host
-	// CLI hidden. No PowerShell, HWND, Base64, browser, or vscode:// routing.
-	const body = ["ok", editorPath, workspaceFolder].join("\n")
-	response.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" })
-	response.end(body)
-	handleWindowsApprovalCallback()
+export function getNekoNotifierApprovalCallback(): { callbackUrl: string; callbackToken: string } | undefined {
+	if (!windowsApprovalCallbackPort) {
+		return undefined
+	}
+	return {
+		callbackUrl: `http://127.0.0.1:${windowsApprovalCallbackPort}${NEKO_NOTIFIER_CALLBACK_PATH_PREFIX}${nekoNotifierCallbackToken}`,
+		callbackToken: nekoNotifierCallbackToken,
+	}
 }
 
 export async function initializeWindowsApprovalNotificationCallback(context: vscode.ExtensionContext): Promise<void> {
 	if (process.platform !== "win32" || windowsApprovalCallbackServer) {
-		return
-	}
-
-	const bridgeAssets = getWindowsToastBridgeAssets(context.extensionPath)
-	if (!bridgeAssets) {
-		appendToastLog("Windows approval toast disabled: direct private-protocol VBS bridge is unavailable")
 		return
 	}
 
@@ -472,15 +494,19 @@ export async function initializeWindowsApprovalNotificationCallback(context: vsc
 		}
 		windowsApprovalCallbackServer = server
 		windowsApprovalCallbackPort = address.port
-		windowsApprovalProtocolReady = await registerWindowsToastProtocol(bridgeAssets.launcherPath)
-		if (!windowsApprovalProtocolReady) {
-			windowsApprovalCallbackPort = undefined
-			windowsApprovalCallbackServer = undefined
-			server.close()
-			appendToastLog("Windows approval toast disabled: private protocol registration failed")
-			return
+		const bridgeAssets = getWindowsToastBridgeAssets(context.extensionPath)
+		if (bridgeAssets) {
+			windowsApprovalProtocolReady = await registerWindowsToastProtocol(bridgeAssets.launcherPath)
+			if (windowsApprovalProtocolReady) {
+				appendToastLog(
+					`toast callback ready port=${windowsApprovalCallbackPort} launcher=${bridgeAssets.launcherPath}`,
+				)
+			} else {
+				appendToastLog("Windows approval toast disabled: private protocol registration failed")
+			}
+		} else {
+			appendToastLog("Windows approval toast disabled: direct private-protocol VBS bridge is unavailable")
 		}
-		appendToastLog(`toast callback ready port=${windowsApprovalCallbackPort} launcher=${bridgeAssets.launcherPath}`)
 		context.subscriptions.push({
 			dispose: () => {
 				windowsApprovalCallbackTokens.clear()

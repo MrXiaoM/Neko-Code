@@ -32,6 +32,7 @@ import { DIFF_VIEW_URI_SCHEME } from "./integrations/editor/DiffViewProvider"
 import { Terminal } from "./integrations/terminal/Terminal"
 import { TerminalRegistry } from "./integrations/terminal/TerminalRegistry"
 import { initializeWindowsApprovalNotificationCallback } from "./integrations/notifications/approvalNotification"
+import { nekoNotifierClient } from "./integrations/notifications/nekoNotifierClient"
 import { openAiCodexOAuthManager } from "./integrations/openai-codex/oauth"
 import { kimiCodeOAuthManager } from "./integrations/kimi-code/oauth"
 import { McpServerManager } from "./services/mcp/McpServerManager"
@@ -287,6 +288,8 @@ export async function activate(context: vscode.ExtensionContext) {
 
 	context.subscriptions.push(vscode.window.registerUriHandler({ handleUri }))
 	await initializeWindowsApprovalNotificationCallback(context)
+	await nekoNotifierClient.configure(contextProxy.getGlobalState("nekoNotifierDataDirectory"))
+	context.subscriptions.push({ dispose: () => void nekoNotifierClient.dispose() })
 
 	// Register code actions provider.
 	context.subscriptions.push(
@@ -413,6 +416,7 @@ export async function deactivate() {
 		}
 	}
 
+	await nekoNotifierClient.dispose()
 	await McpServerManager.cleanup(extensionContext)
 	TelemetryService.instance.shutdown()
 	Terminal.setTerminalProfile(undefined)

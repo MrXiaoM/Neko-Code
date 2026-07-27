@@ -47,6 +47,12 @@ vi.mock("../../../integrations/notifications/approvalNotification", () => ({
 	notifyApprovalIfWindowUnfocused: vi.fn().mockResolvedValue(undefined),
 }))
 
+vi.mock("../../../integrations/notifications/nekoNotifierClient", () => ({
+	nekoNotifierClient: {
+		configure: vi.fn().mockResolvedValue(true),
+	},
+}))
+
 vi.mock("../rulesMessageHandler", () => ({
 	handleRequestRules: vi.fn(),
 	handleCreateRule: vi.fn(),
@@ -100,6 +106,7 @@ const mockClineProvider = {
 		},
 		setValue: vi.fn(),
 		getValue: vi.fn(),
+		getGlobalState: vi.fn(),
 	},
 	log: vi.fn(),
 	postStateToWebview: vi.fn(),
@@ -1584,6 +1591,18 @@ describe("webviewMessageHandler - kimiCodeSignIn", () => {
 
 		expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(expect.stringContaining("Kimi Code sign in failed"))
 		expect(mockClineProvider.postStateToWebview).toHaveBeenCalled()
+	})
+})
+
+describe("webviewMessageHandler - reloadNekoNotifier", () => {
+	it("reconfigures the notifier from the saved data directory", async () => {
+		const { nekoNotifierClient } = await import("../../../integrations/notifications/nekoNotifierClient")
+		const dataDirectory = "C:/Users/test/AppData/Local/NekoNotifier"
+		vi.mocked(mockClineProvider.contextProxy.getGlobalState).mockReturnValue(dataDirectory)
+
+		await webviewMessageHandler(mockClineProvider, { type: "reloadNekoNotifier" })
+
+		expect(nekoNotifierClient.configure).toHaveBeenCalledWith(dataDirectory)
 	})
 })
 

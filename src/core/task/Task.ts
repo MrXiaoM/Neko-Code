@@ -83,7 +83,11 @@ import { RepoPerTaskCheckpointService } from "../../services/checkpoints"
 // integrations
 import { DiffViewProvider } from "../../integrations/editor/DiffViewProvider"
 import { findToolName } from "../../integrations/misc/export-markdown"
-import { notifyApprovalIfWindowUnfocused } from "../../integrations/notifications/approvalNotification"
+import {
+	buildApprovalNotificationCopy,
+	notifyApprovalIfWindowUnfocused,
+} from "../../integrations/notifications/approvalNotification"
+import { nekoNotifierClient } from "../../integrations/notifications/nekoNotifierClient"
 import { RooTerminalProcess } from "../../integrations/terminal/types"
 import { TerminalRegistry } from "../../integrations/terminal/TerminalRegistry"
 import { OutputInterceptor } from "../../integrations/terminal/OutputInterceptor"
@@ -1306,6 +1310,8 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 		}
 
 		const timeouts: NodeJS.Timeout[] = []
+		const nekoNotificationId = `approval:${this.taskId}:${this.instanceId}:${askTs}`
+		let nekoRegistration: Promise<boolean> | undefined
 
 		if (approval.decision === "approve") {
 			this.approveAsk()
@@ -1345,6 +1351,16 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 						if (message && !this.abort && !this.abandoned) {
 							this.interactiveAsk = message
 							this.emit(RooCodeEventName.TaskInteractive, this.taskId)
+							const copy = buildApprovalNotificationCopy({
+								ask: type,
+								text: message.text ?? text,
+								detail: type,
+							})
+							nekoRegistration = nekoNotifierClient.registerApproval({
+								notificationId: nekoNotificationId,
+								title: copy.title,
+								body: copy.body,
+							})
 							/* v8 ignore next 3 -- fires inside short timer after ask() resolves; not reachable in unit tests */
 							void provider?.postMessageToWebview({ type: "interactionRequired" }).catch((error) => {
 								console.error("[Task#ask] postMessageToWebview interactionRequired failed:", error)
@@ -1413,28 +1429,37 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 			}
 		}
 
-		// Wait for askResponse to be set
-		await pWaitFor(
-			() => {
-				if (this.askResponse !== undefined || this.lastMessageTs !== askTs) {
-					return true
-				}
-
-				// If a queued message arrives while we're blocked on a conversational ask
-				// (e.g. a follow-up suggestion click that was incorrectly queued due to UI
-				// state), consume it immediately so the task doesn't hang.
-				// Never auto-approve command/tool/mcp asks from the queue.
-				if (shouldDrainQueuedMessageForAsk && !this.messageQueueService.isEmpty()) {
-					const message = this.messageQueueService.dequeueMessage()
-					if (message) {
-						this.handleWebviewAskResponse("messageResponse", message.text, message.images)
+		// Wait for askResponse to be set. Cleanup waits for an in-flight registration
+		// before deleting so a fast response can never leave a late-created ghost lease.
+		try {
+			await pWaitFor(
+				() => {
+					if (this.askResponse !== undefined || this.lastMessageTs !== askTs) {
+						return true
 					}
-				}
 
-				return false
-			},
-			{ interval: 100 },
-		)
+					// If a queued message arrives while we're blocked on a conversational ask
+					// (e.g. a follow-up suggestion click that was incorrectly queued due to UI
+					// state), consume it immediately so the task doesn't hang.
+					// Never auto-approve command/tool/mcp asks from the queue.
+					if (shouldDrainQueuedMessageForAsk && !this.messageQueueService.isEmpty()) {
+						const message = this.messageQueueService.dequeueMessage()
+						if (message) {
+							this.handleWebviewAskResponse("messageResponse", message.text, message.images)
+						}
+					}
+
+					return false
+				},
+				{ interval: 100 },
+			)
+		} finally {
+			timeouts.forEach((timeout) => clearTimeout(timeout))
+			if (nekoRegistration) {
+				await nekoRegistration
+				await nekoNotifierClient.removeApproval(nekoNotificationId)
+			}
+		}
 
 		if (this.lastMessageTs !== askTs) {
 			// Could happen if we send multiple asks in a row i.e. with
@@ -1447,9 +1472,6 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 		this.askResponse = undefined
 		this.askResponseText = undefined
 		this.askResponseImages = undefined
-
-		// Cancel the timeouts if they are still running.
-		timeouts.forEach((timeout) => clearTimeout(timeout))
 
 		// Switch back to an active state.
 		if (this.idleAsk || this.resumableAsk || this.interactiveAsk) {

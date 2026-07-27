@@ -60,6 +60,7 @@ import { getRouterRemovalMessage, getRouterUnavailableSignInMessage } from "../c
 import { experimentDefault } from "../../shared/experiments"
 import { Terminal } from "../../integrations/terminal/Terminal"
 import { TerminalRegistry } from "../../integrations/terminal/TerminalRegistry"
+import { nekoNotifierClient } from "../../integrations/notifications/nekoNotifierClient"
 import { openFile } from "../../integrations/misc/open-file"
 import { openImage, saveImage } from "../../integrations/misc/image-handler"
 import { selectImages } from "../../integrations/misc/process-images"
@@ -783,6 +784,9 @@ export const webviewMessageHandler = async (
 					}
 
 					await provider.contextProxy.setValue(key as keyof RooCodeSettings, newValue)
+					if (key === "nekoNotifierDataDirectory") {
+						await nekoNotifierClient.configure(typeof newValue === "string" ? newValue : undefined)
+					}
 				}
 
 				await provider.postStateToWebview()
@@ -4003,6 +4007,34 @@ export const webviewMessageHandler = async (
 				await provider.postMessageToWebview({ type: "worktreeResult", success: false, text: errorMessage })
 			}
 
+			break
+		}
+
+		case "browseForNekoNotifierDataDirectory": {
+			try {
+				const result = await vscode.window.showOpenDialog({
+					canSelectFiles: false,
+					canSelectFolders: true,
+					canSelectMany: false,
+					openLabel: t("common:selectFolder"),
+					title: "Select Neko Notifier data directory",
+				})
+				if (result?.[0]) {
+					await provider.postMessageToWebview({
+						type: "nekoNotifierDirectorySelected",
+						path: result[0].fsPath,
+					})
+				}
+			} catch (error) {
+				provider.log(
+					`Error opening Neko Notifier data directory picker: ${error instanceof Error ? error.message : String(error)}`,
+				)
+			}
+			break
+		}
+
+		case "reloadNekoNotifier": {
+			await nekoNotifierClient.configure(provider.contextProxy.getGlobalState("nekoNotifierDataDirectory"))
 			break
 		}
 

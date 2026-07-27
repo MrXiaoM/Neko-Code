@@ -18,6 +18,7 @@ import {
 	formatProcessOutputForLog,
 	getApprovalToastId,
 	getInstanceKey,
+	getNekoNotifierApprovalCallback,
 	initializeWindowsApprovalNotificationCallback,
 	isApprovalFocusTargetThisWindow,
 	normalizeWorkspacePath,
@@ -767,6 +768,27 @@ describe("approvalNotification", () => {
 	})
 
 	describe("Windows approval callback", () => {
+		it("keeps the authenticated Neko Notifier callback reusable for a live lease", async () => {
+			nock.enableNetConnect("127.0.0.1")
+			try {
+				const callback = getNekoNotifierApprovalCallback()
+				expect(callback).toBeDefined()
+				const rejected = await fetch(callback!.callbackUrl, { method: "POST" })
+				expect(rejected.status).toBe(404)
+
+				for (let attempt = 0; attempt < 2; attempt += 1) {
+					const response = await fetch(callback!.callbackUrl, {
+						method: "POST",
+						headers: { Authorization: `Bearer ${callback!.callbackToken}` },
+					})
+					expect(response.status).toBe(200)
+					expect((await response.text()).split("\n")).toHaveLength(3)
+				}
+			} finally {
+				nock.disableNetConnect()
+			}
+		})
+
 		it("uses a one-time loopback callback URL without routing through another VS Code window", async () => {
 			nock.enableNetConnect("127.0.0.1")
 			try {
