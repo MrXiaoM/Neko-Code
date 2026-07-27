@@ -188,6 +188,8 @@ export const globalSettingsSchema = z.object({
 	ttsSpeed: z.number().optional(),
 	soundEnabled: z.boolean().optional(),
 	soundVolume: z.number().optional(),
+	systemNotificationOnApproval: z.boolean().optional(),
+	systemNotificationOnOther: z.boolean().optional(),
 	nekoNotifierDataDirectory: z.string().optional(),
 
 	maxOpenTabsContext: z.number().optional(),

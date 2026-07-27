@@ -1369,13 +1369,15 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 							// System notification when the VS Code window is unfocused so the user
 							// notices pending manual approval (auto-approved asks never reach here).
 							// Copy mirrors chat UI (agentName + action), e.g. "Mirai 想要执行此命令".
-							void notifyApprovalIfWindowUnfocused({
-								ask: type,
-								text: message.text ?? text,
-								detail: type,
-							}).catch((error) => {
-								console.error("[Task#ask] notifyApprovalIfWindowUnfocused failed:", error)
-							})
+							if (state?.systemNotificationOnApproval !== false) {
+								void notifyApprovalIfWindowUnfocused({
+									ask: type,
+									text: message.text ?? text,
+									detail: type,
+								}).catch((error) => {
+									console.error("[Task#ask] notifyApprovalIfWindowUnfocused failed:", error)
+								})
+							}
 						}
 					}, statusMutationTimeout),
 				)
@@ -1401,7 +1403,12 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 
 							// Task finished and is waiting on the completion UI. Mirror the
 							// interactive-approval toast so unfocused windows still surface it.
-							if (type === "completion_result" && !this.abort && !this.abandoned) {
+							if (
+								type === "completion_result" &&
+								!this.abort &&
+								!this.abandoned &&
+								state?.systemNotificationOnOther !== false
+							) {
 								const lastCompletionSay = [...this.clineMessages]
 									.reverse()
 									.find((m) => m.type === "say" && m.say === "completion_result" && !m.partial)

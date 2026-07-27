@@ -291,6 +291,8 @@ export type ExtensionState = Pick<
 	| "ttsSpeed"
 	| "soundEnabled"
 	| "soundVolume"
+	| "systemNotificationOnApproval"
+	| "systemNotificationOnOther"
 	| "nekoNotifierDataDirectory"
 	| "terminalOutputPreviewSize"
 	| "terminalShellIntegrationTimeout"

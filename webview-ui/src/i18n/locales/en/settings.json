@@ -810,6 +810,16 @@
 			"description": "When enabled, Zoo will read aloud its responses using text-to-speech.",
 			"speedLabel": "Speed"
 		},
+		"system": {
+			"approval": {
+				"label": "Send system notifications when approval is required",
+				"description": "When enabled, Zoo sends a system notification when it needs your approval."
+			},
+			"other": {
+				"label": "Send other system notifications",
+				"description": "When enabled, Zoo sends system notifications for task completion and other events."
+			}
+		},
 		"nekoNotifier": {
 			"label": "Neko Notifier data directory",
 			"description": "When set, Zoo validates neko-notifier.json and performs a health check before using the standalone tray service. System toasts remain enabled independently.",

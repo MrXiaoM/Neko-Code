@@ -461,6 +461,33 @@ describe("SettingsView - Sound Settings", () => {
 		)
 	})
 
+	it("defaults both system notification settings to enabled and saves changes", () => {
+		const { activateTab, getSettingsContent } = renderSettingsView()
+
+		activateTab("notifications")
+
+		const content = getSettingsContent()
+		const approvalCheckbox = within(content).getByTestId("system-notification-on-approval-checkbox")
+		const otherCheckbox = within(content).getByTestId("system-notification-on-other-checkbox")
+
+		expect(approvalCheckbox).toBeChecked()
+		expect(otherCheckbox).toBeChecked()
+
+		fireEvent.click(approvalCheckbox)
+		fireEvent.click(otherCheckbox)
+		fireEvent.click(screen.getByTestId("save-button"))
+
+		expect(vscode.postMessage).toHaveBeenCalledWith(
+			expect.objectContaining({
+				type: "updateSettings",
+				updatedSettings: expect.objectContaining({
+					systemNotificationOnApproval: false,
+					systemNotificationOnOther: false,
+				}),
+			}),
+		)
+	})
+
 	it("saves the selected chat font size and persists null on reset", () => {
 		const { activateTab, getSettingsContent } = renderSettingsView()
 

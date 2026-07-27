@@ -692,6 +692,16 @@
 			"description": "启用后，Zoo 将使用文本转语音功能朗读其响应。",
 			"speedLabel": "速度"
 		},
+		"system": {
+			"approval": {
+				"label": "需要审批时发送系统通知",
+				"description": "启用后，Zoo 需要您审批时会发送系统通知。"
+			},
+			"other": {
+				"label": "发送其它系统通知",
+				"description": "启用后，Zoo 会在任务完成和其它事件发生时发送系统通知。"
+			}
+		},
 		"nekoNotifier": {
 			"label": "Neko Notifier 数据目录",
 			"description": "设置后，Zoo 会校验 neko-notifier.json 并通过健康检查后使用独立托盘服务。系统 Toast 始终独立发送。",

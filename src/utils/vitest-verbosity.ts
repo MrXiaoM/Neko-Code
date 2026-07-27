@@ -12,11 +12,11 @@ export function resolveVerbosity(argv = process.argv, env = process.env) {
 		silent,
 		reporters: ["dot", ...(wantsVerboseReporter ? ["verbose"] : [])],
 		onConsoleLog: (_log: string, type: string) => {
-			// When verbose, show everything
-			// When silent, allow errors/warnings and drop info/log/warn noise
-			if (!silent || type === "stderr") return
+			// Let Vitest report failures itself. Forwarding worker stderr during teardown
+			// can leave the onUserConsoleLog RPC pending on Windows.
+			if (!silent) return
 
-			return false // Drop info/log/warn noise
+			return false
 		},
 	}
 }

@@ -200,6 +200,8 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 		ttsEnabled,
 		ttsSpeed,
 		soundVolume,
+		systemNotificationOnApproval,
+		systemNotificationOnOther,
 		nekoNotifierDataDirectory,
 		telemetrySetting,
 		terminalOutputPreviewSize,
@@ -518,6 +520,8 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 					soundVolume: soundVolume ?? 0.5,
 					ttsEnabled,
 					ttsSpeed,
+					systemNotificationOnApproval: systemNotificationOnApproval ?? true,
+					systemNotificationOnOther: systemNotificationOnOther ?? true,
 					nekoNotifierDataDirectory: nekoNotifierDataDirectory?.trim() || undefined,
 					enableCheckpoints: enableCheckpoints ?? false,
 					checkpointTimeout: checkpointTimeout ?? DEFAULT_CHECKPOINT_TIMEOUT_SECONDS,
@@ -982,6 +986,8 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 								ttsSpeed={ttsSpeed}
 								soundEnabled={soundEnabled}
 								soundVolume={soundVolume}
+								systemNotificationOnApproval={systemNotificationOnApproval}
+								systemNotificationOnOther={systemNotificationOnOther}
 								nekoNotifierDataDirectory={nekoNotifierDataDirectory}
 								setCachedStateField={setCachedStateField}
 							/>

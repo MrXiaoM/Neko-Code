@@ -15,9 +15,17 @@ type NotificationSettingsProps = HTMLAttributes<HTMLDivElement> & {
 	ttsSpeed?: number
 	soundEnabled?: boolean
 	soundVolume?: number
+	systemNotificationOnApproval?: boolean
+	systemNotificationOnOther?: boolean
 	nekoNotifierDataDirectory?: string
 	setCachedStateField: SetCachedStateField<
-		"ttsEnabled" | "ttsSpeed" | "soundEnabled" | "soundVolume" | "nekoNotifierDataDirectory"
+		| "ttsEnabled"
+		| "ttsSpeed"
+		| "soundEnabled"
+		| "soundVolume"
+		| "systemNotificationOnApproval"
+		| "systemNotificationOnOther"
+		| "nekoNotifierDataDirectory"
 	>
 }
 
@@ -26,6 +34,8 @@ export const NotificationSettings = ({
 	ttsSpeed,
 	soundEnabled,
 	soundVolume,
+	systemNotificationOnApproval,
+	systemNotificationOnOther,
 	nekoNotifierDataDirectory,
 	setCachedStateField,
 	...props
@@ -129,6 +139,36 @@ export const NotificationSettings = ({
 						</SearchableSetting>
 					</div>
 				)}
+				<SearchableSetting
+					settingId="notifications-system-approval"
+					section="notifications"
+					label={t("settings:notifications.system.approval.label")}>
+					<VSCodeCheckbox
+						checked={systemNotificationOnApproval}
+						onChange={(e: any) => setCachedStateField("systemNotificationOnApproval", e.target.checked)}
+						data-testid="system-notification-on-approval-checkbox">
+						<span className="font-medium">{t("settings:notifications.system.approval.label")}</span>
+					</VSCodeCheckbox>
+					<div className="text-vscode-descriptionForeground text-sm mt-1">
+						{t("settings:notifications.system.approval.description")}
+					</div>
+				</SearchableSetting>
+
+				<SearchableSetting
+					settingId="notifications-system-other"
+					section="notifications"
+					label={t("settings:notifications.system.other.label")}>
+					<VSCodeCheckbox
+						checked={systemNotificationOnOther}
+						onChange={(e: any) => setCachedStateField("systemNotificationOnOther", e.target.checked)}
+						data-testid="system-notification-on-other-checkbox">
+						<span className="font-medium">{t("settings:notifications.system.other.label")}</span>
+					</VSCodeCheckbox>
+					<div className="text-vscode-descriptionForeground text-sm mt-1">
+						{t("settings:notifications.system.other.description")}
+					</div>
+				</SearchableSetting>
+
 				<SearchableSetting
 					settingId="notifications-neko-notifier"
 					section="notifications"

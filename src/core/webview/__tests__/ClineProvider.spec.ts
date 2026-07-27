@@ -1182,6 +1182,28 @@ describe("ClineProvider", () => {
 		expect(mockPostMessage).toHaveBeenCalled()
 	})
 
+	test("defaults system notification settings to enabled for existing users", async () => {
+		await provider.resolveWebviewView(mockWebviewView)
+
+		const state = await provider.getStateToPostToWebview()
+
+		expect(state.systemNotificationOnApproval).toBe(true)
+		expect(state.systemNotificationOnOther).toBe(true)
+	})
+
+	test("persists system notification settings", async () => {
+		await provider.resolveWebviewView(mockWebviewView)
+		const messageHandler = vi.mocked(mockWebviewView.webview.onDidReceiveMessage).mock.calls[0][0]
+
+		await messageHandler({
+			type: "updateSettings",
+			updatedSettings: { systemNotificationOnApproval: false, systemNotificationOnOther: false },
+		})
+
+		expect(updateGlobalStateSpy).toHaveBeenCalledWith("systemNotificationOnApproval", false)
+		expect(updateGlobalStateSpy).toHaveBeenCalledWith("systemNotificationOnOther", false)
+	})
+
 	test("autoCondenseContext defaults to true", async () => {
 		// Mock globalState.get to return undefined for autoCondenseContext
 		;(mockContext.globalState.get as any).mockImplementation((key: string) => {
