@@ -1,4 +1,4 @@
-import { HTMLAttributes, useEffect } from "react"
+import { HTMLAttributes, useEffect, useState } from "react"
 import { FolderOpen, RefreshCw, X } from "lucide-react"
 import { useAppTranslation } from "@/i18n/TranslationContext"
 import { VSCodeCheckbox, VSCodeTextField } from "@vscode/webview-ui-toolkit/react"
@@ -31,14 +31,19 @@ export const NotificationSettings = ({
 	...props
 }: NotificationSettingsProps) => {
 	const { t } = useAppTranslation()
+	const [nekoNotifierActive, setNekoNotifierActive] = useState<boolean | undefined>()
 
 	useEffect(() => {
 		const handleMessage = (event: MessageEvent) => {
 			if (event.data?.type === "nekoNotifierDirectorySelected" && typeof event.data.path === "string") {
 				setCachedStateField("nekoNotifierDataDirectory", event.data.path)
 			}
+			if (event.data?.type === "nekoNotifierStatus" && typeof event.data.active === "boolean") {
+				setNekoNotifierActive(event.data.active)
+			}
 		}
 		window.addEventListener("message", handleMessage)
+		vscode.postMessage({ type: "requestNekoNotifierStatus" })
 		return () => window.removeEventListener("message", handleMessage)
 	}, [setCachedStateField])
 
@@ -163,6 +168,16 @@ export const NotificationSettings = ({
 					</div>
 					<div className="text-vscode-descriptionForeground text-sm mt-1">
 						{t("settings:notifications.nekoNotifier.description")}
+					</div>
+					<div className="text-sm mt-2" data-testid="neko-notifier-status">
+						<span className="font-medium">{t("settings:notifications.nekoNotifier.status.label")}: </span>
+						<span className="text-vscode-descriptionForeground">
+							{t(
+								nekoNotifierActive
+									? "settings:notifications.nekoNotifier.status.active"
+									: "settings:notifications.nekoNotifier.status.inactive",
+							)}
+						</span>
 					</div>
 					<Button
 						variant="outline"

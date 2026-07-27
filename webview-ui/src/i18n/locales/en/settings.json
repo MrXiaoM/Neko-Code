@@ -816,7 +816,12 @@
 			"placeholder": "Select the service data directory",
 			"browse": "Select data directory",
 			"clear": "Clear data directory",
-			"reload": "Reload service connection"
+			"reload": "Reload service connection",
+			"status": {
+				"label": "Service status",
+				"active": "Active",
+				"inactive": "Inactive"
+			}
 		}
 	},
 	"contextManagement": {

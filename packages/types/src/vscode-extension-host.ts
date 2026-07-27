@@ -100,12 +100,15 @@ export interface ExtensionMessage {
 		| "branchWorktreeIncludeResult"
 		| "folderSelected"
 		| "nekoNotifierDirectorySelected"
+		| "nekoNotifierStatus"
 		| "skills"
 		| "rules"
 		| "fileContent"
 		| "rooHistoryImportProgress"
 		| "webviewHealthCheck"
 	text?: string
+	/** For nekoNotifierStatus: whether the standalone tray service is active. */
+	active?: boolean
 	/** For fileContent: { path, content, error? } */
 	fileContent?: { path: string; content: string | null; error?: string }
 	payload?: any // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -623,6 +626,7 @@ export interface WebviewMessage {
 		| "checkoutBranch"
 		| "browseForWorktreePath"
 		| "browseForNekoNotifierDataDirectory"
+		| "requestNekoNotifierStatus"
 		| "reloadNekoNotifier"
 		// Marketplace messages
 		| "showMdmAuthRequiredNotification"

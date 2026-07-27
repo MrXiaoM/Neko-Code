@@ -27,7 +27,7 @@ describe("NotificationSettings Neko Notifier reload", () => {
 		vi.clearAllMocks()
 	})
 
-	it("reloads the configured service connection", () => {
+	it("requests the current service status and reloads the configured connection", () => {
 		render(
 			<NotificationSettings
 				nekoNotifierDataDirectory="C:/Users/test/AppData/Local/NekoNotifier"
@@ -35,9 +35,21 @@ describe("NotificationSettings Neko Notifier reload", () => {
 			/>,
 		)
 
+		expect(vscode.postMessage).toHaveBeenCalledWith({ type: "requestNekoNotifierStatus" })
+
 		fireEvent.click(screen.getByTestId("reload-neko-notifier-button"))
 
 		expect(vscode.postMessage).toHaveBeenCalledWith({ type: "reloadNekoNotifier" })
+	})
+
+	it("displays an active status returned by the extension", () => {
+		render(<NotificationSettings setCachedStateField={setCachedStateField} />)
+
+		fireEvent(window, new MessageEvent("message", { data: { type: "nekoNotifierStatus", active: true } }))
+
+		expect(screen.getByTestId("neko-notifier-status")).toHaveTextContent(
+			"settings:notifications.nekoNotifier.status.active",
+		)
 	})
 
 	it("disables reloading when no data directory is configured", () => {

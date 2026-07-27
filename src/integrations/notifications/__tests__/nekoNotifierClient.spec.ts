@@ -102,8 +102,11 @@ describe("NekoNotifierClient health gate", () => {
 		const client = new NekoNotifierClient()
 		cleanupCallbacks.push(() => client.dispose())
 
+		expect(client.isActive).toBe(false)
 		await expect(client.configure(fixture.dataDirectory)).resolves.toBe(true)
+		expect(client.isActive).toBe(true)
 		await client.dispose()
+		expect(client.isActive).toBe(false)
 		expect(fixture.getRemoveClientRequests()).toBe(1)
 	})
 
@@ -113,5 +116,6 @@ describe("NekoNotifierClient health gate", () => {
 		cleanupCallbacks.push(() => client.dispose())
 
 		await expect(client.configure(fixture.dataDirectory)).resolves.toBe(false)
+		expect(client.isActive).toBe(false)
 	})
 })

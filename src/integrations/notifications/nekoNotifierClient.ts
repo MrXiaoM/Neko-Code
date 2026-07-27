@@ -93,6 +93,10 @@ export class NekoNotifierClient {
 	private readonly activeNotificationIds = new Set<string>()
 	private readonly clientId = `zoo-code-${randomBytes(16).toString("hex")}`
 
+	get isActive(): boolean {
+		return this.discovery !== undefined
+	}
+
 	async configure(dataDirectory: string | undefined): Promise<boolean> {
 		await this.removeClientLeases()
 		this.stopHeartbeat()

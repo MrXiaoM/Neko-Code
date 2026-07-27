@@ -698,7 +698,12 @@
 			"placeholder": "选择服务数据目录",
 			"browse": "选择数据目录",
 			"clear": "清空数据目录",
-			"reload": "重新加载服务连接"
+			"reload": "重新加载服务连接",
+			"status": {
+				"label": "服务状态",
+				"active": "已激活",
+				"inactive": "未激活"
+			}
 		}
 	},
 	"contextManagement": {

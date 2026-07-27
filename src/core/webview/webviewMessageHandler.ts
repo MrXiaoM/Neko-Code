@@ -786,6 +786,10 @@ export const webviewMessageHandler = async (
 					await provider.contextProxy.setValue(key as keyof RooCodeSettings, newValue)
 					if (key === "nekoNotifierDataDirectory") {
 						await nekoNotifierClient.configure(typeof newValue === "string" ? newValue : undefined)
+						await provider.postMessageToWebview({
+							type: "nekoNotifierStatus",
+							active: nekoNotifierClient.isActive,
+						})
 					}
 				}
 
@@ -4033,8 +4037,14 @@ export const webviewMessageHandler = async (
 			break
 		}
 
+		case "requestNekoNotifierStatus": {
+			await provider.postMessageToWebview({ type: "nekoNotifierStatus", active: nekoNotifierClient.isActive })
+			break
+		}
+
 		case "reloadNekoNotifier": {
 			await nekoNotifierClient.configure(provider.contextProxy.getGlobalState("nekoNotifierDataDirectory"))
+			await provider.postMessageToWebview({ type: "nekoNotifierStatus", active: nekoNotifierClient.isActive })
 			break
 		}
 

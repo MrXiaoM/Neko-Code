@@ -50,6 +50,7 @@ vi.mock("../../../integrations/notifications/approvalNotification", () => ({
 vi.mock("../../../integrations/notifications/nekoNotifierClient", () => ({
 	nekoNotifierClient: {
 		configure: vi.fn().mockResolvedValue(true),
+		isActive: true,
 	},
 }))
 
@@ -1603,6 +1604,19 @@ describe("webviewMessageHandler - reloadNekoNotifier", () => {
 		await webviewMessageHandler(mockClineProvider, { type: "reloadNekoNotifier" })
 
 		expect(nekoNotifierClient.configure).toHaveBeenCalledWith(dataDirectory)
+		expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledWith({
+			type: "nekoNotifierStatus",
+			active: true,
+		})
+	})
+
+	it("returns the current notifier activation status", async () => {
+		await webviewMessageHandler(mockClineProvider, { type: "requestNekoNotifierStatus" })
+
+		expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledWith({
+			type: "nekoNotifierStatus",
+			active: true,
+		})
 	})
 })
 
