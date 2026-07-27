@@ -1,6 +1,7 @@
 // pnpm --filter roo-cline test core/webview/__tests__/ClineProvider.spec.ts
 
 import * as path from "path"
+import { TaskRegistry } from "../../task/TaskRegistry"
 
 import Anthropic from "@anthropic-ai/sdk"
 import * as vscode from "vscode"
@@ -15,6 +16,7 @@ import {
 	DEFAULT_CHECKPOINT_TIMEOUT_SECONDS,
 	DEFAULT_DIFF_FUZZY_THRESHOLD,
 	DEFAULT_WRITE_DELAY_MS,
+	providerIdentifiers,
 } from "@roo-code/types"
 import { TelemetryService } from "@roo-code/telemetry"
 
@@ -28,6 +30,7 @@ import { safeWriteJson } from "../../../utils/safeWriteJson"
 import { ClineProvider } from "../ClineProvider"
 import { Terminal } from "../../../integrations/terminal/Terminal"
 import { MessageManager } from "../../message-manager"
+import { forceFullModelDetailsLoad, hasLoadedFullDetails } from "../../../api/providers/fetchers/lmstudio"
 
 // Mock setup must come before imports.
 vi.mock("../../prompts/sections/custom-instructions")
@@ -256,6 +259,11 @@ vi.mock("../../../api/providers/fetchers/modelCache", () => ({
 	getModels: vi.fn().mockResolvedValue({}),
 	flushModels: vi.fn(),
 	getModelsFromCache: vi.fn().mockReturnValue(undefined),
+}))
+
+vi.mock("../../../api/providers/fetchers/lmstudio", () => ({
+	hasLoadedFullDetails: vi.fn().mockReturnValue(false),
+	forceFullModelDetailsLoad: vi.fn().mockResolvedValue(undefined),
 }))
 
 vi.mock("../../../services/zoo-code-auth", () => ({
@@ -524,6 +532,32 @@ describe("ClineProvider", () => {
 		// @ts-ignore - accessing private property for testing
 		provider.view = mockWebviewView
 		expect(ClineProvider.getVisibleInstance()).toBe(provider)
+	})
+
+	test("loads full model details when preparing an LM Studio task", async () => {
+		await provider.performPreparationTasks({
+			apiConfiguration: {
+				apiProvider: providerIdentifiers.lmstudio,
+				lmStudioBaseUrl: "http://localhost:1234",
+				lmStudioModelId: "test-model",
+			},
+		} as Task)
+
+		expect(forceFullModelDetailsLoad).toHaveBeenCalledWith("http://localhost:1234", "test-model")
+	})
+
+	test("does not reload full model details when the LM Studio model is already loaded", async () => {
+		vi.mocked(hasLoadedFullDetails).mockReturnValue(true)
+
+		await provider.performPreparationTasks({
+			apiConfiguration: {
+				apiProvider: providerIdentifiers.lmstudio,
+				lmStudioBaseUrl: "http://localhost:1234",
+				lmStudioModelId: "test-model",
+			},
+		} as Task)
+
+		expect(forceFullModelDetailsLoad).not.toHaveBeenCalled()
 	})
 
 	test("loadApiConfigForEdit sends an isolated draft without changing the active runtime config", async () => {
@@ -1588,8 +1622,7 @@ describe("ClineProvider", () => {
 		})
 
 		test("handles case when no current task exists", async () => {
-			// Clear the cline stack
-			;(provider as any).clineStack = []
+			Object.assign(provider, { taskRegistry: new TaskRegistry() })
 
 			// Trigger message deletion
 			const messageHandler = (mockWebviewView.webview.onDidReceiveMessage as any).mock.calls[0][0]

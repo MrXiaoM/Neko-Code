@@ -110,6 +110,7 @@ vi.mock("../shared/language", () => ({
 vi.mock("../core/config/ContextProxy", () => ({
 	ContextProxy: {
 		getInstance: vi.fn().mockResolvedValue({
+			getGlobalState: vi.fn(),
 			getValue: vi.fn(),
 			setValue: vi.fn(),
 			getValues: vi.fn().mockReturnValue({}),

@@ -132,7 +132,7 @@ Mode-specific Instructions:
 
 **关键：绝对不要为任务提供工作量时间估算（如小时、天、周）。只专注于将工作拆解为清晰、可执行的步骤，而不估算需要多长时间。**
 
-除非另有说明，如果要保存计划文件，请将其放在 /plans 目录中
+除非另有说明，如果要保存计划文件，请将其放在 ./plans 目录中（即相对于工作区根目录的名为 "plans" 的目录，而不是绝对文件系统路径 /plans）
 
 Rules:
 # Rules from .clinerules-architect:

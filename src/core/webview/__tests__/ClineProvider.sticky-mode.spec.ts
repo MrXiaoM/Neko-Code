@@ -338,6 +338,17 @@ describe("ClineProvider - Sticky Mode", () => {
 					totalCost: 0,
 				},
 			])
+			await provider.taskHistoryStore.upsert({
+				id: taskId,
+				ts: Date.now(),
+				task: "Test task",
+				number: 1,
+				tokensIn: 0,
+				tokensOut: 0,
+				cacheWrites: 0,
+				cacheReads: 0,
+				totalCost: 0,
+			})
 
 			// Mock updateTaskHistory to track calls
 			const updateTaskHistorySpy = vi.spyOn(provider, "updateTaskHistory").mockImplementation(() => {
@@ -431,6 +442,17 @@ describe("ClineProvider - Sticky Mode", () => {
 					totalCost: 0,
 				},
 			])
+			await provider.taskHistoryStore.upsert({
+				id: taskId,
+				ts: Date.now(),
+				task: "Test task",
+				number: 1,
+				tokensIn: 0,
+				tokensOut: 0,
+				cacheWrites: 0,
+				cacheReads: 0,
+				totalCost: 0,
+			})
 
 			// Mock updateTaskHistory to track calls
 			const updateTaskHistorySpy = vi.spyOn(provider, "updateTaskHistory").mockImplementation(() => {
@@ -554,6 +576,17 @@ describe("ClineProvider - Sticky Mode", () => {
 					totalCost: 0,
 				},
 			])
+			await provider.taskHistoryStore.upsert({
+				id: taskId,
+				ts: Date.now(),
+				task: "Test task",
+				number: 1,
+				tokensIn: 0,
+				tokensOut: 0,
+				cacheWrites: 0,
+				cacheReads: 0,
+				totalCost: 0,
+			})
 
 			// Mock updateTaskHistory to capture the updated history item
 			let updatedHistoryItem: any
@@ -618,6 +651,18 @@ describe("ClineProvider - Sticky Mode", () => {
 				// Return empty array for other keys
 				return []
 			})
+			await provider.taskHistoryStore.upsert({
+				id: parentTaskId,
+				ts: Date.now(),
+				task: `Task ${parentTaskId}`,
+				number: 1,
+				tokensIn: 0,
+				tokensOut: 0,
+				cacheWrites: 0,
+				cacheReads: 0,
+				totalCost: 0,
+				mode: "architect",
+			})
 
 			// Mock updateTaskHistory to track mode changes
 			const updateTaskHistoryMock = vi.spyOn(provider, "updateTaskHistory")
@@ -643,6 +688,18 @@ describe("ClineProvider - Sticky Mode", () => {
 
 			// Initialize subtask with parent's mode
 			taskModes[subtaskId] = "architect"
+			await provider.taskHistoryStore.upsert({
+				id: subtaskId,
+				ts: Date.now(),
+				task: `Task ${subtaskId}`,
+				number: 2,
+				tokensIn: 0,
+				tokensOut: 0,
+				cacheWrites: 0,
+				cacheReads: 0,
+				totalCost: 0,
+				mode: "architect",
+			})
 
 			// Mock getCurrentTask to return the parent task initially
 			const getCurrentTaskMock = vi.spyOn(provider, "getCurrentTask")
@@ -841,6 +898,17 @@ describe("ClineProvider - Sticky Mode", () => {
 					totalCost: 0,
 				},
 			])
+			await provider.taskHistoryStore.upsert({
+				id: mockTask.taskId,
+				ts: Date.now(),
+				task: "Test task",
+				number: 1,
+				tokensIn: 0,
+				tokensOut: 0,
+				cacheWrites: 0,
+				cacheReads: 0,
+				totalCost: 0,
+			})
 
 			// Mock updateTaskHistory
 			const updateTaskHistorySpy = vi.spyOn(provider, "updateTaskHistory").mockImplementation(() => {
@@ -1055,6 +1123,17 @@ describe("ClineProvider - Sticky Mode", () => {
 					totalCost: 0,
 				},
 			])
+			await provider.taskHistoryStore.upsert({
+				id: mockTask.taskId,
+				ts: Date.now(),
+				task: "Test task",
+				number: 1,
+				tokensIn: 0,
+				tokensOut: 0,
+				cacheWrites: 0,
+				cacheReads: 0,
+				totalCost: 0,
+			})
 
 			// Mock updateTaskHistory to throw error
 			vi.spyOn(provider, "updateTaskHistory").mockRejectedValue(new Error("Update failed"))
