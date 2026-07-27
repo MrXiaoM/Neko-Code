@@ -928,7 +928,7 @@ export class ClineProvider
 			// for this visibility listener panel.
 			const viewStateDisposable = webviewView.onDidChangeViewState(() => {
 				if (this.view?.visible) {
-					this.postMessageToWebview({ type: "action", action: "didBecomeVisible" })
+					void this.ensureWebviewResponsive()
 				} else {
 					this.logWebviewHiddenDiagnostics()
 				}

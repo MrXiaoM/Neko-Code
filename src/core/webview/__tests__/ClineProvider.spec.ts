@@ -600,6 +600,33 @@ describe("ClineProvider", () => {
 				listenerCountBefore,
 			)
 		})
+		test("reloads webview html when a visible tab does not answer health check", async () => {
+			let viewStateCallback: () => void
+			const tabWebview = {
+				...mockWebviewView.webview,
+				html: "",
+				onDidReceiveMessage: vi.fn(),
+			}
+			const tabView = {
+				webview: tabWebview,
+				visible: true,
+				onDidDispose: vi.fn().mockImplementation(() => ({ dispose: vi.fn() })),
+				onDidChangeViewState: vi.fn().mockImplementation((callback: () => void) => {
+					viewStateCallback = callback
+					return { dispose: vi.fn() }
+				}),
+			}
+
+			await provider.resolveWebviewView(tabView as unknown as vscode.WebviewPanel)
+			viewStateCallback!()
+			await new Promise((resolve) => setImmediate(resolve))
+
+			expect(mockPostMessage).toHaveBeenCalledWith({ type: "webviewHealthCheck" })
+			expect(mockOutputChannel.appendLine).toHaveBeenCalledWith(
+				expect.stringContaining("Webview did not respond to health check"),
+			)
+			expect(tabWebview.html).toContain("<!DOCTYPE html>")
+		})
 	})
 
 	describe("logWebviewHiddenDiagnostics", () => {

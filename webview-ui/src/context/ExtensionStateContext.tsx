@@ -32,6 +32,7 @@ import { experimentDefault } from "@roo/experiments"
 
 import { vscode } from "@src/utils/vscode"
 import { convertTextMateToHljs } from "@src/utils/textMateToHljs"
+import { reportWebviewDiagnostic } from "@src/utils/webviewDiagnostics"
 
 export interface ExtensionStateContextType extends ExtensionState {
 	historyPreviewCollapsed?: boolean // Add the new state property
@@ -313,174 +314,183 @@ export const ExtensionStateContextProvider: React.FC<{ children: React.ReactNode
 
 	const handleMessage = useCallback(
 		(event: MessageEvent) => {
-			const message: ExtensionMessage = event.data
-			switch (message.type) {
-				case "webviewHealthCheck": {
-					vscode.postMessage({ type: "webviewHealthCheckAck" })
-					break
-				}
-				case "state": {
-					const newState = message.state ?? {}
-					setState((prevState) => mergeExtensionState(prevState, newState))
-					setShowWelcome(!checkExistKey(newState.apiConfiguration, newState.zooCodeIsAuthenticated))
-					setDidHydrateState(true)
-					// Update alwaysAllowFollowupQuestions if present in state message
-					if ((newState as any).alwaysAllowFollowupQuestions !== undefined) {
-						setAlwaysAllowFollowupQuestions((newState as any).alwaysAllowFollowupQuestions)
-					}
-					// Update followupAutoApproveTimeoutMs if present in state message
-					if ((newState as any).followupAutoApproveTimeoutMs !== undefined) {
-						setFollowupAutoApproveTimeoutMs((newState as any).followupAutoApproveTimeoutMs)
-					}
-					// Update includeTaskHistoryInEnhance if present in state message
-					if ((newState as any).includeTaskHistoryInEnhance !== undefined) {
-						setIncludeTaskHistoryInEnhance((newState as any).includeTaskHistoryInEnhance)
-					}
-					// Update includeCurrentTime if present in state message
-					if ((newState as any).includeCurrentTime !== undefined) {
-						setIncludeCurrentTime((newState as any).includeCurrentTime)
-					}
-					// Update includeCurrentCost if present in state message
-					if ((newState as any).includeCurrentCost !== undefined) {
-						setIncludeCurrentCost((newState as any).includeCurrentCost)
-					}
-					// Handle marketplace data if present in state message
-					if (newState.marketplaceItems !== undefined) {
-						setMarketplaceItems(newState.marketplaceItems)
-					}
-					if (newState.marketplaceInstalledMetadata !== undefined) {
-						setMarketplaceInstalledMetadata(newState.marketplaceInstalledMetadata)
-					}
-					break
-				}
-				case "action": {
-					if (message.action === "toggleAutoApprove") {
-						// Toggle the auto-approval state
-						setState((prevState) => {
-							const newValue = !(prevState.autoApprovalEnabled ?? false)
-							// Also send the update to the extension
-							vscode.postMessage({ type: "autoApprovalEnabled", bool: newValue })
-							return { ...prevState, autoApprovalEnabled: newValue }
-						})
-					}
-					break
-				}
-				case "theme": {
-					if (message.text) {
-						setTheme(convertTextMateToHljs(JSON.parse(message.text)))
-					}
-					break
-				}
-				case "workspaceUpdated": {
-					const paths = message.filePaths ?? []
-					const tabs = message.openedTabs ?? []
+			const message = event.data as ExtensionMessage
+			const messageType = typeof message?.type === "string" ? message.type : "invalid"
 
-					setFilePaths(paths)
-					setOpenedTabs(tabs)
-					break
-				}
-				case "commands": {
-					setCommands(message.commands ?? [])
-					break
-				}
-				case "messageUpdated": {
-					const clineMessage = message.clineMessage!
-					setState((prevState) => {
-						// worth noting it will never be possible for a more up-to-date message to be sent here or in normal messages post since the presentAssistantContent function uses lock
-						const lastIndex = findLastIndex(prevState.clineMessages, (msg) => msg.ts === clineMessage.ts)
-						if (lastIndex !== -1) {
-							const newClineMessages = [...prevState.clineMessages]
-							newClineMessages[lastIndex] = clineMessage
-							return { ...prevState, clineMessages: newClineMessages }
-						}
-						// Log a warning if messageUpdated arrives for a timestamp not in the
-						// frontend's clineMessages. With the seq guard and cloud event isolation
-						// (layers 1+2), this should not happen under normal conditions. If it
-						// does, it signals a state synchronization issue worth investigating.
-						console.warn(
-							`[messageUpdated] Received update for unknown message ts=${clineMessage.ts}, dropping. ` +
-								`Frontend has ${prevState.clineMessages.length} messages.`,
-						)
-						return prevState
-					})
-					break
-				}
-				case "skills": {
-					if (message.skills) {
-						setSkills(message.skills)
-					}
-					break
-				}
-				case "rules": {
-					setRules(message.rules ?? [])
-					break
-				}
-				case "mcpServers": {
-					setMcpServers(message.mcpServers ?? [])
-					break
-				}
-				case "currentCheckpointUpdated": {
-					setCurrentCheckpoint(message.text)
-					break
-				}
-				case "listApiConfig": {
-					setListApiConfigMeta(message.listApiConfig ?? [])
-					break
-				}
-				case "routerModels": {
-					const provider = message.values?.provider as string | undefined
-					const incoming = message.routerModels
-					if (provider && incoming) {
-						setExtensionRouterModels((current) => (current ? { ...current, ...incoming } : incoming))
-					} else {
-						setExtensionRouterModels(incoming)
-					}
-					break
-				}
-				case "marketplaceData": {
-					if (message.marketplaceItems !== undefined) {
-						setMarketplaceItems(message.marketplaceItems)
-					}
-					if (message.marketplaceInstalledMetadata !== undefined) {
-						setMarketplaceInstalledMetadata(message.marketplaceInstalledMetadata)
-					}
-					break
-				}
-				case "taskHistoryUpdated": {
-					// Efficiently update just the task history without replacing entire state
-					if (message.taskHistory !== undefined) {
-						setState((prevState) => ({
-							...prevState,
-							taskHistory: message.taskHistory!,
-						}))
-					}
-					break
-				}
-				case "taskHistoryItemUpdated": {
-					const item = message.taskHistoryItem
-					if (!item) {
+			try {
+				switch (message.type) {
+					case "webviewHealthCheck": {
+						vscode.postMessage({ type: "webviewHealthCheckAck" })
 						break
 					}
-					setState((prevState) => {
-						const existingIndex = prevState.taskHistory.findIndex((h) => h.id === item.id)
-						let nextHistory: typeof prevState.taskHistory
-						if (existingIndex === -1) {
-							nextHistory = [item, ...prevState.taskHistory]
+					case "state": {
+						const newState = message.state ?? {}
+						setState((prevState) => mergeExtensionState(prevState, newState))
+						setShowWelcome(!checkExistKey(newState.apiConfiguration, newState.zooCodeIsAuthenticated))
+						setDidHydrateState(true)
+						// Update alwaysAllowFollowupQuestions if present in state message
+						if ((newState as any).alwaysAllowFollowupQuestions !== undefined) {
+							setAlwaysAllowFollowupQuestions((newState as any).alwaysAllowFollowupQuestions)
+						}
+						// Update followupAutoApproveTimeoutMs if present in state message
+						if ((newState as any).followupAutoApproveTimeoutMs !== undefined) {
+							setFollowupAutoApproveTimeoutMs((newState as any).followupAutoApproveTimeoutMs)
+						}
+						// Update includeTaskHistoryInEnhance if present in state message
+						if ((newState as any).includeTaskHistoryInEnhance !== undefined) {
+							setIncludeTaskHistoryInEnhance((newState as any).includeTaskHistoryInEnhance)
+						}
+						// Update includeCurrentTime if present in state message
+						if ((newState as any).includeCurrentTime !== undefined) {
+							setIncludeCurrentTime((newState as any).includeCurrentTime)
+						}
+						// Update includeCurrentCost if present in state message
+						if ((newState as any).includeCurrentCost !== undefined) {
+							setIncludeCurrentCost((newState as any).includeCurrentCost)
+						}
+						// Handle marketplace data if present in state message
+						if (newState.marketplaceItems !== undefined) {
+							setMarketplaceItems(newState.marketplaceItems)
+						}
+						if (newState.marketplaceInstalledMetadata !== undefined) {
+							setMarketplaceInstalledMetadata(newState.marketplaceInstalledMetadata)
+						}
+						break
+					}
+					case "action": {
+						if (message.action === "toggleAutoApprove") {
+							// Toggle the auto-approval state
+							setState((prevState) => {
+								const newValue = !(prevState.autoApprovalEnabled ?? false)
+								// Also send the update to the extension
+								vscode.postMessage({ type: "autoApprovalEnabled", bool: newValue })
+								return { ...prevState, autoApprovalEnabled: newValue }
+							})
+						}
+						break
+					}
+					case "theme": {
+						if (message.text) {
+							setTheme(convertTextMateToHljs(JSON.parse(message.text)))
+						}
+						break
+					}
+					case "workspaceUpdated": {
+						const paths = message.filePaths ?? []
+						const tabs = message.openedTabs ?? []
+
+						setFilePaths(paths)
+						setOpenedTabs(tabs)
+						break
+					}
+					case "commands": {
+						setCommands(message.commands ?? [])
+						break
+					}
+					case "messageUpdated": {
+						const clineMessage = message.clineMessage!
+						setState((prevState) => {
+							// worth noting it will never be possible for a more up-to-date message to be sent here or in normal messages post since the presentAssistantContent function uses lock
+							const lastIndex = findLastIndex(
+								prevState.clineMessages,
+								(msg) => msg.ts === clineMessage.ts,
+							)
+							if (lastIndex !== -1) {
+								const newClineMessages = [...prevState.clineMessages]
+								newClineMessages[lastIndex] = clineMessage
+								return { ...prevState, clineMessages: newClineMessages }
+							}
+							// Log a warning if messageUpdated arrives for a timestamp not in the
+							// frontend's clineMessages. With the seq guard and cloud event isolation
+							// (layers 1+2), this should not happen under normal conditions. If it
+							// does, it signals a state synchronization issue worth investigating.
+							console.warn(
+								`[messageUpdated] Received update for unknown message ts=${clineMessage.ts}, dropping. ` +
+									`Frontend has ${prevState.clineMessages.length} messages.`,
+							)
+							return prevState
+						})
+						break
+					}
+					case "skills": {
+						if (message.skills) {
+							setSkills(message.skills)
+						}
+						break
+					}
+					case "rules": {
+						setRules(message.rules ?? [])
+						break
+					}
+					case "mcpServers": {
+						setMcpServers(message.mcpServers ?? [])
+						break
+					}
+					case "currentCheckpointUpdated": {
+						setCurrentCheckpoint(message.text)
+						break
+					}
+					case "listApiConfig": {
+						setListApiConfigMeta(message.listApiConfig ?? [])
+						break
+					}
+					case "routerModels": {
+						const provider = message.values?.provider as string | undefined
+						const incoming = message.routerModels
+						if (provider && incoming) {
+							setExtensionRouterModels((current) => (current ? { ...current, ...incoming } : incoming))
 						} else {
-							nextHistory = [...prevState.taskHistory]
-							nextHistory[existingIndex] = item
+							setExtensionRouterModels(incoming)
 						}
-						// Keep UI semantics consistent with extension: newest-first ordering.
-						nextHistory.sort((a, b) => b.ts - a.ts)
-						return {
-							...prevState,
-							taskHistory: nextHistory,
-							currentTaskItem:
-								prevState.currentTaskItem?.id === item.id ? item : prevState.currentTaskItem,
+						break
+					}
+					case "marketplaceData": {
+						if (message.marketplaceItems !== undefined) {
+							setMarketplaceItems(message.marketplaceItems)
 						}
-					})
-					break
+						if (message.marketplaceInstalledMetadata !== undefined) {
+							setMarketplaceInstalledMetadata(message.marketplaceInstalledMetadata)
+						}
+						break
+					}
+					case "taskHistoryUpdated": {
+						// Efficiently update just the task history without replacing entire state
+						if (message.taskHistory !== undefined) {
+							setState((prevState) => ({
+								...prevState,
+								taskHistory: message.taskHistory!,
+							}))
+						}
+						break
+					}
+					case "taskHistoryItemUpdated": {
+						const item = message.taskHistoryItem
+						if (!item) {
+							break
+						}
+						setState((prevState) => {
+							const existingIndex = prevState.taskHistory.findIndex((h) => h.id === item.id)
+							let nextHistory: typeof prevState.taskHistory
+							if (existingIndex === -1) {
+								nextHistory = [item, ...prevState.taskHistory]
+							} else {
+								nextHistory = [...prevState.taskHistory]
+								nextHistory[existingIndex] = item
+							}
+							// Keep UI semantics consistent with extension: newest-first ordering.
+							nextHistory.sort((a, b) => b.ts - a.ts)
+							return {
+								...prevState,
+								taskHistory: nextHistory,
+								currentTaskItem:
+									prevState.currentTaskItem?.id === item.id ? item : prevState.currentTaskItem,
+							}
+						})
+						break
+					}
 				}
+			} catch {
+				reportWebviewDiagnostic("extension-message", { messageType })
 			}
 		},
 		[setListApiConfigMeta],

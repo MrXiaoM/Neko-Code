@@ -12,6 +12,12 @@ import {
 
 import { ExtensionStateContextProvider, useExtensionState, mergeExtensionState } from "../ExtensionStateContext"
 
+const { reportWebviewDiagnostic } = vi.hoisted(() => ({ reportWebviewDiagnostic: vi.fn() }))
+
+vi.mock("@/utils/webviewDiagnostics", () => ({
+	reportWebviewDiagnostic,
+}))
+
 const TestComponent = () => {
 	const { allowedCommands, setAllowedCommands, soundEnabled, showRooIgnoredFiles, setShowRooIgnoredFiles } =
 		useExtensionState()
@@ -158,6 +164,22 @@ describe("ExtensionStateContext", () => {
 			)
 		})
 
+		expect(JSON.parse(screen.getByTestId("rules").textContent!)).toEqual([])
+	})
+
+	it("isolates a malformed extension message and continues processing later messages", () => {
+		render(
+			<ExtensionStateContextProvider>
+				<RulesTestComponent />
+			</ExtensionStateContextProvider>,
+		)
+
+		act(() => {
+			window.dispatchEvent(new MessageEvent("message", { data: { type: "theme", text: "not-json" } }))
+			window.dispatchEvent(new MessageEvent("message", { data: { type: "rules", rules: [] } }))
+		})
+
+		expect(reportWebviewDiagnostic).toHaveBeenCalledWith("extension-message", { messageType: "theme" })
 		expect(JSON.parse(screen.getByTestId("rules").textContent!)).toEqual([])
 	})
 
