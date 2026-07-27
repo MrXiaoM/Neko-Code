@@ -420,9 +420,10 @@ describe("ClineProvider flicker-free cancel", () => {
 			workspace: "/test/workspace",
 		}
 
+		const terminalProcess = { abort: vi.fn(() => callOrder.push("terminal")) }
 		Object.assign(mockTask1, {
 			cancelCurrentRequest: vi.fn(() => callOrder.push("request")),
-			terminalProcess: { abort: vi.fn(() => callOrder.push("terminal")) },
+			terminalProcess,
 			abortTask: vi.fn().mockImplementation(async () => {
 				callOrder.push("task")
 			}),
@@ -441,7 +442,7 @@ describe("ClineProvider flicker-free cancel", () => {
 		await Promise.resolve()
 
 		expect(callOrder).toEqual(["request", "terminal", "task", "history"])
-		expect(mockTask1.terminalProcess.abort).toHaveBeenCalledTimes(1)
+		expect(terminalProcess.abort).toHaveBeenCalledTimes(1)
 
 		resolveHistory({ historyItem })
 		await cancelPromise

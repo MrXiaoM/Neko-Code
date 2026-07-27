@@ -3216,7 +3216,7 @@ export class ClineProvider
 	 * still persists completion / manual-stop rows.
 	 */
 	public async flushAllTaskMessages(): Promise<void> {
-		for (const task of this.clineStack) {
+		for (const task of this.taskRegistry.getAll()) {
 			try {
 				await task.persistMessages()
 			} catch (error) {
