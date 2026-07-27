@@ -12,12 +12,24 @@
 
 # Neko Code
 
-这是[我](https://github.com/MrXiaoM)个人自用的 Zoo Code 改版，大多数更改不适合提交回主线。以后会尽量同步上游变更。
+这是[我](https://github.com/MrXiaoM)个人自用的 Zoo Code 改版，大多数更改由于个人风格强、改动较大，不适合提交回主线。以后这个仓库会尽量同步上游变更。
 
+- 优化与 AI 聊天的体验，添加更多更加符合正常人操作习惯的机制
+    - 让工具内部名显示在聊天页面上
+    - 鼠标悬停到聊天消息时，显示具体时间
+    - 添加手动停止提示到聊天记录中
+    - 让大多数跟路径有关的聊天消息，都支持点击转跳到相应文件
+    - 让可以展开的聊天消息，在底部可以收起，而不用翻到顶部才能收起
+    - 等等更多机制
+- 解耦「聊天页面」和「设置页面」的 API 配置选择器，防止在任务运行时不可修改配置
+- 添加与 Github Desktop 类似的路径名省略优化机制（优先仅省略中间部分，以显示完整的文件名）
 - 将几乎所有提示词都改为了中文
 - 添加更严格的对话语言约束
 - 默认使用猫娘人格提示词
 - 对 DeepSeek v4 Pro 的工具使用习惯作兼容
+- 需要审批、完成任务时，发送 Windows 系统通知
+- 添加可选的常驻 Windows 托盘图标服务 [neko-notifier](/neko-notifier/)
+- 只要任务还在运行，就一直显示“停止”按钮，以防尝试修了几次的工具异常竞态再次出现时，需要回到首页才能继续任务
 
 想要构建吗？拉取这个仓库，然后执行
 
@@ -84,7 +96,7 @@ for this exact support, so if you are having problems or if you have question, j
 - [Tiếng Việt](locales/vi/README.md)
 - [简体中文](locales/zh-CN/README.md)
 - [繁體中文](locales/zh-TW/README.md)
-  </details>
+    </details>
 
 ---
 
