@@ -35,6 +35,7 @@ import { convertTextMateToHljs } from "@src/utils/textMateToHljs"
 import { reportWebviewDiagnostic } from "@src/utils/webviewDiagnostics"
 
 export interface ExtensionStateContextType extends ExtensionState {
+	editingApiConfig?: { id: string; name: string; apiConfiguration: ProviderSettings; requestId?: string }
 	historyPreviewCollapsed?: boolean // Add the new state property
 	didHydrateState: boolean
 	showWelcome: boolean
@@ -432,6 +433,12 @@ export const ExtensionStateContextProvider: React.FC<{ children: React.ReactNode
 					}
 					case "listApiConfig": {
 						setListApiConfigMeta(message.listApiConfig ?? [])
+						break
+					}
+					case "apiConfigForEdit": {
+						if (message.apiConfigForEdit) {
+							setState((prevState) => ({ ...prevState, editingApiConfig: message.apiConfigForEdit }))
+						}
 						break
 					}
 					case "routerModels": {

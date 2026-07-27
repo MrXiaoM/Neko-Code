@@ -17,19 +17,23 @@ import {
 } from "@/components/ui"
 
 interface ApiConfigManagerProps {
+	currentApiConfigId?: string
 	currentApiConfigName?: string
 	listApiConfigMeta?: ProviderSettingsEntry[]
 	organizationAllowList?: OrganizationAllowList
-	onSelectConfig: (configName: string) => void
-	onDeleteConfig: (configName: string) => void
-	onRenameConfig: (oldName: string, newName: string) => void
+	isLocked?: boolean
+	onSelectConfig: (configId: string) => void
+	onDeleteConfig: (configId: string) => void
+	onRenameConfig: (configId: string, newName: string) => void
 	onUpsertConfig: (configName: string) => void
 }
 
 const ApiConfigManager = ({
+	currentApiConfigId = "",
 	currentApiConfigName = "",
 	listApiConfigMeta = [],
 	organizationAllowList,
+	isLocked = false,
 	onSelectConfig,
 	onDeleteConfig,
 	onRenameConfig,
@@ -118,9 +122,9 @@ const ApiConfigManager = ({
 		resetRenameState()
 	}, [currentApiConfigName])
 
-	const handleSelectConfig = (configName: string) => {
-		if (!configName) return
-		onSelectConfig(configName)
+	const handleSelectConfig = (configId: string) => {
+		if (!configId || isLocked) return
+		onSelectConfig(configId)
 	}
 
 	const handleAdd = () => {
@@ -147,12 +151,12 @@ const ApiConfigManager = ({
 			return
 		}
 
-		if (isRenaming && currentApiConfigName) {
+		if (isRenaming && currentApiConfigId) {
 			if (currentApiConfigName === trimmedValue) {
 				resetRenameState()
 				return
 			}
-			onRenameConfig(currentApiConfigName, trimmedValue)
+			onRenameConfig(currentApiConfigId, trimmedValue)
 		}
 
 		resetRenameState()
@@ -172,10 +176,10 @@ const ApiConfigManager = ({
 	}
 
 	const handleDelete = () => {
-		if (!currentApiConfigName || !listApiConfigMeta || listApiConfigMeta.length <= 1) return
+		if (!currentApiConfigId || !listApiConfigMeta || listApiConfigMeta.length <= 1 || isLocked) return
 
 		// Let the extension handle both deletion and selection.
-		onDeleteConfig(currentApiConfigName)
+		onDeleteConfig(currentApiConfigId)
 	}
 
 	const isOnlyProfile = listApiConfigMeta?.length === 1
@@ -235,12 +239,12 @@ const ApiConfigManager = ({
 				<>
 					<div className="flex items-center gap-1">
 						<SearchableSelect
-							value={currentApiConfigName}
+							value={currentApiConfigId}
 							onValueChange={handleSelectConfig}
 							options={listApiConfigMeta.map((config) => {
 								const valid = isProfileValid(config)
 								return {
-									value: config.name,
+									value: config.id,
 									label: config.name,
 									disabled: !valid,
 									icon: !valid ? (
@@ -259,7 +263,12 @@ const ApiConfigManager = ({
 							data-testid="select-component"
 						/>
 						<StandardTooltip content={t("settings:providers.addProfile")}>
-							<Button variant="ghost" size="icon" onClick={handleAdd} data-testid="add-profile-button">
+							<Button
+								variant="ghost"
+								size="icon"
+								onClick={handleAdd}
+								data-testid="add-profile-button"
+								disabled={isLocked}>
 								<span className="codicon codicon-add" />
 							</Button>
 						</StandardTooltip>
@@ -270,7 +279,8 @@ const ApiConfigManager = ({
 										variant="ghost"
 										size="icon"
 										onClick={handleStartRename}
-										data-testid="rename-profile-button">
+										data-testid="rename-profile-button"
+										disabled={isLocked}>
 										<span className="codicon codicon-edit" />
 									</Button>
 								</StandardTooltip>
@@ -285,7 +295,7 @@ const ApiConfigManager = ({
 										size="icon"
 										onClick={handleDelete}
 										data-testid="delete-profile-button"
-										disabled={isOnlyProfile}>
+										disabled={isOnlyProfile || isLocked}>
 										<span className="codicon codicon-trash" />
 									</Button>
 								</StandardTooltip>

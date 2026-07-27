@@ -1718,6 +1718,61 @@ export class ClineProvider
 		}
 	}
 
+	async saveProviderProfileById(id: string, providerSettings: ProviderSettings): Promise<void> {
+		if (await this.isApiConfigLocked(id)) {
+			throw new Error("The provider profile is locked while its API request is running")
+		}
+
+		const { name } = await this.providerSettingsManager.updateConfigById(id, providerSettings)
+		const activeName = this.getGlobalState("currentApiConfigName")
+
+		if (name === activeName) {
+			await this.contextProxy.setProviderSettings(providerSettings)
+			this.updateTaskApiHandlerIfNeeded(providerSettings, { forceRebuild: true })
+		}
+
+		await this.updateGlobalState("listApiConfigMeta", await this.providerSettingsManager.listConfig())
+		await this.postStateToWebview()
+	}
+
+	async renameProviderProfileById(id: string, newName: string): Promise<void> {
+		if (await this.isApiConfigLocked(id)) {
+			throw new Error("The provider profile is locked while its API request is running")
+		}
+
+		const profile = await this.providerSettingsManager.getProfile({ id })
+		const { name } = await this.providerSettingsManager.renameConfigById(id, newName)
+
+		if (profile.name === this.getGlobalState("currentApiConfigName")) {
+			await this.contextProxy.setValue("currentApiConfigName", name)
+			await this.persistStickyProviderProfileToCurrentTask(name)
+		}
+
+		await this.updateGlobalState("listApiConfigMeta", await this.providerSettingsManager.listConfig())
+		await this.postStateToWebview()
+	}
+
+	async deleteProviderProfileById(id: string): Promise<void> {
+		if (await this.isApiConfigLocked(id)) {
+			throw new Error("The provider profile is locked while its API request is running")
+		}
+
+		const profile = await this.providerSettingsManager.getProfile({ id })
+		const isActive = profile.name === this.getGlobalState("currentApiConfigName")
+		const replacement = isActive
+			? (await this.providerSettingsManager.listConfig()).find((entry) => entry.id !== id)
+			: undefined
+
+		await this.providerSettingsManager.deleteConfigById(id)
+		if (replacement?.id) {
+			await this.activateProviderProfile({ id: replacement.id })
+			return
+		}
+
+		await this.updateGlobalState("listApiConfigMeta", await this.providerSettingsManager.listConfig())
+		await this.postStateToWebview()
+	}
+
 	async deleteProviderProfile(profileToDelete: ProviderSettingsEntry) {
 		const globalSettings = this.contextProxy.getValues()
 		let profileToActivate: string | undefined = globalSettings.currentApiConfigName
@@ -1805,22 +1860,37 @@ export class ClineProvider
 		}
 	}
 
-	/**
-	 * Loads an API configuration's settings for editing purposes without changing
-	 * the currently active profile in the chat interface.
-	 *
-	 * Unlike `activateProviderProfile`, this only loads the configuration data
-	 * (apiConfiguration) into the webview state and does NOT update
-	 * `currentApiConfigName`, the task's API handler, or the sticky profile.
-	 */
-	async loadApiConfigForEdit(name: string) {
-		const profile = await this.providerSettingsManager.getProfile({ name })
-		const { id: _id, name: _name, ...providerSettings } = profile
+	private async getLockedApiConfigId(): Promise<string | undefined> {
+		const task = this.getCurrentTask()
+		if (!task || (!task.isWaitingForFirstChunk && !task.isStreaming)) {
+			return undefined
+		}
 
-		// Only copies the provider settings into the context so the SettingsView
-		// can render the configuration; the active profile name stays unchanged.
-		this.contextProxy.setProviderSettings(providerSettings)
-		await this.postStateToWebview()
+		const profileName = task.taskApiConfigName ?? this.getGlobalState("currentApiConfigName")
+		if (!profileName) {
+			return undefined
+		}
+
+		return (await this.providerSettingsManager.getProfile({ name: profileName })).id
+	}
+
+	async isApiConfigLocked(id: string): Promise<boolean> {
+		return (await this.getLockedApiConfigId()) === id
+	}
+
+	/**
+	 * Sends an isolated profile snapshot for Settings editing. This must never
+	 * mutate ContextProxy: that object is the active chat runtime configuration.
+	 */
+	async loadApiConfigForEdit(idOrName: string, requestId?: string) {
+		const profile = await this.providerSettingsManager
+			.getProfile({ id: idOrName })
+			.catch(() => this.providerSettingsManager.getProfile({ name: idOrName }))
+		const { id: profileId, name, ...apiConfiguration } = profile
+		this.postMessageToWebview({
+			type: "apiConfigForEdit",
+			apiConfigForEdit: { id: profileId ?? "", name: name ?? "", apiConfiguration, requestId },
+		})
 	}
 
 	async updateCustomInstructions(instructions?: string) {
@@ -2525,6 +2595,11 @@ export class ClineProvider
 		const mergedDeniedCommands = this.mergeDeniedCommands(deniedCommands)
 		const cwd = this.cwd
 		const currentTask = this.getCurrentTask()
+		const activeProfile =
+			currentApiConfigName && typeof this.providerSettingsManager.getProfile === "function"
+				? await this.providerSettingsManager.getProfile({ name: currentApiConfigName }).catch(() => undefined)
+				: undefined
+		const lockedApiConfigId = await this.getLockedApiConfigId().catch(() => undefined)
 		let zooCodeState: {
 			zooCodeIsAuthenticated: boolean
 			zooCodeUserName: string | undefined
@@ -2560,6 +2635,8 @@ export class ClineProvider
 		return {
 			version: this.context.extension?.packageJSON?.version ?? "",
 			apiConfiguration,
+			currentApiConfigId: activeProfile?.id,
+			lockedApiConfigId,
 			customInstructions,
 			alwaysAllowReadOnly: alwaysAllowReadOnly ?? false,
 			alwaysAllowReadOnlyOutsideWorkspace: alwaysAllowReadOnlyOutsideWorkspace ?? false,

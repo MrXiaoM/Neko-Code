@@ -113,6 +113,7 @@ describe("ApiConfigManager", () => {
 	const mockOnUpsertConfig = vitest.fn()
 
 	const defaultProps = {
+		currentApiConfigId: "default",
 		currentApiConfigName: "Default Config",
 		listApiConfigMeta: [
 			{ id: "default", name: "Default Config" },
@@ -213,7 +214,7 @@ describe("ApiConfigManager", () => {
 		const saveButton = screen.getByTestId("save-rename-button")
 		fireEvent.click(saveButton)
 
-		expect(mockOnRenameConfig).toHaveBeenCalledWith("Default Config", "New Name")
+		expect(mockOnRenameConfig).toHaveBeenCalledWith("default", "New Name")
 	})
 
 	it("shows error when renaming to existing config name", () => {
@@ -261,10 +262,10 @@ describe("ApiConfigManager", () => {
 		// The SearchableSelect mock renders as a simple select element
 		const selectElement = screen.getByTestId("select-component") as HTMLSelectElement
 
-		// Change the select value to "Another Config"
-		fireEvent.change(selectElement, { target: { value: "Another Config" } })
+		// Change the select value to the immutable profile ID.
+		fireEvent.change(selectElement, { target: { value: "another" } })
 
-		expect(mockOnSelectConfig).toHaveBeenCalledWith("Another Config")
+		expect(mockOnSelectConfig).toHaveBeenCalledWith("another")
 	})
 
 	it("allows deleting the current config when not the only one", () => {
@@ -274,7 +275,7 @@ describe("ApiConfigManager", () => {
 		expect(deleteButton).not.toBeDisabled()
 
 		fireEvent.click(deleteButton)
-		expect(mockOnDeleteConfig).toHaveBeenCalledWith("Default Config")
+		expect(mockOnDeleteConfig).toHaveBeenCalledWith("default")
 	})
 
 	it("disables delete button when only one config exists", () => {
@@ -337,7 +338,7 @@ describe("ApiConfigManager", () => {
 		// Test Enter key
 		fireEvent.input(input, { target: { value: "New Name" } })
 		fireEvent.keyDown(input, { key: "Enter" })
-		expect(mockOnRenameConfig).toHaveBeenCalledWith("Default Config", "New Name")
+		expect(mockOnRenameConfig).toHaveBeenCalledWith("default", "New Name")
 
 		// Test Escape key
 		fireEvent.keyDown(input, { key: "Escape" })

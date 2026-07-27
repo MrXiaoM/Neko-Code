@@ -377,8 +377,9 @@ describe("SettingsView - Change Detection Fix", () => {
 	let queryClient: QueryClient
 
 	const createExtensionState = (overrides = {}) => ({
+		currentApiConfigId: "default-id",
 		currentApiConfigName: "default",
-		listApiConfigMeta: [],
+		listApiConfigMeta: [{ id: "default-id", name: "default" }],
 		uriScheme: "vscode",
 		settingsImportedAt: undefined,
 		apiConfiguration: {
@@ -541,13 +542,12 @@ describe("SettingsView - Change Detection Fix", () => {
 		mockPostMessage.mockClear()
 		fireEvent.click(screen.getByTestId("save-button"))
 		expect(mockPostMessage).toHaveBeenCalledWith({
-			type: "upsertApiConfiguration",
-			text: "default",
+			type: "saveApiConfigurationById",
+			text: "default-id",
 			apiConfiguration: expect.objectContaining({
 				apiProvider: "baseten",
 				basetenApiKey: "test-baseten-key",
 			}),
-			values: { activate: true },
 		})
 
 		fireEvent.click(screen.getByTestId("set-provider-deepseek"))
@@ -584,12 +584,11 @@ describe("SettingsView - Change Detection Fix", () => {
 		fireEvent.click(screen.getByTestId("save-button"))
 
 		expect(mockPostMessage).toHaveBeenCalledWith({
-			type: "upsertApiConfiguration",
-			text: "default",
+			type: "saveApiConfigurationById",
+			text: "default-id",
 			apiConfiguration: expect.objectContaining({
 				apiProvider: "deepseek",
 			}),
-			values: { activate: true },
 		})
 	}, 10000)
 

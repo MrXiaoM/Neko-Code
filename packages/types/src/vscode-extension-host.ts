@@ -105,8 +105,11 @@ export interface ExtensionMessage {
 		| "rules"
 		| "fileContent"
 		| "rooHistoryImportProgress"
+		| "apiConfigForEdit"
 		| "webviewHealthCheck"
 	text?: string
+	/** Isolated provider-profile payload for the Settings view. */
+	apiConfigForEdit?: { id: string; name: string; apiConfiguration: ProviderSettings; requestId?: string }
 	/** For nekoNotifierStatus: whether the standalone tray service is active. */
 	active?: boolean
 	/** For fileContent: { path, content, error? } */
@@ -336,6 +339,10 @@ export type ExtensionState = Pick<
 	| "backgroundImageOpacity"
 > & {
 	lockApiConfigAcrossModes?: boolean
+	/** Immutable ID of the provider profile currently active in chat. */
+	currentApiConfigId?: string
+	/** Provider profile ID that cannot be changed while its task has an in-flight API request. */
+	lockedApiConfigId?: string
 	version: string
 	clineMessages: ClineMessage[]
 	currentTaskId?: string
@@ -649,6 +656,9 @@ export interface WebviewMessage {
 		| "openRuleFile"
 		| "openRulesDirectory"
 		| "loadApiConfigForEdit"
+		| "saveApiConfigurationById"
+		| "renameApiConfigurationById"
+		| "deleteApiConfigurationById"
 	text?: string
 	taskId?: string
 	editedMessageContent?: string

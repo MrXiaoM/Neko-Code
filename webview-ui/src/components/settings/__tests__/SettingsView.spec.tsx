@@ -18,7 +18,7 @@ vi.mock("../ApiConfigManager", () => ({
 		return (
 			<div data-testid="api-config-management">
 				<span>Current config: {currentApiConfigName}</span>
-				<button data-testid="switch-config-btn" onClick={() => onSelectConfig?.("other-profile")}>
+				<button data-testid="switch-config-btn" onClick={() => onSelectConfig?.("other-profile-id")}>
 					Switch
 				</button>
 			</div>
@@ -301,6 +301,11 @@ const mockPostMessage = (state: any) => {
 				clineMessages: [],
 				taskHistory: [],
 				shouldShowAnnouncement: false,
+				currentApiConfigName: "default",
+				listApiConfigMeta: [
+					{ id: "default-id", name: "default" },
+					{ id: "other-profile-id", name: "other-profile" },
+				],
 				allowedCommands: [],
 				alwaysAllowExecute: false,
 				ttsEnabled: false,
@@ -891,7 +896,7 @@ describe("SettingsView - profile isolation", () => {
 		expect(vscode.postMessage).toHaveBeenCalledWith(
 			expect.objectContaining({
 				type: "loadApiConfigForEdit",
-				text: "other-profile",
+				text: "other-profile-id",
 			}),
 		)
 
@@ -902,8 +907,9 @@ describe("SettingsView - profile isolation", () => {
 		expect(loadApiConfigurationCalls).toHaveLength(0)
 	})
 
-	it("saves with editingProfileName and activate=false for non-active profile", () => {
+	it("saves the isolated editing profile by ID without activating chat", async () => {
 		const { activateTab } = renderSettingsView({
+			currentApiConfigId: "default-id",
 			currentApiConfigName: "active-profile",
 		})
 
@@ -914,6 +920,25 @@ describe("SettingsView - profile isolation", () => {
 		// Switch to a non-active profile
 		const switchBtn = screen.getByTestId("switch-config-btn")
 		fireEvent.click(switchBtn)
+		const loadCall = (vscode.postMessage as any).mock.calls.find(
+			(call: any[]) => call[0]?.type === "loadApiConfigForEdit" && call[0]?.text === "other-profile-id",
+		)
+		act(() => {
+			window.postMessage(
+				{
+					type: "apiConfigForEdit",
+					apiConfigForEdit: {
+						id: "other-profile-id",
+						name: "other-profile",
+						apiConfiguration: { apiProvider: "anthropic", apiKey: "test-api-key" },
+						requestId: loadCall?.[0]?.requestId,
+					},
+				},
+				"*",
+			)
+		})
+
+		await waitFor(() => expect(screen.getByTestId("api-config-management")).toHaveTextContent("other-profile"))
 
 		// Profile switch alone does NOT trigger change detection (no dirty state).
 		// We need an actual setting change to enable Save.
@@ -927,24 +952,30 @@ describe("SettingsView - profile isolation", () => {
 		vi.clearAllMocks()
 		fireEvent.click(saveButton)
 
-		// Should upsert to "other-profile" with activate=false (not the active one)
-		expect(vscode.postMessage).toHaveBeenCalledWith(
-			expect.objectContaining({
-				type: "upsertApiConfiguration",
-				text: "other-profile",
-				values: { activate: false },
-			}),
+		// The profile draft is saved by immutable ID and never activates chat.
+		await waitFor(() =>
+			expect(vscode.postMessage).toHaveBeenCalledWith(
+				expect.objectContaining({
+					type: "saveApiConfigurationById",
+					text: "other-profile-id",
+				}),
+			),
 		)
+		expect(vscode.postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: "upsertApiConfiguration" }))
 	})
 
-	it("saves with activate=true when editing the active profile", () => {
+	it("saves the active profile by ID without issuing a chat activation", async () => {
 		const { activateTab } = renderSettingsView({
+			currentApiConfigId: "default-id",
 			currentApiConfigName: "default",
 		})
 
 		// Navigate to providers tab
 		const providersTab = screen.getByTestId("tab-providers")
 		fireEvent.click(providersTab)
+		await waitFor(() =>
+			expect(vscode.postMessage).toHaveBeenCalledWith(expect.objectContaining({ type: "loadApiConfigForEdit" })),
+		)
 
 		// Need an actual change to enable Save
 		activateTab("prompts")
@@ -957,14 +988,13 @@ describe("SettingsView - profile isolation", () => {
 		vi.clearAllMocks()
 		fireEvent.click(saveButton)
 
-		// Should upsert with activate=true for the active profile
-		expect(vscode.postMessage).toHaveBeenCalledWith(
-			expect.objectContaining({
-				type: "upsertApiConfiguration",
-				text: "default",
-				values: { activate: true },
-			}),
+		// Saving never switches the active chat profile from the settings page.
+		await waitFor(() =>
+			expect(vscode.postMessage).toHaveBeenCalledWith(
+				expect.objectContaining({ type: "saveApiConfigurationById", text: "default-id" }),
+			),
 		)
+		expect(vscode.postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: "upsertApiConfiguration" }))
 	})
 
 	it("does not call loadApiConfiguration from ApiConfigManager onSelectConfig", () => {

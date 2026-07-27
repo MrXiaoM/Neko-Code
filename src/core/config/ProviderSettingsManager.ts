@@ -3,6 +3,7 @@ import { z, ZodError } from "zod"
 import deepEqual from "fast-deep-equal"
 
 import {
+	type ProviderSettings,
 	type ProviderSettingsWithId,
 	providerSettingsWithIdSchema,
 	discriminatedProviderSettingsWithIdSchema,
@@ -404,6 +405,66 @@ export class ProviderSettingsManager {
 		} catch (error) {
 			throw new Error(`Failed to save config: ${error}`)
 		}
+	}
+
+	public async updateConfigById(id: string, config: ProviderSettings): Promise<{ id: string; name: string }> {
+		return this.lock(async () => {
+			const providerProfiles = await this.load()
+			const entry = Object.entries(providerProfiles.apiConfigs).find(([, profile]) => profile.id === id)
+			if (!entry) {
+				throw new Error(`Config with ID '${id}' not found`)
+			}
+
+			const [name] = entry
+			const normalizedConfig = downgradeLegacyRooConfig({ ...config, id } as Record<string, unknown>)
+				.config as ProviderSettingsWithId
+			const filteredConfig =
+				typeof normalizedConfig.apiProvider === "string" && isRetiredProvider(normalizedConfig.apiProvider)
+					? providerSettingsWithIdSchema.passthrough().parse(normalizedConfig)
+					: discriminatedProviderSettingsWithIdSchema.parse(normalizedConfig)
+			providerProfiles.apiConfigs[name] = { ...filteredConfig, id }
+			await this.store(providerProfiles)
+			return { id, name }
+		})
+	}
+
+	public async renameConfigById(id: string, newName: string): Promise<{ id: string; name: string }> {
+		return this.lock(async () => {
+			const providerProfiles = await this.load()
+			const entry = Object.entries(providerProfiles.apiConfigs).find(([, profile]) => profile.id === id)
+			if (!entry) {
+				throw new Error(`Config with ID '${id}' not found`)
+			}
+			if (providerProfiles.apiConfigs[newName] && entry[0] !== newName) {
+				throw new Error(`Config with name '${newName}' already exists`)
+			}
+
+			const [oldName, config] = entry
+			if (oldName !== newName) {
+				delete providerProfiles.apiConfigs[oldName]
+				providerProfiles.apiConfigs[newName] = config
+				if (providerProfiles.currentApiConfigName === oldName) {
+					providerProfiles.currentApiConfigName = newName
+				}
+			}
+			await this.store(providerProfiles)
+			return { id, name: newName }
+		})
+	}
+
+	public async deleteConfigById(id: string): Promise<void> {
+		return this.lock(async () => {
+			const providerProfiles = await this.load()
+			const entry = Object.entries(providerProfiles.apiConfigs).find(([, profile]) => profile.id === id)
+			if (!entry) {
+				throw new Error(`Config with ID '${id}' not found`)
+			}
+			if (Object.keys(providerProfiles.apiConfigs).length === 1) {
+				throw new Error("Cannot delete the last remaining configuration")
+			}
+			delete providerProfiles.apiConfigs[entry[0]]
+			await this.store(providerProfiles)
+		})
 	}
 
 	public async getProfile(

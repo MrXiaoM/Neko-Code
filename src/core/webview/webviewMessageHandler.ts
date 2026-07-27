@@ -2098,6 +2098,42 @@ export const webviewMessageHandler = async (
 				await provider.upsertProviderProfile(message.text, message.apiConfiguration, activate)
 			}
 			break
+		case "saveApiConfigurationById":
+			if (message.text && message.apiConfiguration) {
+				try {
+					await provider.saveProviderProfileById(message.text, message.apiConfiguration)
+				} catch (error) {
+					provider.log(
+						`Error save api configuration by ID: ${error instanceof Error ? error.message : String(error)}`,
+					)
+					vscode.window.showErrorMessage(t("common:errors.save_api_config"))
+				}
+			}
+			break
+		case "renameApiConfigurationById":
+			if (message.text && typeof message.values?.newName === "string") {
+				try {
+					await provider.renameProviderProfileById(message.text, message.values.newName)
+				} catch (error) {
+					provider.log(
+						`Error rename api configuration by ID: ${error instanceof Error ? error.message : String(error)}`,
+					)
+					vscode.window.showErrorMessage(t("common:errors.rename_api_config"))
+				}
+			}
+			break
+		case "deleteApiConfigurationById":
+			if (message.text) {
+				try {
+					await provider.deleteProviderProfileById(message.text)
+				} catch (error) {
+					provider.log(
+						`Error delete api configuration by ID: ${error instanceof Error ? error.message : String(error)}`,
+					)
+					vscode.window.showErrorMessage(t("common:errors.delete_api_config"))
+				}
+			}
+			break
 		case "renameApiConfiguration":
 			if (message.values && message.apiConfiguration) {
 				try {
@@ -2155,7 +2191,7 @@ export const webviewMessageHandler = async (
 		case "loadApiConfigForEdit":
 			if (message.text) {
 				try {
-					await provider.loadApiConfigForEdit(message.text)
+					await provider.loadApiConfigForEdit(message.text, message.requestId)
 				} catch (error) {
 					provider.log(
 						`Error load api configuration for edit: ${JSON.stringify(error, Object.getOwnPropertyNames(error), 2)}`,

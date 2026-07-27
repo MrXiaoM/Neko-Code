@@ -130,7 +130,16 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 	const { t } = useAppTranslation()
 
 	const extensionState = useExtensionState()
-	const { currentApiConfigName, listApiConfigMeta, uriScheme, settingsImportedAt, mode } = extensionState
+	const {
+		currentApiConfigId,
+		currentApiConfigName,
+		editingApiConfig,
+		listApiConfigMeta,
+		lockedApiConfigId,
+		uriScheme,
+		settingsImportedAt,
+		mode,
+	} = extensionState
 
 	const [isDiscardDialogShow, setDiscardDialogShow] = useState(false)
 	const [isChangeDetected, setChangeDetected] = useState(false)
@@ -153,9 +162,16 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 
 	const [cachedState, setCachedState] = useState(() => extensionState)
 
-	// Local editing profile name, isolated from the global currentApiConfigName
-	// so that profile selection in settings does not affect the chat interface.
+	// Settings owns a separate profile draft. It never reads a profile selection
+	// back through the active chat configuration.
+	const resolvedCurrentApiConfigId =
+		currentApiConfigId ?? listApiConfigMeta?.find((entry) => entry.name === currentApiConfigName)?.id
+	const initialEditingProfileId = resolvedCurrentApiConfigId ?? ""
+	const [editingProfileId, setEditingProfileId] = useState(initialEditingProfileId)
 	const [editingProfileName, setEditingProfileName] = useState(currentApiConfigName)
+	const editRequestId = useRef<string>()
+	const isEditingLocked = !!editingProfileId && editingProfileId === lockedApiConfigId
+	const isEditingActiveProfile = !editingProfileId || editingProfileId === resolvedCurrentApiConfigId
 
 	const {
 		alwaysAllowReadOnly,
@@ -232,6 +248,37 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 
 	const apiConfiguration = useMemo(() => cachedState.apiConfiguration ?? {}, [cachedState.apiConfiguration])
 
+	useEffect(() => {
+		if (editingProfileId || !resolvedCurrentApiConfigId) {
+			return
+		}
+
+		setEditingProfileId(resolvedCurrentApiConfigId)
+		setEditingProfileName(currentApiConfigName)
+	}, [currentApiConfigName, editingProfileId, resolvedCurrentApiConfigId])
+
+	useEffect(() => {
+		const activeProfileId = resolvedCurrentApiConfigId
+		if (!activeProfileId || editRequestId.current) {
+			return
+		}
+
+		const requestId = crypto.randomUUID()
+		editRequestId.current = requestId
+		vscode.postMessage({ type: "loadApiConfigForEdit", text: activeProfileId, requestId })
+	}, [resolvedCurrentApiConfigId])
+
+	useEffect(() => {
+		if (!editingApiConfig || editingApiConfig.requestId !== editRequestId.current) {
+			return
+		}
+
+		setEditingProfileId(editingApiConfig.id)
+		setEditingProfileName(editingApiConfig.name)
+		setCachedState((prevState) => ({ ...prevState, apiConfiguration: editingApiConfig.apiConfiguration }))
+		setChangeDetected(false)
+	}, [editingApiConfig])
+
 	// Track the last apiConfiguration reference to detect changes from
 	// loadApiConfigForEdit (which updates the config data but not currentApiConfigName).
 	const lastApiConfigurationRef = useRef<ProviderSettings | undefined>(extensionState.apiConfiguration)
@@ -256,12 +303,16 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 			return
 		}
 
-		// Chat switched the active profile or mode — adopt that config and clear dirty.
+		// Chat activation is independent from the settings draft. Only adopt it when
+		// the settings draft is the active profile and no local edit is in progress.
 		// Mode changes intentionally reset unsaved settings-buffer edits, matching the
 		// upstream behavior of syncing cachedState when the mode-bound provider changes.
 		if (profileNameChanged || modeChanged) {
 			prevApiConfigName.current = currentApiConfigName
 			prevMode.current = mode
+		}
+
+		if ((profileNameChanged || modeChanged) && isEditingActiveProfile) {
 			setCachedState((prevCachedState) => ({
 				...prevCachedState,
 				apiConfiguration: extensionState.apiConfiguration ?? prevCachedState.apiConfiguration,
@@ -279,11 +330,20 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 			return
 		}
 
-		setCachedState((prevCachedState) => ({
-			...prevCachedState,
-			apiConfiguration: extensionState.apiConfiguration ?? prevCachedState.apiConfiguration,
-		}))
-	}, [currentApiConfigName, mode, extensionState])
+		if (isEditingActiveProfile) {
+			setCachedState((prevCachedState) => ({
+				...prevCachedState,
+				apiConfiguration: extensionState.apiConfiguration ?? prevCachedState.apiConfiguration,
+			}))
+		}
+	}, [
+		currentApiConfigName,
+		editingProfileId,
+		isEditingActiveProfile,
+		mode,
+		resolvedCurrentApiConfigId,
+		extensionState,
+	])
 
 	// Bust the cache when settings are imported.
 	useEffect(() => {
@@ -309,6 +369,10 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 
 	const setApiConfigurationField = useCallback(
 		<K extends keyof ProviderSettings>(field: K, value: ProviderSettings[K], isUserAction: boolean = true) => {
+			if (isEditingLocked) {
+				return
+			}
+
 			setCachedState((prevState) => {
 				if (prevState.apiConfiguration?.[field] === value) {
 					return prevState
@@ -345,7 +409,7 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 				return { ...prevState, apiConfiguration: { ...prevState.apiConfiguration, [field]: value } }
 			})
 		},
-		[],
+		[isEditingLocked],
 	)
 
 	const setExperimentEnabled: SetExperimentEnabled = useCallback((id: ExperimentId, enabled: boolean) => {
@@ -505,14 +569,14 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 
 			// These have more complex logic so they aren't (yet) handled
 			// by the `updateSettings` message.
-			// Only activate (switch chat to) this profile if it's the currently active one.
-			const isActiveProfile = editingProfileName === currentApiConfigName
-			vscode.postMessage({
-				type: "upsertApiConfiguration",
-				text: editingProfileName,
-				apiConfiguration,
-				values: { activate: isActiveProfile },
-			})
+			const profileIdToSave = editingProfileId || resolvedCurrentApiConfigId
+			if (profileIdToSave && !isEditingLocked) {
+				vscode.postMessage({
+					type: "saveApiConfigurationById",
+					text: profileIdToSave,
+					apiConfiguration,
+				})
+			}
 			vscode.postMessage({ type: "telemetrySetting", text: telemetrySetting })
 			vscode.postMessage({ type: "debugSetting", bool: cachedState.debug })
 
@@ -826,22 +890,29 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 
 								<Section>
 									<ApiConfigManager
+										currentApiConfigId={editingProfileId}
 										currentApiConfigName={editingProfileName}
 										listApiConfigMeta={listApiConfigMeta}
-										onSelectConfig={(configName: string) => {
-											setEditingProfileName(configName)
-											vscode.postMessage({ type: "loadApiConfigForEdit", text: configName })
-										}}
-										onDeleteConfig={(configName: string) =>
-											vscode.postMessage({ type: "deleteApiConfiguration", text: configName })
-										}
-										onRenameConfig={(oldName: string, newName: string) => {
+										isLocked={isEditingLocked}
+										onSelectConfig={(configId: string) => {
+											const requestId = crypto.randomUUID()
+											editRequestId.current = requestId
 											vscode.postMessage({
-												type: "renameApiConfiguration",
-												values: { oldName, newName },
-												apiConfiguration,
+												type: "loadApiConfigForEdit",
+												text: configId,
+												requestId,
 											})
-											prevApiConfigName.current = newName
+										}}
+										onDeleteConfig={(configId: string) =>
+											vscode.postMessage({ type: "deleteApiConfigurationById", text: configId })
+										}
+										onRenameConfig={(configId: string, newName: string) => {
+											vscode.postMessage({
+												type: "renameApiConfigurationById",
+												text: configId,
+												values: { newName },
+											})
+											setEditingProfileName(newName)
 										}}
 										onUpsertConfig={(configName: string) =>
 											vscode.postMessage({
@@ -851,13 +922,15 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 											})
 										}
 									/>
-									<ApiOptions
-										uriScheme={uriScheme}
-										apiConfiguration={apiConfiguration}
-										setApiConfigurationField={setApiConfigurationField}
-										errorMessage={errorMessage}
-										setErrorMessage={setErrorMessage}
-									/>
+									<div className={isEditingLocked ? "pointer-events-none opacity-60" : undefined}>
+										<ApiOptions
+											uriScheme={uriScheme}
+											apiConfiguration={apiConfiguration}
+											setApiConfigurationField={setApiConfigurationField}
+											errorMessage={errorMessage}
+											setErrorMessage={setErrorMessage}
+										/>
+									</div>
 								</Section>
 							</div>
 						)}

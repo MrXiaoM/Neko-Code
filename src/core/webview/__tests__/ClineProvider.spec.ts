@@ -526,6 +526,32 @@ describe("ClineProvider", () => {
 		expect(ClineProvider.getVisibleInstance()).toBe(provider)
 	})
 
+	test("loadApiConfigForEdit sends an isolated draft without changing the active runtime config", async () => {
+		const setProviderSettingsSpy = vi.spyOn(provider.contextProxy, "setProviderSettings")
+		const postMessageSpy = vi.spyOn(provider, "postMessageToWebview").mockResolvedValue(undefined)
+		;(provider as any).providerSettingsManager = {
+			getProfile: vi.fn().mockResolvedValue({
+				id: "editing-id",
+				name: "Editing Profile",
+				apiProvider: "anthropic",
+				apiKey: "test-key",
+			}),
+		}
+
+		await provider.loadApiConfigForEdit("editing-id", "request-1")
+
+		expect(setProviderSettingsSpy).not.toHaveBeenCalled()
+		expect(postMessageSpy).toHaveBeenCalledWith({
+			type: "apiConfigForEdit",
+			apiConfigForEdit: {
+				id: "editing-id",
+				name: "Editing Profile",
+				apiConfiguration: { apiProvider: "anthropic", apiKey: "test-key" },
+				requestId: "request-1",
+			},
+		})
+	})
+
 	test("resolveWebviewView hydrates the saved terminalProfile into the process-wide Terminal state", async () => {
 		const setTerminalProfileSpy = vi.spyOn(Terminal, "setTerminalProfile").mockImplementation(() => {})
 		// Seed the persisted setting so the real getState() returns it during hydration.
