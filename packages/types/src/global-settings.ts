@@ -228,6 +228,11 @@ export const globalSettingsSchema = z.object({
 	 * @default "Mirai"
 	 */
 	agentName: z.string().default("Mirai").optional(),
+	/**
+	 * Optional personality prompt injected where built-in mode prompts reference
+	 * `{{defaultRole}}`. When empty or unset, the built-in AGENT_ROLE is used.
+	 */
+	personalityPrompt: z.string().optional(),
 
 	language: languagesSchema.optional(),
 

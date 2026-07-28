@@ -283,10 +283,12 @@ vi.mock("@/components/ui", () => ({
 
 let _capturedPromptsAgentName: string | undefined
 let capturedPromptsSetAgentName: ((value: string) => void) | undefined
+let capturedPromptsSetPersonalityPrompt: ((value: string | undefined) => void) | undefined
 vi.mock("../PromptsSettings", () => ({
 	default: (props: any) => {
 		_capturedPromptsAgentName = props.agentName
 		capturedPromptsSetAgentName = props.setAgentName
+		capturedPromptsSetPersonalityPrompt = props.setPersonalityPrompt
 		return <div data-testid="prompts-settings">PromptsSettings</div>
 	},
 }))
@@ -892,11 +894,12 @@ describe("SettingsView - Duplicate Commands", () => {
 	})
 })
 
-describe("SettingsView - agentName", () => {
+describe("SettingsView - prompt identity settings", () => {
 	beforeEach(() => {
 		vi.clearAllMocks()
 		_capturedPromptsAgentName = undefined
 		capturedPromptsSetAgentName = undefined
+		capturedPromptsSetPersonalityPrompt = undefined
 	})
 
 	it("includes agentName in save payload via handleSubmit", () => {
@@ -920,6 +923,26 @@ describe("SettingsView - agentName", () => {
 				type: "updateSettings",
 				updatedSettings: expect.objectContaining({
 					agentName: "UpdatedCat",
+				}),
+			}),
+		)
+	})
+
+	it("includes personalityPrompt in save payload via handleSubmit", () => {
+		const { activateTab } = renderSettingsView()
+
+		activateTab("prompts")
+		act(() => {
+			capturedPromptsSetPersonalityPrompt?.("Custom personality for {{agentName}}")
+		})
+
+		fireEvent.click(screen.getByTestId("save-button"))
+
+		expect(vscode.postMessage).toHaveBeenCalledWith(
+			expect.objectContaining({
+				type: "updateSettings",
+				updatedSettings: expect.objectContaining({
+					personalityPrompt: "Custom personality for {{agentName}}",
 				}),
 			}),
 		)

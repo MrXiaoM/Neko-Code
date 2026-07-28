@@ -203,5 +203,10 @@
 	"agentName": {
 		"title": "角色名称",
 		"label": "自定义角色在对话中使用的名称。在角色定义中使用 {{agentName}} 占位符。"
+	},
+	"personalityPrompt": {
+		"title": "人格提示词",
+		"label": "定义角色的身份、语气和行为。可使用 {{agentName}} 占位符；留空时使用内置默认人格提示词。",
+		"reset": "恢复内置默认人格提示词"
 	}
 }

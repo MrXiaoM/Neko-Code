@@ -3911,6 +3911,7 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 			apiConfiguration,
 			enableSubfolderRules,
 			agentName,
+			personalityPrompt,
 		} = state ?? {}
 
 		return await (async () => {
@@ -3949,6 +3950,7 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 				this.api.getModel().id,
 				provider.getSkillsManager(),
 				agentName,
+				personalityPrompt,
 			)
 		})()
 	}

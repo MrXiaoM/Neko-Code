@@ -64,6 +64,7 @@ async function generatePrompt(
 	modelId?: string,
 	skillsManager?: SkillsManager,
 	agentName?: string,
+	personalityPrompt?: string,
 ): Promise<string> {
 	if (!context) {
 		throw new Error("Extension context is required for generating system prompt")
@@ -148,10 +149,12 @@ ${await addCustomInstructions(baseInstructions, globalCustomInstructions || "", 
 	// Falling back to the built-in default "Mirai".
 	const finAgentName = agentName || "Mirai"
 
-	// Replace {{defaultRole}} placeholder with the AGENT_ROLE constant.
-	const withAgentRole = basePrompt.replaceAll("{{defaultRole}}", AGENT_ROLE)
+	// Use a saved personality prompt when present; empty values revert to the built-in default.
+	const effectivePersonalityPrompt = personalityPrompt?.trim() || AGENT_ROLE
+	const resolvedPersonalityPrompt = effectivePersonalityPrompt.replaceAll("{{agentName}}", finAgentName)
 
-	// Replace {{agentName}} placeholder with the configured agent name.
+	// Replace {{defaultRole}} with the resolved personality prompt, then resolve the mode's agent name placeholders.
+	const withAgentRole = basePrompt.replaceAll("{{defaultRole}}", resolvedPersonalityPrompt)
 	const resolvedPrompt = withAgentRole.replaceAll("{{agentName}}", finAgentName)
 
 	return resolvedPrompt
@@ -175,6 +178,7 @@ export const SYSTEM_PROMPT = async (
 	modelId?: string,
 	skillsManager?: SkillsManager,
 	agentName?: string,
+	personalityPrompt?: string,
 ): Promise<string> => {
 	if (!context) {
 		throw new Error("Extension context is required for generating system prompt")
@@ -204,5 +208,6 @@ export const SYSTEM_PROMPT = async (
 		modelId,
 		skillsManager,
 		agentName,
+		personalityPrompt,
 	)
 }

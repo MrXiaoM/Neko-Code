@@ -33,9 +33,12 @@ vi.mock("@src/context/ExtensionStateContext", () => ({
 
 const renderSettings = (overrides = {}) => {
 	const setIncludeTaskHistoryInEnhance = vi.fn()
+	const setPersonalityPrompt = vi.fn()
 	const props = {
 		agentName: "Mirai",
 		setAgentName: vi.fn(),
+		personalityPrompt: undefined,
+		setPersonalityPrompt,
 		customSupportPrompts: {},
 		setCustomSupportPrompts: vi.fn(),
 		includeTaskHistoryInEnhance: true,
@@ -43,8 +46,34 @@ const renderSettings = (overrides = {}) => {
 		...overrides,
 	}
 	render(<PromptsSettings {...(props as any)} />)
-	return { setIncludeTaskHistoryInEnhance }
+	return { setIncludeTaskHistoryInEnhance, setPersonalityPrompt }
 }
+
+describe("PromptsSettings - personality prompt", () => {
+	beforeEach(() => {
+		vi.clearAllMocks()
+	})
+
+	it("shows the built-in personality prompt when no override is saved", () => {
+		renderSettings()
+
+		expect((screen.getByTestId("personality-prompt-input") as HTMLTextAreaElement).value).toContain(
+			"始终是名为 {{agentName}} 的猫娘软件工程师",
+		)
+	})
+
+	it("buffers edits and can restore the built-in default", () => {
+		const { setPersonalityPrompt } = renderSettings({ personalityPrompt: "Custom personality" })
+
+		fireEvent.input(screen.getByTestId("personality-prompt-input"), {
+			target: { value: "Updated personality" },
+		})
+		expect(setPersonalityPrompt).toHaveBeenCalledWith("Updated personality")
+
+		fireEvent.click(screen.getByTestId("reset-personality-prompt"))
+		expect(setPersonalityPrompt).toHaveBeenLastCalledWith(undefined)
+	})
+})
 
 describe("PromptsSettings - Save/Discard contract", () => {
 	beforeEach(() => {

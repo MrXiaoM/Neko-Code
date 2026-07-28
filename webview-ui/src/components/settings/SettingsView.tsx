@@ -238,6 +238,7 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 		autoCloseZooOpenedFilesAfterUserEdited,
 		autoCloseZooOpenedNewFiles,
 		agentName,
+		personalityPrompt,
 		backgroundImageEnabled,
 		backgroundImageUrl,
 		backgroundImageSize,
@@ -562,6 +563,7 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 					experiments,
 					customSupportPrompts,
 					agentName,
+					personalityPrompt: personalityPrompt?.trim() || undefined,
 				},
 			})
 
@@ -1050,6 +1052,8 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 							<PromptsSettings
 								agentName={agentName}
 								setAgentName={(value) => setCachedStateField("agentName", value)}
+								personalityPrompt={personalityPrompt}
+								setPersonalityPrompt={(value) => setCachedStateField("personalityPrompt", value)}
 								customSupportPrompts={customSupportPrompts || {}}
 								setCustomSupportPrompts={setCustomSupportPromptsField}
 								includeTaskHistoryInEnhance={includeTaskHistoryInEnhance}

@@ -202,5 +202,10 @@
 	"agentName": {
 		"title": "Agent Name",
 		"label": "Customize the name the agent uses to refer to itself in conversations. Use {{agentName}} placeholder in role definitions."
+	},
+	"personalityPrompt": {
+		"title": "Personality Prompt",
+		"label": "Define the agent's identity, tone, and behavior. Use the {{agentName}} placeholder; leave empty to use the built-in default personality prompt.",
+		"reset": "Restore the built-in default personality prompt"
 	}
 }

@@ -1,6 +1,7 @@
 import { useState, useEffect, FormEvent } from "react"
 import { VSCodeTextArea, VSCodeCheckbox } from "@vscode/webview-ui-toolkit/react"
 
+import { AGENT_ROLE } from "@roo-code/types"
 import { supportPrompt, SupportPromptType } from "@roo/support-prompt"
 
 import { vscode } from "@src/utils/vscode"
@@ -23,6 +24,8 @@ import { SearchableSetting } from "./SearchableSetting"
 interface PromptsSettingsProps {
 	agentName?: string
 	setAgentName: (value: string) => void
+	personalityPrompt?: string
+	setPersonalityPrompt?: (value: string | undefined) => void
 	customSupportPrompts: Record<string, string | undefined>
 	setCustomSupportPrompts: (prompts: Record<string, string | undefined>) => void
 	includeTaskHistoryInEnhance?: boolean
@@ -32,6 +35,8 @@ interface PromptsSettingsProps {
 const PromptsSettings = ({
 	agentName,
 	setAgentName,
+	personalityPrompt,
+	setPersonalityPrompt,
 	customSupportPrompts,
 	setCustomSupportPrompts,
 	includeTaskHistoryInEnhance: propsIncludeTaskHistoryInEnhance,
@@ -124,6 +129,37 @@ const PromptsSettings = ({
 						className="w-full"
 					/>
 					<div className="text-sm text-vscode-descriptionForeground mt-1">{t("prompts:agentName.label")}</div>
+				</div>
+
+				<div className="mb-4">
+					<div className="flex justify-between items-center mb-1">
+						<label className="block font-medium">{t("prompts:personalityPrompt.title")}</label>
+						<StandardTooltip content={t("prompts:personalityPrompt.reset")}>
+							<Button
+								variant="ghost"
+								size="icon"
+								onClick={() => setPersonalityPrompt?.(undefined)}
+								data-testid="reset-personality-prompt">
+								<span className="codicon codicon-discard"></span>
+							</Button>
+						</StandardTooltip>
+					</div>
+					<VSCodeTextArea
+						resize="vertical"
+						value={personalityPrompt ?? AGENT_ROLE}
+						onInput={(e) => {
+							const value =
+								(e as unknown as CustomEvent)?.detail?.target?.value ??
+								((e as any).target as HTMLTextAreaElement).value
+							setPersonalityPrompt?.(value)
+						}}
+						rows={10}
+						className="w-full"
+						data-testid="personality-prompt-input"
+					/>
+					<div className="text-sm text-vscode-descriptionForeground mt-1">
+						{t("prompts:personalityPrompt.label")}
+					</div>
 				</div>
 
 				<SearchableSetting

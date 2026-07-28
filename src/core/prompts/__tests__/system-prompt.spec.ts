@@ -404,6 +404,57 @@ describe("SYSTEM_PROMPT", () => {
 		expect(customInstructionsIndex).toBeGreaterThan(userInstructionsHeader)
 	})
 
+	it("should use a custom personality prompt and resolve the agent name", async () => {
+		const prompt = await SYSTEM_PROMPT(
+			mockContext,
+			"/test/path",
+			false,
+			undefined,
+			undefined,
+			defaultModeSlug,
+			undefined,
+			undefined,
+			undefined,
+			experiments,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			"Neko",
+			"You are {{agentName}}'s custom personality.",
+		)
+
+		expect(prompt).toContain("You are Neko's custom personality.")
+		expect(prompt).not.toContain(AGENT_ROLE.replaceAll("{{agentName}}", "Neko"))
+	})
+
+	it("should fall back to AGENT_ROLE when the personality prompt is blank", async () => {
+		const prompt = await SYSTEM_PROMPT(
+			mockContext,
+			"/test/path",
+			false,
+			undefined,
+			undefined,
+			defaultModeSlug,
+			undefined,
+			undefined,
+			undefined,
+			experiments,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			"Neko",
+			"   ",
+		)
+
+		expect(prompt).toContain(AGENT_ROLE.replaceAll("{{agentName}}", "Neko"))
+	})
+
 	it("should add plain-language guidance to every unmodified built-in mode", async () => {
 		const prompts = await Promise.all(
 			modes.map((mode) =>
