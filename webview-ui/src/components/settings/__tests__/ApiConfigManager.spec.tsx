@@ -95,7 +95,7 @@ vitest.mock("@/components/ui", () => ({
 		options,
 		placeholder,
 		listMaxHeight,
-		smoothWheel,
+		nativeWheel,
 		"data-testid": dataTestId,
 	}: any) => (
 		<select
@@ -104,7 +104,7 @@ vitest.mock("@/components/ui", () => ({
 				if (onValueChange) onValueChange(e.target.value)
 			}}
 			data-list-max-height={listMaxHeight}
-			data-smooth-wheel={smoothWheel}
+			data-native-wheel={nativeWheel}
 			data-testid={dataTestId || "select-component"}>
 			<option value="">{placeholder || "settings:common.select"}</option>
 			{options?.map((option: any) => (
@@ -266,12 +266,12 @@ describe("ApiConfigManager", () => {
 		expect(mockOnRenameConfig).not.toHaveBeenCalled()
 	})
 
-	it("configures a taller, smooth-scrolling profile list", () => {
+	it("configures a taller profile list with native wheel scrolling", () => {
 		render(<ApiConfigManager {...defaultProps} />)
 
 		const selectElement = screen.getByTestId("select-component")
 		expect(selectElement).toHaveAttribute("data-list-max-height", "min(520px, calc(100vh - 220px))")
-		expect(selectElement).toHaveAttribute("data-smooth-wheel", "true")
+		expect(selectElement).toHaveAttribute("data-native-wheel", "true")
 	})
 
 	it("allows selecting a different config", () => {

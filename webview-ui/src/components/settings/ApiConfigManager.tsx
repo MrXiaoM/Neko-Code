@@ -260,7 +260,7 @@ const ApiConfigManager = ({
 							searchPlaceholder={t("settings:providers.searchPlaceholder")}
 							emptyMessage={t("settings:providers.noMatchFound")}
 							listMaxHeight="min(520px, calc(100vh - 220px))"
-							smoothWheel
+							nativeWheel
 							className="grow"
 							data-testid="select-component"
 						/>

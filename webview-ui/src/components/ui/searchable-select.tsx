@@ -33,8 +33,8 @@ interface SearchableSelectProps {
 	disabled?: boolean
 	/** Maximum height for the option list. Defaults to the shared 300px limit. */
 	listMaxHeight?: string
-	/** Enables capped, animation-frame-based scrolling for high-resolution wheel input. */
-	smoothWheel?: boolean
+	/** Uses browser-native wheel handling to match standard scroll containers. */
+	nativeWheel?: boolean
 	/** Maximum items to display when not searching. Defaults to 50 for performance. */
 	maxDisplayItems?: number
 	"data-testid"?: string
@@ -50,7 +50,7 @@ export function SearchableSelect({
 	className,
 	disabled,
 	listMaxHeight,
-	smoothWheel = false,
+	nativeWheel = false,
 	maxDisplayItems = 50,
 	"data-testid": dataTestId,
 }: SearchableSelectProps) {
@@ -179,7 +179,7 @@ export function SearchableSelect({
 							</div>
 						)}
 					</div>
-					<CommandList maxHeight={listMaxHeight} smoothWheel={smoothWheel}>
+					<CommandList maxHeight={listMaxHeight} nativeWheel={nativeWheel}>
 						<CommandEmpty>
 							{searchValue && <div className="py-2 px-1 text-sm">{emptyMessage}</div>}
 						</CommandEmpty>

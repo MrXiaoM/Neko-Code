@@ -56,82 +56,22 @@ CommandInput.displayName = CommandPrimitive.Input.displayName
 
 type CommandListProps = React.ComponentPropsWithoutRef<typeof CommandPrimitive.List> & {
 	maxHeight?: string
-	smoothWheel?: boolean
+	/** Uses the browser's native wheel handling instead of the WebView workaround. */
+	nativeWheel?: boolean
 }
 
 const CommandList = React.forwardRef<React.ElementRef<typeof CommandPrimitive.List>, CommandListProps>(
-	({ className, onWheel, maxHeight, smoothWheel = false, ...props }, ref) => {
-		const animationFrameRef = React.useRef<number | null>(null)
-		const targetScrollTopRef = React.useRef<number | null>(null)
-
-		React.useEffect(
-			() => () => {
-				if (animationFrameRef.current !== null) {
-					cancelAnimationFrame(animationFrameRef.current)
-				}
-			},
-			[],
-		)
-
+	({ className, onWheel, maxHeight, nativeWheel = false, ...props }, ref) => {
 		const handleWheel = React.useCallback(
 			(e: React.WheelEvent<HTMLDivElement>) => {
+				// Manually handle scroll to work around VSCode webview scroll issues.
 				const target = e.currentTarget
-
-				if (!smoothWheel) {
-					// Manually handle scroll to work around VSCode webview scroll issues.
-					e.preventDefault()
-					target.scrollTop += e.deltaY
-					e.stopPropagation()
-					onWheel?.(e)
-					return
-				}
-
-				const lineHeight = 16
-				const pageHeight = target.clientHeight
-				const deltaY =
-					e.deltaMode === WheelEvent.DOM_DELTA_LINE
-						? e.deltaY * lineHeight
-						: e.deltaMode === WheelEvent.DOM_DELTA_PAGE
-							? e.deltaY * pageHeight
-							: e.deltaY
-				const maxScrollTop = Math.max(0, target.scrollHeight - target.clientHeight)
-				const currentTarget = targetScrollTopRef.current ?? target.scrollTop
-				const nextScrollTop = Math.max(
-					0,
-					Math.min(maxScrollTop, currentTarget + Math.max(-80, Math.min(80, deltaY))),
-				)
-
-				if (nextScrollTop === currentTarget) {
-					onWheel?.(e)
-					return
-				}
-
 				e.preventDefault()
+				target.scrollTop += e.deltaY
 				e.stopPropagation()
-				targetScrollTopRef.current = nextScrollTop
-
-				const animate = () => {
-					const targetScrollTop = targetScrollTopRef.current
-					if (targetScrollTop === null) return
-
-					const distance = targetScrollTop - target.scrollTop
-					if (Math.abs(distance) < 1) {
-						target.scrollTop = targetScrollTop
-						targetScrollTopRef.current = null
-						animationFrameRef.current = null
-						return
-					}
-
-					target.scrollTop += distance * 0.35
-					animationFrameRef.current = requestAnimationFrame(animate)
-				}
-
-				if (animationFrameRef.current === null) {
-					animationFrameRef.current = requestAnimationFrame(animate)
-				}
 				onWheel?.(e)
 			},
-			[onWheel, smoothWheel],
+			[onWheel],
 		)
 
 		return (
@@ -139,7 +79,7 @@ const CommandList = React.forwardRef<React.ElementRef<typeof CommandPrimitive.Li
 				ref={ref}
 				className={cn("max-h-[300px] overflow-y-auto overflow-x-hidden overscroll-contain", className)}
 				style={maxHeight ? { maxHeight } : undefined}
-				onWheel={handleWheel}
+				onWheel={nativeWheel ? onWheel : handleWheel}
 				{...props}
 			/>
 		)
