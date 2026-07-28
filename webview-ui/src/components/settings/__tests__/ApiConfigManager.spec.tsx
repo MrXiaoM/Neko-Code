@@ -20,11 +20,12 @@ vitest.mock("@vscode/webview-ui-toolkit/react", () => ({
 
 vitest.mock("@/components/ui", () => ({
 	...vitest.importActual("@/components/ui"),
-	Dialog: ({ children, open }: any) => (
-		<div role="dialog" aria-modal="true" style={{ display: open ? "block" : "none" }} data-testid="dialog">
-			{children}
-		</div>
-	),
+	Dialog: ({ children, open }: any) =>
+		open ? (
+			<div role="dialog" aria-modal="true" data-testid="dialog">
+				{children}
+			</div>
+		) : null,
 	DialogContent: ({ children }: any) => <div data-testid="dialog-content">{children}</div>,
 	DialogTitle: ({ children }: any) => <div data-testid="dialog-title">{children}</div>,
 	Button: ({ children, onClick, disabled, "data-testid": dataTestId }: any) => (
@@ -121,6 +122,7 @@ describe("ApiConfigManager", () => {
 	const mockOnDeleteConfig = vitest.fn()
 	const mockOnRenameConfig = vitest.fn()
 	const mockOnUpsertConfig = vitest.fn()
+	const mockOnReorderConfigs = vitest.fn()
 
 	const defaultProps = {
 		currentApiConfigId: "default",
@@ -133,6 +135,7 @@ describe("ApiConfigManager", () => {
 		onDeleteConfig: mockOnDeleteConfig,
 		onRenameConfig: mockOnRenameConfig,
 		onUpsertConfig: mockOnUpsertConfig,
+		onReorderConfigs: mockOnReorderConfigs,
 	}
 
 	beforeEach(() => {
@@ -141,6 +144,16 @@ describe("ApiConfigManager", () => {
 
 	const getRenameForm = () => screen.getByTestId("rename-form")
 	const getDialogContent = () => screen.getByTestId("dialog-content")
+
+	it("opens a separate dialog for sorting profiles", () => {
+		render(<ApiConfigManager {...defaultProps} />)
+
+		fireEvent.click(screen.getByTestId("sort-profiles-button"))
+
+		expect(screen.getByText("settings:providers.sortProfiles")).toBeInTheDocument()
+		expect(screen.getAllByText("Default Config")).toHaveLength(2)
+		expect(screen.getAllByText("Another Config")).toHaveLength(2)
+	})
 
 	it("opens new profile dialog when clicking add button", () => {
 		render(<ApiConfigManager {...defaultProps} />)
@@ -341,7 +354,7 @@ describe("ApiConfigManager", () => {
 
 		// Test Escape key
 		fireEvent.keyDown(input, { key: "Escape" })
-		expect(screen.getByTestId("dialog")).not.toBeVisible()
+		expect(screen.queryByTestId("new-profile-input")).not.toBeInTheDocument()
 	})
 
 	it("handles keyboard events in rename mode", () => {

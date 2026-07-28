@@ -659,6 +659,7 @@ export interface WebviewMessage {
 		| "saveApiConfigurationById"
 		| "renameApiConfigurationById"
 		| "deleteApiConfigurationById"
+		| "reorderApiConfigurations"
 	text?: string
 	taskId?: string
 	editedMessageContent?: string

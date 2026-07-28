@@ -48,7 +48,7 @@ vi.mock("@/components/ui", () => ({
 		</button>
 	),
 	PopoverContent: ({ children }: any) => <div data-testid="popover-content">{children}</div>,
-	StandardTooltip: ({ children }: any) => <>{children}</>,
+	StandardTooltip: ({ children, content }: any) => <span title={content}>{children}</span>,
 	Button: ({ children, onClick, ...props }: any) => (
 		<button onClick={onClick} {...props}>
 			{children}
@@ -331,7 +331,7 @@ describe("ApiConfigSelector", () => {
 		})
 	})
 
-	test("opens settings when edit button is clicked", () => {
+	test("opens provider settings when edit button is clicked", () => {
 		render(<ApiConfigSelector {...defaultProps} />)
 
 		const trigger = screen.getByTestId("dropdown-trigger")
@@ -346,6 +346,25 @@ describe("ApiConfigSelector", () => {
 		expect(vi.mocked(vscode.postMessage)).toHaveBeenCalledWith({
 			type: "switchTab",
 			tab: "settings",
+			values: { section: "providers" },
+		})
+	})
+
+	test("opens provider settings when the sort button is clicked", () => {
+		render(<ApiConfigSelector {...defaultProps} />)
+
+		fireEvent.click(screen.getByTestId("dropdown-trigger"))
+
+		const popoverContent = screen.getByTestId("popover-content")
+		const sortButton = popoverContent.querySelector('[aria-label="settings:providers.sortProfiles"]') as HTMLElement
+		expect(sortButton).toBeInTheDocument()
+		expect(sortButton.parentElement).toHaveAttribute("title", "settings:providers.sortProfiles")
+		fireEvent.click(sortButton)
+
+		expect(vi.mocked(vscode.postMessage)).toHaveBeenCalledWith({
+			type: "switchTab",
+			tab: "settings",
+			values: { section: "providers" },
 		})
 	})
 

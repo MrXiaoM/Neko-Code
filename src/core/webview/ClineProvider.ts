@@ -1749,6 +1749,12 @@ export class ClineProvider
 		await this.postStateToWebview()
 	}
 
+	async reorderProviderProfiles(ids: string[]): Promise<void> {
+		await this.providerSettingsManager.reorderConfigs(ids)
+		await this.updateGlobalState("listApiConfigMeta", await this.providerSettingsManager.listConfig())
+		await this.postStateToWebview()
+	}
+
 	async deleteProviderProfileById(id: string): Promise<void> {
 		const profile = await this.providerSettingsManager.getProfile({ id })
 		const isActive = profile.name === this.getGlobalState("currentApiConfigName")

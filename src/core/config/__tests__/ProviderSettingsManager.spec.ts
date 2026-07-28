@@ -394,6 +394,42 @@ describe("ProviderSettingsManager", () => {
 			expect(configs).toEqual([])
 		})
 
+		it("orders configs by the persisted ID order", async () => {
+			mockSecrets.get.mockResolvedValue(
+				JSON.stringify({
+					currentApiConfigName: "first",
+					apiConfigOrder: ["second-id", "first-id"],
+					apiConfigs: {
+						first: { id: "first-id", apiProvider: "anthropic" },
+						second: { id: "second-id", apiProvider: "openai" },
+					},
+				}),
+			)
+
+			expect((await providerSettingsManager.listConfig()).map((config) => config.id)).toEqual([
+				"second-id",
+				"first-id",
+			])
+		})
+
+		it("appends profiles omitted from a legacy order", async () => {
+			mockSecrets.get.mockResolvedValue(
+				JSON.stringify({
+					currentApiConfigName: "first",
+					apiConfigOrder: ["first-id", "missing-id"],
+					apiConfigs: {
+						first: { id: "first-id", apiProvider: "anthropic" },
+						second: { id: "second-id", apiProvider: "openai" },
+					},
+				}),
+			)
+
+			expect((await providerSettingsManager.listConfig()).map((config) => config.id)).toEqual([
+				"first-id",
+				"second-id",
+			])
+		})
+
 		it("should throw error if reading from secrets fails", async () => {
 			mockSecrets.get.mockRejectedValue(new Error("Read failed"))
 
@@ -427,6 +463,45 @@ describe("ProviderSettingsManager", () => {
 		})
 	})
 
+	describe("ReorderConfigs", () => {
+		it("persists a complete reordered ID list", async () => {
+			mockSecrets.get.mockResolvedValue(
+				JSON.stringify({
+					currentApiConfigName: "first",
+					apiConfigs: {
+						first: { id: "first-id", apiProvider: "anthropic" },
+						second: { id: "second-id", apiProvider: "openai" },
+					},
+				}),
+			)
+
+			await providerSettingsManager.reorderConfigs(["second-id", "first-id"])
+
+			const lastStoreCall = mockSecrets.store.mock.calls[mockSecrets.store.mock.calls.length - 1]
+			const storedProfiles = JSON.parse(lastStoreCall![1])
+			expect(storedProfiles.apiConfigOrder).toEqual(["second-id", "first-id"])
+		})
+
+		it("rejects incomplete or duplicate ID lists", async () => {
+			mockSecrets.get.mockResolvedValue(
+				JSON.stringify({
+					currentApiConfigName: "first",
+					apiConfigs: {
+						first: { id: "first-id", apiProvider: "anthropic" },
+						second: { id: "second-id", apiProvider: "openai" },
+					},
+				}),
+			)
+
+			await expect(providerSettingsManager.reorderConfigs(["first-id"])).rejects.toThrow(
+				"Configuration order must contain every configuration ID exactly once",
+			)
+			await expect(providerSettingsManager.reorderConfigs(["first-id", "first-id"])).rejects.toThrow(
+				"Configuration order must contain every configuration ID exactly once",
+			)
+		})
+	})
+
 	describe("SaveConfig", () => {
 		it("should save new config", async () => {
 			mockSecrets.get.mockResolvedValue(
@@ -457,6 +532,7 @@ describe("ProviderSettingsManager", () => {
 
 			const expectedConfig = {
 				currentApiConfigName: "default",
+				apiConfigOrder: [testConfigId],
 				apiConfigs: {
 					default: {},
 					test: {
@@ -507,6 +583,7 @@ describe("ProviderSettingsManager", () => {
 
 			const expectedConfig = {
 				currentApiConfigName: "default",
+				apiConfigOrder: [testConfigId],
 				apiConfigs: {
 					default: {},
 					test: {
@@ -551,6 +628,7 @@ describe("ProviderSettingsManager", () => {
 
 			const expectedConfig = {
 				currentApiConfigName: "default",
+				apiConfigOrder: ["test-id"],
 				apiConfigs: {
 					test: {
 						apiProvider: "anthropic",

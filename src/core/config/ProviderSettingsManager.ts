@@ -37,6 +37,7 @@ export interface SyncCloudProfilesResult {
 export const providerProfilesSchema = z.object({
 	currentApiConfigName: z.string(),
 	apiConfigs: z.record(z.string(), providerSettingsWithIdSchema),
+	apiConfigOrder: z.array(z.string()).optional(),
 	modeApiConfigs: z.record(z.string(), z.string()).optional(),
 	cloudProfileIds: z.array(z.string()).optional(),
 	migrations: z
@@ -362,8 +363,9 @@ export class ProviderSettingsManager {
 		try {
 			return await this.lock(async () => {
 				const providerProfiles = await this.load()
+				const orderedEntries = this.getOrderedConfigEntries(providerProfiles)
 
-				return Object.entries(providerProfiles.apiConfigs).map(([name, apiConfig]) => ({
+				return orderedEntries.map(([name, apiConfig]) => ({
 					name,
 					id: apiConfig.id || "",
 					apiProvider: apiConfig.apiProvider,
@@ -373,6 +375,27 @@ export class ProviderSettingsManager {
 		} catch (error) {
 			throw new Error(`Failed to list configs: ${error}`)
 		}
+	}
+
+	public async reorderConfigs(ids: string[]): Promise<void> {
+		return this.lock(async () => {
+			const providerProfiles = await this.load()
+			const existingIds = Object.values(providerProfiles.apiConfigs)
+				.map((config) => config.id)
+				.filter((id): id is string => typeof id === "string")
+			const requestedIds = new Set(ids)
+
+			if (
+				requestedIds.size !== ids.length ||
+				requestedIds.size !== existingIds.length ||
+				!existingIds.every((id) => requestedIds.has(id))
+			) {
+				throw new Error("Configuration order must contain every configuration ID exactly once")
+			}
+
+			providerProfiles.apiConfigOrder = ids
+			await this.store(providerProfiles)
+		})
 	}
 
 	/**
@@ -399,6 +422,7 @@ export class ProviderSettingsManager {
 						? providerSettingsWithIdSchema.passthrough().parse(normalizedConfig)
 						: discriminatedProviderSettingsWithIdSchema.parse(normalizedConfig)
 				providerProfiles.apiConfigs[name] = { ...filteredConfig, id }
+				this.normalizeApiConfigOrder(providerProfiles)
 				await this.store(providerProfiles)
 				return id
 			})
@@ -423,6 +447,7 @@ export class ProviderSettingsManager {
 					? providerSettingsWithIdSchema.passthrough().parse(normalizedConfig)
 					: discriminatedProviderSettingsWithIdSchema.parse(normalizedConfig)
 			providerProfiles.apiConfigs[name] = { ...filteredConfig, id }
+			this.normalizeApiConfigOrder(providerProfiles)
 			await this.store(providerProfiles)
 			return { id, name }
 		})
@@ -447,6 +472,7 @@ export class ProviderSettingsManager {
 					providerProfiles.currentApiConfigName = newName
 				}
 			}
+			this.normalizeApiConfigOrder(providerProfiles)
 			await this.store(providerProfiles)
 			return { id, name: newName }
 		})
@@ -463,6 +489,7 @@ export class ProviderSettingsManager {
 				throw new Error("Cannot delete the last remaining configuration")
 			}
 			delete providerProfiles.apiConfigs[entry[0]]
+			this.normalizeApiConfigOrder(providerProfiles)
 			await this.store(providerProfiles)
 		})
 	}
@@ -543,6 +570,7 @@ export class ProviderSettingsManager {
 				}
 
 				delete providerProfiles.apiConfigs[name]
+				this.normalizeApiConfigOrder(providerProfiles)
 				await this.store(providerProfiles)
 			})
 		} catch (error) {
@@ -771,8 +799,49 @@ export class ProviderSettingsManager {
 		return apiConfig
 	}
 
+	private getOrderedConfigEntries(providerProfiles: ProviderProfiles): Array<[string, ProviderSettingsWithId]> {
+		this.normalizeApiConfigOrder(providerProfiles)
+		const entries = Object.entries(providerProfiles.apiConfigs)
+		const configsById = new Map(
+			entries
+				.filter(([, config]) => !!config.id)
+				.map(([name, config]) => [config.id, [name, config] as [string, ProviderSettingsWithId]]),
+		)
+		const orderedEntries =
+			providerProfiles.apiConfigOrder?.flatMap((id) => {
+				const entry = configsById.get(id)
+				return entry ? [entry] : []
+			}) ?? []
+		const orderedIds = new Set(orderedEntries.map(([, config]) => config.id))
+
+		return [...orderedEntries, ...entries.filter(([, config]) => !config.id || !orderedIds.has(config.id))]
+	}
+
+	private normalizeApiConfigOrder(providerProfiles: ProviderProfiles): boolean {
+		const existingIds = Object.values(providerProfiles.apiConfigs)
+			.map((config) => config.id)
+			.filter((id): id is string => typeof id === "string")
+		const existingIdSet = new Set(existingIds)
+		const normalizedOrder = [
+			...(providerProfiles.apiConfigOrder ?? []).filter(
+				(id, index, order) => existingIdSet.has(id) && order.indexOf(id) === index,
+			),
+			...existingIds.filter((id) => !(providerProfiles.apiConfigOrder ?? []).includes(id)),
+		]
+		const changed =
+			providerProfiles.apiConfigOrder?.length !== normalizedOrder.length ||
+			providerProfiles.apiConfigOrder?.some((id, index) => id !== normalizedOrder[index])
+
+		if (changed) {
+			providerProfiles.apiConfigOrder = normalizedOrder
+		}
+
+		return changed
+	}
+
 	private async store(providerProfiles: ProviderProfiles) {
 		try {
+			this.normalizeApiConfigOrder(providerProfiles)
 			await this.context.secrets.store(this.secretsKey, JSON.stringify(providerProfiles, null, 2))
 		} catch (error) {
 			throw new Error(`Failed to write provider profiles to secrets: ${error}`)

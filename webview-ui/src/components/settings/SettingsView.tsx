@@ -918,6 +918,9 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 												apiConfiguration,
 											})
 										}
+										onReorderConfigs={(ids: string[]) =>
+											vscode.postMessage({ type: "reorderApiConfigurations", values: { ids } })
+										}
 									/>
 									<ApiOptions
 										uriScheme={uriScheme}

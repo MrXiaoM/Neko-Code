@@ -1,6 +1,15 @@
 import { memo, useEffect, useRef, useState } from "react"
+import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors } from "@dnd-kit/core"
+import {
+	SortableContext,
+	arrayMove,
+	sortableKeyboardCoordinates,
+	useSortable,
+	verticalListSortingStrategy,
+} from "@dnd-kit/sortable"
+import { CSS } from "@dnd-kit/utilities"
 import { VSCodeTextField } from "@vscode/webview-ui-toolkit/react"
-import { TriangleAlert } from "lucide-react"
+import { GripVertical, ListOrdered, TriangleAlert } from "lucide-react"
 
 import type { ProviderSettingsEntry, OrganizationAllowList } from "@roo-code/types"
 
@@ -25,6 +34,32 @@ interface ApiConfigManagerProps {
 	onDeleteConfig: (configId: string) => void
 	onRenameConfig: (configId: string, newName: string) => void
 	onUpsertConfig: (configName: string) => void
+	onReorderConfigs?: (ids: string[]) => void
+}
+
+interface SortableProfileItemProps {
+	profile: ProviderSettingsEntry
+}
+
+const SortableProfileItem = ({ profile }: SortableProfileItemProps) => {
+	const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: profile.id })
+
+	return (
+		<div
+			ref={setNodeRef}
+			style={{ transform: CSS.Transform.toString(transform), transition }}
+			className="flex items-center gap-1.5 rounded border border-vscode-dropdown-border bg-vscode-dropdown-background px-1.5 py-1">
+			<button
+				type="button"
+				className="flex size-6 cursor-grab items-center justify-center text-vscode-descriptionForeground hover:text-vscode-foreground active:cursor-grabbing"
+				aria-label={profile.name}
+				{...attributes}
+				{...listeners}>
+				<GripVertical className="size-4" />
+			</button>
+			<span className="min-w-0 flex-1 truncate text-sm">{profile.name}</span>
+		</div>
+	)
 }
 
 const ApiConfigManager = ({
@@ -36,6 +71,7 @@ const ApiConfigManager = ({
 	onDeleteConfig,
 	onRenameConfig,
 	onUpsertConfig,
+	onReorderConfigs = () => {},
 }: ApiConfigManagerProps) => {
 	const { t } = useAppTranslation()
 
@@ -44,6 +80,8 @@ const ApiConfigManager = ({
 	const [inputValue, setInputValue] = useState("")
 	const [newProfileName, setNewProfileName] = useState("")
 	const [error, setError] = useState<string | null>(null)
+	const [isOrdering, setIsOrdering] = useState(false)
+	const [orderedProfiles, setOrderedProfiles] = useState<ProviderSettingsEntry[]>(listApiConfigMeta)
 	const inputRef = useRef<any>(null)
 	const newProfileInputRef = useRef<any>(null)
 
@@ -120,6 +158,15 @@ const ApiConfigManager = ({
 		resetRenameState()
 	}, [currentApiConfigName])
 
+	useEffect(() => {
+		setOrderedProfiles(listApiConfigMeta)
+	}, [listApiConfigMeta])
+
+	const sensors = useSensors(
+		useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+		useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+	)
+
 	const handleSelectConfig = (configId: string) => {
 		if (!configId) return
 		onSelectConfig(configId)
@@ -178,6 +225,20 @@ const ApiConfigManager = ({
 
 		// Let the extension handle both deletion and selection.
 		onDeleteConfig(currentApiConfigId)
+	}
+
+	const handleReorder = (activeId: string, overId: string | undefined) => {
+		if (!overId || activeId === overId) return
+
+		setOrderedProfiles((profiles) => {
+			const oldIndex = profiles.findIndex((profile) => profile.id === activeId)
+			const newIndex = profiles.findIndex((profile) => profile.id === overId)
+			if (oldIndex === -1 || newIndex === -1) return profiles
+
+			const nextProfiles = arrayMove(profiles, oldIndex, newIndex)
+			onReorderConfigs(nextProfiles.map((profile) => profile.id))
+			return nextProfiles
+		})
 	}
 
 	const isOnlyProfile = listApiConfigMeta?.length === 1
@@ -262,6 +323,15 @@ const ApiConfigManager = ({
 							className="grow"
 							data-testid="select-component"
 						/>
+						<StandardTooltip content={t("settings:providers.sortProfiles")}>
+							<Button
+								variant="ghost"
+								size="icon"
+								onClick={() => setIsOrdering(true)}
+								data-testid="sort-profiles-button">
+								<ListOrdered className="size-4" />
+							</Button>
+						</StandardTooltip>
 						<StandardTooltip content={t("settings:providers.addProfile")}>
 							<Button variant="ghost" size="icon" onClick={handleAdd} data-testid="add-profile-button">
 								<span className="codicon codicon-add" />
@@ -353,6 +423,33 @@ const ApiConfigManager = ({
 							{t("settings:providers.createProfile")}
 						</Button>
 					</div>
+				</DialogContent>
+			</Dialog>
+
+			<Dialog open={isOrdering} onOpenChange={setIsOrdering} aria-labelledby="sort-profiles-title">
+				<DialogContent
+					className="flex h-[85vh] max-h-[85vh] max-w-lg flex-col bg-card p-4"
+					data-testid="sort-profiles-dialog">
+					<DialogTitle>{t("settings:providers.sortProfiles")}</DialogTitle>
+					<p className="m-0 text-sm text-vscode-descriptionForeground">
+						{t("settings:providers.sortProfilesDescription")}
+					</p>
+					<DndContext
+						sensors={sensors}
+						collisionDetection={closestCenter}
+						onDragEnd={({ active, over }) =>
+							handleReorder(String(active.id), over ? String(over.id) : undefined)
+						}>
+						<SortableContext
+							items={orderedProfiles.map((profile) => profile.id)}
+							strategy={verticalListSortingStrategy}>
+							<div className="mt-3 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto pr-1">
+								{orderedProfiles.map((profile) => (
+									<SortableProfileItem key={profile.id} profile={profile} />
+								))}
+							</div>
+						</SortableContext>
+					</DndContext>
 				</DialogContent>
 			</Dialog>
 		</div>

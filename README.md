@@ -21,7 +21,8 @@
     - 让大多数跟路径有关的聊天消息，都支持点击转跳到相应文件
     - 让可以展开的聊天消息，在底部可以收起，而不用翻到顶部才能收起
     - 等等更多机制
-- 解耦「聊天页面」和「设置页面」的 API 配置选择器，防止在任务运行时不可修改配置
+- 解耦「聊天页面」和「设置页面」的 API 配置选择器，防止在任务运行时，在设置页切换、修改配置会影响任务运行
+- 使得供应商 API 配置列表可以重新排序
 - 添加与 Github Desktop 类似的路径名省略优化机制（优先仅省略中间部分，以显示完整的文件名）
 - 将几乎所有提示词都改为了中文
 - 添加更严格的对话语言约束
@@ -34,6 +35,8 @@
 想要构建吗？拉取这个仓库，然后执行
 
 ```shell
+pnpm install
+
 pnpm clean
 pnpm vsix
 ```
@@ -96,7 +99,7 @@ for this exact support, so if you are having problems or if you have question, j
 - [Tiếng Việt](locales/vi/README.md)
 - [简体中文](locales/zh-CN/README.md)
 - [繁體中文](locales/zh-TW/README.md)
-    </details>
+      </details>
 
 ---
 

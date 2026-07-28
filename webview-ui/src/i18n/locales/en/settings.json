@@ -482,6 +482,8 @@
 		"enterNewName": "Enter new name",
 		"addProfile": "Add Profile",
 		"renameProfile": "Rename Profile",
+		"sortProfiles": "Sort Profiles",
+		"sortProfilesDescription": "Drag profiles to change their order in configuration lists.",
 		"newProfile": "New Configuration Profile",
 		"enterProfileName": "Enter profile name",
 		"createProfile": "Create Profile",

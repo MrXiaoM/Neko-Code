@@ -364,6 +364,8 @@
 		"enterNewName": "输入新名称",
 		"addProfile": "添加配置文件",
 		"renameProfile": "重命名配置文件",
+		"sortProfiles": "排序配置文件",
+		"sortProfilesDescription": "拖拽配置文件以调整其在配置列表中的顺序。",
 		"newProfile": "新建配置文件",
 		"enterProfileName": "输入新配置名称",
 		"createProfile": "创建配置",

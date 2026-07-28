@@ -90,8 +90,8 @@ export const ApiConfigSelector = ({
 		[onChange],
 	)
 
-	const handleEditClick = useCallback(() => {
-		vscode.postMessage({ type: "switchTab", tab: "settings" })
+	const handleSettingsClick = useCallback(() => {
+		vscode.postMessage({ type: "switchTab", tab: "settings", values: { section: "providers" } })
 		setOpen(false)
 	}, [])
 
@@ -238,8 +238,13 @@ export const ApiConfigSelector = ({
 							<IconButton
 								iconClass="codicon-settings-gear"
 								title={t("chat:edit")}
-								onClick={handleEditClick}
+								onClick={handleSettingsClick}
 								tooltip={false}
+							/>
+							<IconButton
+								iconClass="codicon-list-ordered"
+								title={t("settings:providers.sortProfiles")}
+								onClick={handleSettingsClick}
 							/>
 							<IconButton
 								iconClass={lockApiConfigAcrossModes ? "codicon-lock" : "codicon-unlock"}

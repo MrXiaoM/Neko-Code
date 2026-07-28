@@ -2148,6 +2148,18 @@ export const webviewMessageHandler = async (
 				}
 			}
 			break
+		case "reorderApiConfigurations":
+			if (Array.isArray(message.values?.ids) && message.values.ids.every((id) => typeof id === "string")) {
+				try {
+					await provider.reorderProviderProfiles(message.values.ids)
+				} catch (error) {
+					provider.log(
+						`Error reorder api configurations: ${error instanceof Error ? error.message : String(error)}`,
+					)
+					vscode.window.showErrorMessage(t("common:errors.save_api_config"))
+				}
+			}
+			break
 		case "deleteApiConfigurationById":
 			if (message.text) {
 				try {
