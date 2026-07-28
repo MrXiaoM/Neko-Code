@@ -89,12 +89,22 @@ vitest.mock("@/components/ui", () => ({
 			{children}
 		</option>
 	),
-	SearchableSelect: ({ value, onValueChange, options, placeholder, "data-testid": dataTestId }: any) => (
+	SearchableSelect: ({
+		value,
+		onValueChange,
+		options,
+		placeholder,
+		listMaxHeight,
+		smoothWheel,
+		"data-testid": dataTestId,
+	}: any) => (
 		<select
 			value={value}
 			onChange={(e) => {
 				if (onValueChange) onValueChange(e.target.value)
 			}}
+			data-list-max-height={listMaxHeight}
+			data-smooth-wheel={smoothWheel}
 			data-testid={dataTestId || "select-component"}>
 			<option value="">{placeholder || "settings:common.select"}</option>
 			{options?.map((option: any) => (
@@ -254,6 +264,14 @@ describe("ApiConfigManager", () => {
 		const saveButton = screen.getByTestId("save-rename-button")
 		expect(saveButton).toBeDisabled()
 		expect(mockOnRenameConfig).not.toHaveBeenCalled()
+	})
+
+	it("configures a taller, smooth-scrolling profile list", () => {
+		render(<ApiConfigManager {...defaultProps} />)
+
+		const selectElement = screen.getByTestId("select-component")
+		expect(selectElement).toHaveAttribute("data-list-max-height", "min(520px, calc(100vh - 220px))")
+		expect(selectElement).toHaveAttribute("data-smooth-wheel", "true")
 	})
 
 	it("allows selecting a different config", () => {

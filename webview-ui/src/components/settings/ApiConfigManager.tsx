@@ -259,6 +259,8 @@ const ApiConfigManager = ({
 							placeholder={t("settings:common.select")}
 							searchPlaceholder={t("settings:providers.searchPlaceholder")}
 							emptyMessage={t("settings:providers.noMatchFound")}
+							listMaxHeight="min(520px, calc(100vh - 220px))"
+							smoothWheel
 							className="grow"
 							data-testid="select-component"
 						/>
