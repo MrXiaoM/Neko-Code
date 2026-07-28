@@ -659,7 +659,7 @@ describe("FileRestrictionError", () => {
 				groups: ["read", "edit", "command", "mcp"],
 			})
 			expect(debugMode?.customInstructions).toContain(
-				"思考 5-7 个不同可能的问题来源，将其提炼为 1-2 个最可能的来源，然后添加日志来验证你的假设。在修复问题之前，明确要求用户确认诊断结果。",
+				"先列出 5-7 个可能原因，再依据代码、日志、错误信息或复现结果筛到 1-2 个最可能的原因。",
 			)
 		})
 	})

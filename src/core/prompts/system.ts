@@ -30,6 +30,7 @@ import {
 	markdownFormattingSection,
 	getSkillsSection,
 	getLanguagePreferenceSection,
+	getPlainLanguageSection,
 } from "./sections"
 
 // Helper function to get prompt component, filtering out empty objects
@@ -71,6 +72,10 @@ async function generatePrompt(
 	// Get the full mode config to ensure we have the role definition (used for groups, etc.)
 	const modeConfig = getModeBySlug(mode, customModeConfigs) || modes.find((m) => m.slug === mode) || modes[0]
 	const { roleDefinition, baseInstructions } = getModeSelection(mode, promptComponent, customModeConfigs)
+	const usesBuiltInModePrompt =
+		modes.some((builtInMode) => builtInMode.slug === mode) &&
+		!customModeConfigs?.some((customMode) => customMode.slug === mode) &&
+		!promptComponent
 
 	// Check if MCP functionality should be included
 	const hasMcpGroup = modeConfig.groups.some((groupEntry) => getGroupName(groupEntry) === "mcp")
@@ -107,6 +112,8 @@ async function generatePrompt(
 	const basePrompt = `${roleDefinition}
 
 ${getLanguagePreferenceSection(effectiveLanguage)}
+
+${usesBuiltInModePrompt ? getPlainLanguageSection() : ""}
 
 ${markdownFormattingSection()}
 

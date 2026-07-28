@@ -12,7 +12,7 @@ describe("getModeSelection with empty promptComponent", () => {
 		// Should use built-in mode values
 		expect(result.roleDefinition).toBe(architectMode.roleDefinition)
 		expect(result.baseInstructions).toBe(architectMode.customInstructions)
-		expect(result.baseInstructions).toContain("做一些信息收集工作")
+		expect(result.baseInstructions).toContain("查看与任务直接相关的代码、配置、文档和约束")
 	})
 
 	it("should use built-in mode instructions when promptComponent is null", () => {
@@ -24,7 +24,7 @@ describe("getModeSelection with empty promptComponent", () => {
 		// Should use built-in mode values
 		expect(result.roleDefinition).toBe(debugMode.roleDefinition)
 		expect(result.baseInstructions).toBe(debugMode.customInstructions)
-		expect(result.baseInstructions).toContain("思考 5-7 个不同可能的问题来源")
+		expect(result.baseInstructions).toContain("先列出 5-7 个可能原因")
 	})
 
 	it("should use promptComponent when it has actual content", () => {

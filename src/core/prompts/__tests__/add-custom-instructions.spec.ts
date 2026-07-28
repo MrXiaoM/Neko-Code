@@ -62,6 +62,7 @@ vi.mock("../sections/language-preference", () => ({
 		.mockImplementation(
 			(language: string) => `====\n\n语言规则\n\n你必须始终以"Mock Language"（${language}）语言进行所有交流`,
 		),
+	getPlainLanguageSection: vi.fn().mockImplementation(() => "====\n\n表达方式\n\n测试用表达规则"),
 }))
 
 // Mock the custom instructions

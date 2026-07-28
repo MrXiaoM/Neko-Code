@@ -62,6 +62,9 @@ vi.mock("../sections/language-preference", () => ({
 		.mockImplementation(
 			(language: string) => `====\n\n语言规则\n\n你必须始终以"Mock Language"（${language}）语言进行所有交流`,
 		),
+	getPlainLanguageSection: vi
+		.fn()
+		.mockImplementation(() => "====\n\n表达方式\n\n不要说“推进了回归”，要说明具体做了什么。"),
 }))
 
 // Mock the custom instructions
@@ -401,6 +404,60 @@ describe("SYSTEM_PROMPT", () => {
 		expect(customInstructionsIndex).toBeGreaterThan(userInstructionsHeader)
 	})
 
+	it("should add plain-language guidance to every unmodified built-in mode", async () => {
+		const prompts = await Promise.all(
+			modes.map((mode) =>
+				SYSTEM_PROMPT(
+					mockContext,
+					"/test/path",
+					false,
+					undefined,
+					undefined,
+					mode.slug,
+					undefined,
+					undefined,
+					undefined,
+					experiments,
+					undefined,
+					undefined,
+				),
+			),
+		)
+
+		for (const prompt of prompts) {
+			expect(prompt).toContain("表达方式")
+			expect(prompt).toContain("不要说“推进了回归”")
+		}
+	})
+
+	it("should not add plain-language guidance to a custom mode", async () => {
+		const customModes: ModeConfig[] = [
+			{
+				slug: "custom-mode",
+				name: "Custom Mode",
+				roleDefinition: "Custom role definition",
+				groups: ["read"] as const,
+			},
+		]
+
+		const prompt = await SYSTEM_PROMPT(
+			mockContext,
+			"/test/path",
+			false,
+			undefined,
+			undefined,
+			"custom-mode",
+			undefined,
+			customModes,
+			undefined,
+			experiments,
+			undefined,
+			undefined,
+		)
+
+		expect(prompt).not.toContain("表达方式")
+	})
+
 	it("should use promptComponent roleDefinition when available", async () => {
 		const customModePrompts = {
 			[defaultModeSlug]: {
@@ -428,6 +485,7 @@ describe("SYSTEM_PROMPT", () => {
 		expect(prompt.indexOf("Custom prompt role definition")).toBeLessThan(prompt.indexOf("工具使用"))
 		// Should not contain the default mode's role definition
 		expect(prompt).not.toContain(modes[0].roleDefinition)
+		expect(prompt).not.toContain("表达方式")
 	})
 
 	it("should fallback to modeConfig roleDefinition when promptComponent has no roleDefinition", async () => {
