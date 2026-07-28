@@ -343,8 +343,6 @@ export type ExtensionState = Pick<
 	lockApiConfigAcrossModes?: boolean
 	/** Immutable ID of the provider profile currently active in chat. */
 	currentApiConfigId?: string
-	/** Provider profile ID that cannot be changed while its task has an in-flight API request. */
-	lockedApiConfigId?: string
 	version: string
 	clineMessages: ClineMessage[]
 	currentTaskId?: string

@@ -1724,10 +1724,6 @@ export class ClineProvider
 	}
 
 	async saveProviderProfileById(id: string, providerSettings: ProviderSettings): Promise<void> {
-		if (await this.isApiConfigLocked(id)) {
-			throw new Error("The provider profile is locked while its API request is running")
-		}
-
 		const { name } = await this.providerSettingsManager.updateConfigById(id, providerSettings)
 		const activeName = this.getGlobalState("currentApiConfigName")
 
@@ -1741,10 +1737,6 @@ export class ClineProvider
 	}
 
 	async renameProviderProfileById(id: string, newName: string): Promise<void> {
-		if (await this.isApiConfigLocked(id)) {
-			throw new Error("The provider profile is locked while its API request is running")
-		}
-
 		const profile = await this.providerSettingsManager.getProfile({ id })
 		const { name } = await this.providerSettingsManager.renameConfigById(id, newName)
 
@@ -1758,10 +1750,6 @@ export class ClineProvider
 	}
 
 	async deleteProviderProfileById(id: string): Promise<void> {
-		if (await this.isApiConfigLocked(id)) {
-			throw new Error("The provider profile is locked while its API request is running")
-		}
-
 		const profile = await this.providerSettingsManager.getProfile({ id })
 		const isActive = profile.name === this.getGlobalState("currentApiConfigName")
 		const replacement = isActive
@@ -1863,24 +1851,6 @@ export class ClineProvider
 		if (providerSettings.apiProvider) {
 			this.emit(RooCodeEventName.ProviderProfileChanged, { name, provider: providerSettings.apiProvider })
 		}
-	}
-
-	private async getLockedApiConfigId(): Promise<string | undefined> {
-		const task = this.getCurrentTask()
-		if (!task || (!task.isWaitingForFirstChunk && !task.isStreaming)) {
-			return undefined
-		}
-
-		const profileName = task.taskApiConfigName ?? this.getGlobalState("currentApiConfigName")
-		if (!profileName) {
-			return undefined
-		}
-
-		return (await this.providerSettingsManager.getProfile({ name: profileName })).id
-	}
-
-	async isApiConfigLocked(id: string): Promise<boolean> {
-		return (await this.getLockedApiConfigId()) === id
 	}
 
 	/**
@@ -2600,7 +2570,6 @@ export class ClineProvider
 			currentApiConfigName && typeof this.providerSettingsManager.getProfile === "function"
 				? await this.providerSettingsManager.getProfile({ name: currentApiConfigName }).catch(() => undefined)
 				: undefined
-		const lockedApiConfigId = await this.getLockedApiConfigId().catch(() => undefined)
 		let zooCodeState: {
 			zooCodeIsAuthenticated: boolean
 			zooCodeUserName: string | undefined
@@ -2637,7 +2606,6 @@ export class ClineProvider
 			version: this.context.extension?.packageJSON?.version ?? "",
 			apiConfiguration,
 			currentApiConfigId: activeProfile?.id,
-			lockedApiConfigId,
 			customInstructions,
 			alwaysAllowReadOnly: alwaysAllowReadOnly ?? false,
 			alwaysAllowReadOnlyOutsideWorkspace: alwaysAllowReadOnlyOutsideWorkspace ?? false,

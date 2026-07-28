@@ -1066,6 +1066,32 @@ describe("SettingsView - profile isolation", () => {
 		expect(vscode.postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: "upsertApiConfiguration" }))
 	})
 
+	it("saves a profile from settings even when legacy lock state is present", async () => {
+		const { activateTab } = renderSettingsView({
+			currentApiConfigId: "default-id",
+			lockedApiConfigId: "default-id",
+		})
+
+		activateTab("providers")
+		await waitFor(() =>
+			expect(vscode.postMessage).toHaveBeenCalledWith(expect.objectContaining({ type: "loadApiConfigForEdit" })),
+		)
+
+		activateTab("prompts")
+		act(() => {
+			capturedPromptsSetAgentName?.("UnlockedAgent")
+		})
+
+		vi.clearAllMocks()
+		fireEvent.click(screen.getByTestId("save-button"))
+
+		await waitFor(() =>
+			expect(vscode.postMessage).toHaveBeenCalledWith(
+				expect.objectContaining({ type: "saveApiConfigurationById", text: "default-id" }),
+			),
+		)
+	})
+
 	it("does not call loadApiConfiguration from ApiConfigManager onSelectConfig", () => {
 		renderSettingsView()
 

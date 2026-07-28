@@ -3,7 +3,7 @@
 import * as vscode from "vscode"
 
 import { TelemetryService } from "@roo-code/telemetry"
-import { getModelId } from "@roo-code/types"
+import { getModelId, type ProviderSettings } from "@roo-code/types"
 
 import { ContextProxy } from "../../config/ContextProxy"
 import { Task, TaskOptions } from "../../task/Task"
@@ -110,7 +110,10 @@ vi.mock("../../task/Task", () => ({
 			overwriteApiConversationHistory: vi.fn(),
 			taskId: options?.historyItem?.id || "test-task-id",
 			emit: vi.fn(),
-			updateApiConfiguration: vi.fn().mockImplementation(function (this: any, newConfig: any) {
+			updateApiConfiguration: vi.fn().mockImplementation(function (
+				this: { apiConfiguration: ProviderSettings },
+				newConfig: ProviderSettings,
+			) {
 				this.apiConfiguration = newConfig
 			}),
 		}
@@ -247,6 +250,9 @@ describe("ClineProvider - API Handler Rebuild Guard", () => {
 				apiProvider: "openrouter",
 				openRouterModelId: "openai/gpt-4",
 			}),
+			updateConfigById: vi.fn().mockResolvedValue({ id: "test-id", name: "test-config" }),
+			renameConfigById: vi.fn().mockResolvedValue({ id: "test-id", name: "renamed-config" }),
+			deleteConfigById: vi.fn().mockResolvedValue(undefined),
 		}
 
 		// Get the buildApiHandler mock
@@ -406,6 +412,29 @@ describe("ClineProvider - API Handler Rebuild Guard", () => {
 
 			// Should not call buildApiHandler when there's no task
 			expect(buildApiHandlerMock).not.toHaveBeenCalled()
+		})
+	})
+
+	describe("profile edits during a running task", () => {
+		test("allows saving, renaming, and deleting a profile", async () => {
+			const mockTask = new Task(defaultTaskOptions)
+			;(mockTask as any).isStreaming = true
+			await provider.addClineToStack(mockTask)
+
+			await provider.saveProviderProfileById("test-id", {
+				apiProvider: "openrouter",
+				openRouterModelId: "openai/gpt-4",
+			})
+			await provider.renameProviderProfileById("test-id", "renamed-config")
+			await provider.deleteProviderProfileById("test-id")
+
+			const manager = (provider as any).providerSettingsManager
+			expect(manager.updateConfigById).toHaveBeenCalledWith(
+				"test-id",
+				expect.objectContaining({ apiProvider: "openrouter" }),
+			)
+			expect(manager.renameConfigById).toHaveBeenCalledWith("test-id", "renamed-config")
+			expect(manager.deleteConfigById).toHaveBeenCalledWith("test-id")
 		})
 	})
 

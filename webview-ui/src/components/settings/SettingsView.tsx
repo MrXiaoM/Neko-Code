@@ -135,7 +135,6 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 		currentApiConfigName,
 		editingApiConfig,
 		listApiConfigMeta,
-		lockedApiConfigId,
 		uriScheme,
 		settingsImportedAt,
 		mode,
@@ -170,7 +169,6 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 	const [editingProfileId, setEditingProfileId] = useState(initialEditingProfileId)
 	const [editingProfileName, setEditingProfileName] = useState(currentApiConfigName)
 	const editRequestId = useRef<string>()
-	const isEditingLocked = !!editingProfileId && editingProfileId === lockedApiConfigId
 	const isEditingActiveProfile = !editingProfileId || editingProfileId === resolvedCurrentApiConfigId
 
 	const {
@@ -371,10 +369,6 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 
 	const setApiConfigurationField = useCallback(
 		<K extends keyof ProviderSettings>(field: K, value: ProviderSettings[K], isUserAction: boolean = true) => {
-			if (isEditingLocked) {
-				return
-			}
-
 			setCachedState((prevState) => {
 				if (prevState.apiConfiguration?.[field] === value) {
 					return prevState
@@ -411,7 +405,7 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 				return { ...prevState, apiConfiguration: { ...prevState.apiConfiguration, [field]: value } }
 			})
 		},
-		[isEditingLocked],
+		[],
 	)
 
 	const setExperimentEnabled: SetExperimentEnabled = useCallback((id: ExperimentId, enabled: boolean) => {
@@ -574,7 +568,7 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 			// These have more complex logic so they aren't (yet) handled
 			// by the `updateSettings` message.
 			const profileIdToSave = editingProfileId || resolvedCurrentApiConfigId
-			if (profileIdToSave && !isEditingLocked) {
+			if (profileIdToSave) {
 				vscode.postMessage({
 					type: "saveApiConfigurationById",
 					text: profileIdToSave,
@@ -897,7 +891,6 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 										currentApiConfigId={editingProfileId}
 										currentApiConfigName={editingProfileName}
 										listApiConfigMeta={listApiConfigMeta}
-										isLocked={isEditingLocked}
 										onSelectConfig={(configId: string) => {
 											const requestId = crypto.randomUUID()
 											editRequestId.current = requestId
@@ -926,15 +919,13 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 											})
 										}
 									/>
-									<div className={isEditingLocked ? "pointer-events-none opacity-60" : undefined}>
-										<ApiOptions
-											uriScheme={uriScheme}
-											apiConfiguration={apiConfiguration}
-											setApiConfigurationField={setApiConfigurationField}
-											errorMessage={errorMessage}
-											setErrorMessage={setErrorMessage}
-										/>
-									</div>
+									<ApiOptions
+										uriScheme={uriScheme}
+										apiConfiguration={apiConfiguration}
+										setApiConfigurationField={setApiConfigurationField}
+										errorMessage={errorMessage}
+										setErrorMessage={setErrorMessage}
+									/>
 								</Section>
 							</div>
 						)}

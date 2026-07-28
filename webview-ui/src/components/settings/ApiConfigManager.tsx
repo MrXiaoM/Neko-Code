@@ -21,7 +21,6 @@ interface ApiConfigManagerProps {
 	currentApiConfigName?: string
 	listApiConfigMeta?: ProviderSettingsEntry[]
 	organizationAllowList?: OrganizationAllowList
-	isLocked?: boolean
 	onSelectConfig: (configId: string) => void
 	onDeleteConfig: (configId: string) => void
 	onRenameConfig: (configId: string, newName: string) => void
@@ -33,7 +32,6 @@ const ApiConfigManager = ({
 	currentApiConfigName = "",
 	listApiConfigMeta = [],
 	organizationAllowList,
-	isLocked = false,
 	onSelectConfig,
 	onDeleteConfig,
 	onRenameConfig,
@@ -123,7 +121,7 @@ const ApiConfigManager = ({
 	}, [currentApiConfigName])
 
 	const handleSelectConfig = (configId: string) => {
-		if (!configId || isLocked) return
+		if (!configId) return
 		onSelectConfig(configId)
 	}
 
@@ -176,7 +174,7 @@ const ApiConfigManager = ({
 	}
 
 	const handleDelete = () => {
-		if (!currentApiConfigId || !listApiConfigMeta || listApiConfigMeta.length <= 1 || isLocked) return
+		if (!currentApiConfigId || !listApiConfigMeta || listApiConfigMeta.length <= 1) return
 
 		// Let the extension handle both deletion and selection.
 		onDeleteConfig(currentApiConfigId)
@@ -265,12 +263,7 @@ const ApiConfigManager = ({
 							data-testid="select-component"
 						/>
 						<StandardTooltip content={t("settings:providers.addProfile")}>
-							<Button
-								variant="ghost"
-								size="icon"
-								onClick={handleAdd}
-								data-testid="add-profile-button"
-								disabled={isLocked}>
+							<Button variant="ghost" size="icon" onClick={handleAdd} data-testid="add-profile-button">
 								<span className="codicon codicon-add" />
 							</Button>
 						</StandardTooltip>
@@ -281,8 +274,7 @@ const ApiConfigManager = ({
 										variant="ghost"
 										size="icon"
 										onClick={handleStartRename}
-										data-testid="rename-profile-button"
-										disabled={isLocked}>
+										data-testid="rename-profile-button">
 										<span className="codicon codicon-edit" />
 									</Button>
 								</StandardTooltip>
@@ -297,7 +289,7 @@ const ApiConfigManager = ({
 										size="icon"
 										onClick={handleDelete}
 										data-testid="delete-profile-button"
-										disabled={isOnlyProfile || isLocked}>
+										disabled={isOnlyProfile}>
 										<span className="codicon codicon-trash" />
 									</Button>
 								</StandardTooltip>
