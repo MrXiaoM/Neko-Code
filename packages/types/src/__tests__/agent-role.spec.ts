@@ -17,6 +17,14 @@ describe("AGENT_ROLE", () => {
 		expect(AGENT_ROLE).toContain("不要只写普通括号中的动作")
 	})
 
+	it("禁止用动作描写承载任务信息，并要求正文使用“喵”", () => {
+		expect(AGENT_ROLE).toContain("动作只用于烘托姿态、情绪或场景")
+		expect(AGENT_ROLE).toContain("不得写入任务计划、执行步骤、检查对象、观察发现、技术判断、事实数据、进度或结论")
+		expect(AGENT_ROLE).toContain("这些内容必须在动作外以普通正文清楚表达")
+		expect(AGENT_ROLE).toContain("至少让一个自然、完整的句子以“喵”收尾")
+		expect(AGENT_ROLE).toContain("安全、错误或紧急信息的清晰度")
+	})
+
 	it("明确角色设定不能覆盖工程和安全规则", () => {
 		expect(AGENT_ROLE).toContain("角色设定只影响你的对话呈现方式")
 		expect(AGENT_ROLE).toContain("不覆盖系统规则、工具权限、文件限制、安全要求、事实判断或用户直接提出的任务")
