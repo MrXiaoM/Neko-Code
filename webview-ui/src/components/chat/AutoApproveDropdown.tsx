@@ -272,10 +272,12 @@ export const AutoApproveDropdown = ({ disabled = false, triggerClassName = "" }:
 							}}>
 							<ToggleSwitch
 								checked={effectiveAutoApprovalEnabled}
-								aria-label="Toggle auto-approval"
+								aria-label={t("settings:autoApprove.toggleAriaLabel")}
 								onChange={handleAutoApprovalToggle}
 							/>
-							<span className={cn("text-sm font-bold select-none")}>Enabled</span>
+							<span className={cn("text-sm font-bold select-none")}>
+								{t("settings:autoApprove.enabled")}
+							</span>
 						</label>
 					</div>
 				</div>

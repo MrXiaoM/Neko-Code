@@ -179,10 +179,10 @@ export const ApiConfigSelector = ({
 					{listApiConfigMeta.length > 6 ? (
 						<div className="relative p-2 border-b border-vscode-dropdown-border">
 							<input
-								aria-label={t("common:ui.search_placeholder")}
+								aria-label={t("chat:apiConfigSelector.searchPlaceholder")}
 								value={searchValue}
 								onChange={(e) => setSearchValue(e.target.value)}
-								placeholder={t("common:ui.search_placeholder")}
+								placeholder={t("chat:apiConfigSelector.searchPlaceholder")}
 								className="w-full h-8 px-2 py-1 text-xs bg-vscode-input-background text-vscode-input-foreground border border-vscode-input-border rounded focus:outline-0"
 								autoFocus
 							/>
@@ -198,14 +198,16 @@ export const ApiConfigSelector = ({
 					) : (
 						<div className="p-3 border-b border-vscode-dropdown-border">
 							<p className="text-xs text-vscode-descriptionForeground m-0">
-								{t("prompts:apiConfiguration.select")}
+								{t("chat:apiConfigSelector.description")}
 							</p>
 						</div>
 					)}
 
 					{/* Config list - single scroll container */}
 					{filteredConfigs.length === 0 && searchValue ? (
-						<div className="py-2 px-3 text-sm text-vscode-foreground/70">{t("common:ui.no_results")}</div>
+						<div className="py-2 px-3 text-sm text-vscode-foreground/70">
+							{t("chat:apiConfigSelector.noResults")}
+						</div>
 					) : (
 						<div
 							data-testid="api-config-list"
@@ -218,14 +220,14 @@ export const ApiConfigSelector = ({
 										"sticky top-0 z-10 bg-vscode-dropdown-background py-1",
 										unpinnedConfigs.length > 0 && "border-b border-vscode-dropdown-foreground/10",
 									)}
-									aria-label="Pinned configurations">
+									aria-label={t("chat:apiConfigSelector.pinnedConfigurations")}>
 									{pinnedConfigs.map((config) => renderConfigItem(config, true))}
 								</div>
 							)}
 
 							{/* Unpinned configs */}
 							{unpinnedConfigs.length > 0 && (
-								<div className="py-1" aria-label="All configurations">
+								<div className="py-1" aria-label={t("chat:apiConfigSelector.allConfigurations")}>
 									{unpinnedConfigs.map((config) => renderConfigItem(config, false))}
 								</div>
 							)}
@@ -243,7 +245,7 @@ export const ApiConfigSelector = ({
 							/>
 							<IconButton
 								iconClass="codicon-list-ordered"
-								title={t("settings:providers.sortProfiles")}
+								title={t("chat:apiConfigSelector.sortProfiles")}
 								onClick={handleSettingsClick}
 							/>
 							<IconButton
@@ -261,12 +263,12 @@ export const ApiConfigSelector = ({
 						{/* Info icon and title on the right with matching spacing */}
 						<div className="flex items-center gap-1 pr-1">
 							{listApiConfigMeta.length > 6 && (
-								<StandardTooltip content={t("prompts:apiConfiguration.select")}>
+								<StandardTooltip content={t("chat:apiConfigSelector.description")}>
 									<span className="codicon codicon-info text-xs text-vscode-descriptionForeground opacity-70 hover:opacity-100 cursor-help" />
 								</StandardTooltip>
 							)}
 							<h4 className="m-0 font-medium text-sm text-vscode-descriptionForeground">
-								{t("prompts:apiConfiguration.title")}
+								{t("chat:apiConfigSelector.title")}
 							</h4>
 						</div>
 					</div>

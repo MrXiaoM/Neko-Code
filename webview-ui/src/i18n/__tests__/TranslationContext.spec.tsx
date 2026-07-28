@@ -2,6 +2,24 @@ import { render } from "@/utils/test-utils"
 
 import TranslationProvider, { useAppTranslation } from "../TranslationContext"
 
+const { translate, i18n } = vi.hoisted(() => {
+	const translate = (key: string, options?: Record<string, any>) => {
+		if (key === "settings.autoApprove.title") return "Auto-Approve"
+		if (key === "notifications.error") {
+			return options?.message ? `Operation failed: ${options.message}` : "Operation failed"
+		}
+		return key
+	}
+
+	return {
+		translate,
+		i18n: {
+			t: translate,
+			changeLanguage: vi.fn(),
+		},
+	}
+})
+
 vi.mock("@/context/ExtensionStateContext", () => ({
 	useExtensionState: () => ({
 		language: "en",
@@ -9,34 +27,11 @@ vi.mock("@/context/ExtensionStateContext", () => ({
 }))
 
 vi.mock("react-i18next", () => ({
-	useTranslation: () => ({
-		i18n: {
-			t: (key: string, options?: Record<string, any>) => {
-				// Mock specific translations used in tests
-				if (key === "settings.autoApprove.title") return "Auto-Approve"
-				if (key === "notifications.error") {
-					return options?.message ? `Operation failed: ${options.message}` : "Operation failed"
-				}
-				return key
-			},
-			changeLanguage: vi.fn(),
-		},
-	}),
+	useTranslation: () => ({ t: translate, i18n }),
 }))
 
 vi.mock("../setup", () => ({
-	default: {
-		t: (key: string, options?: Record<string, any>) => {
-			// Mock specific translations used in tests
-			if (key === "settings.autoApprove.title") return "Auto-Approve"
-			if (key === "notifications.error") {
-				return options?.message ? `Operation failed: ${options.message}` : "Operation failed"
-			}
-			return key
-		},
-		changeLanguage: vi.fn(),
-	},
-	loadTranslations: vi.fn(),
+	default: i18n,
 	setWebviewAgentName: vi.fn(),
 }))
 
@@ -50,6 +45,13 @@ const TestComponent = () => {
 	)
 }
 
+let providedTranslate: typeof translate | undefined
+
+const TranslationReferenceProbe = () => {
+	providedTranslate = useAppTranslation().t
+	return null
+}
+
 describe("TranslationContext", () => {
 	it("should provide translations via context", () => {
 		const { getByTestId } = render(
@@ -60,6 +62,16 @@ describe("TranslationContext", () => {
 
 		// Check if translation is provided correctly
 		expect(getByTestId("translation-test")).toHaveTextContent("Auto-Approve")
+	})
+
+	it("provides the translation function subscribed by react-i18next", () => {
+		render(
+			<TranslationProvider>
+				<TranslationReferenceProbe />
+			</TranslationProvider>,
+		)
+
+		expect(providedTranslate).toBe(translate)
 	})
 
 	it("should handle interpolation correctly", () => {

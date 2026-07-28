@@ -3,6 +3,10 @@ import { vscode } from "@/utils/vscode"
 
 import { ApiConfigSelector } from "../ApiConfigSelector"
 
+const { translate } = vi.hoisted(() => ({
+	translate: vi.fn((key: string) => key),
+}))
+
 // Mock the dependencies
 vi.mock("@/utils/vscode", () => ({
 	vscode: {
@@ -11,9 +15,7 @@ vi.mock("@/utils/vscode", () => ({
 }))
 
 vi.mock("@/i18n/TranslationContext", () => ({
-	useAppTranslation: () => ({
-		t: (key: string) => key,
-	}),
+	useAppTranslation: () => ({ t: translate }),
 }))
 
 vi.mock("@/components/ui/hooks/useRooPortal", () => ({
@@ -78,6 +80,7 @@ describe("ApiConfigSelector", () => {
 
 	beforeEach(() => {
 		vi.clearAllMocks()
+		translate.mockImplementation((key: string) => key)
 	})
 
 	test("renders correctly with default props", () => {
@@ -141,8 +144,38 @@ describe("ApiConfigSelector", () => {
 		const trigger = screen.getByTestId("dropdown-trigger")
 		fireEvent.click(trigger)
 
-		const searchInput = screen.getByPlaceholderText("common:ui.search_placeholder")
+		const searchInput = screen.getByPlaceholderText("chat:apiConfigSelector.searchPlaceholder")
 		expect(searchInput).toBeInTheDocument()
+	})
+
+	test("renders simplified Chinese API configuration text", () => {
+		const translations: Record<string, string> = {
+			"chat:apiConfigSelector.title": "API 配置",
+			"chat:apiConfigSelector.description": "选择用于此聊天的 API 配置",
+			"chat:apiConfigSelector.searchPlaceholder": "搜索...",
+			"chat:apiConfigSelector.sortProfiles": "排序配置文件",
+			"chat:apiConfigSelector.pinnedConfigurations": "已置顶的配置",
+			"chat:apiConfigSelector.allConfigurations": "所有配置",
+			"chat:lockApiConfigAcrossModes": "锁定此工作区所有模式的 API 配置",
+		}
+		translate.mockImplementation((key: string) => translations[key] ?? key)
+		const props = {
+			...defaultProps,
+			listApiConfigMeta: Array.from({ length: 7 }, (_, index) => ({
+				id: `config${index + 1}`,
+				name: `Config ${index + 1}`,
+			})),
+		}
+
+		render(<ApiConfigSelector {...props} />)
+		fireEvent.click(screen.getByTestId("dropdown-trigger"))
+
+		expect(screen.getByPlaceholderText("搜索...")).toBeInTheDocument()
+		expect(screen.getByText("API 配置")).toBeInTheDocument()
+		expect(screen.getByLabelText("排序配置文件")).toBeInTheDocument()
+		expect(screen.getByLabelText("锁定此工作区所有模式的 API 配置")).toBeInTheDocument()
+		expect(screen.getByLabelText("已置顶的配置")).toBeInTheDocument()
+		expect(screen.getByLabelText("所有配置")).toBeInTheDocument()
 	})
 
 	test("renders info blurb instead of search when 6 or fewer configs", () => {
@@ -152,9 +185,9 @@ describe("ApiConfigSelector", () => {
 		fireEvent.click(trigger)
 
 		// Should not have search input
-		expect(screen.queryByPlaceholderText("common:ui.search_placeholder")).not.toBeInTheDocument()
+		expect(screen.queryByPlaceholderText("chat:apiConfigSelector.searchPlaceholder")).not.toBeInTheDocument()
 		// Should have info blurb
-		expect(screen.getByText("prompts:apiConfiguration.select")).toBeInTheDocument()
+		expect(screen.getByText("chat:apiConfigSelector.description")).toBeInTheDocument()
 	})
 
 	test("filters configs based on search input", async () => {
@@ -175,7 +208,7 @@ describe("ApiConfigSelector", () => {
 		const trigger = screen.getByTestId("dropdown-trigger")
 		fireEvent.click(trigger)
 
-		const searchInput = screen.getByPlaceholderText("common:ui.search_placeholder")
+		const searchInput = screen.getByPlaceholderText("chat:apiConfigSelector.searchPlaceholder")
 		fireEvent.change(searchInput, { target: { value: "Config 2" } })
 
 		// Wait for the filtering to take effect
@@ -205,11 +238,11 @@ describe("ApiConfigSelector", () => {
 		const trigger = screen.getByTestId("dropdown-trigger")
 		fireEvent.click(trigger)
 
-		const searchInput = screen.getByPlaceholderText("common:ui.search_placeholder")
+		const searchInput = screen.getByPlaceholderText("chat:apiConfigSelector.searchPlaceholder")
 		fireEvent.change(searchInput, { target: { value: "NonExistentConfig" } })
 
 		await waitFor(() => {
-			expect(screen.getByText("common:ui.no_results")).toBeInTheDocument()
+			expect(screen.getByText("chat:apiConfigSelector.noResults")).toBeInTheDocument()
 		})
 	})
 
@@ -231,7 +264,7 @@ describe("ApiConfigSelector", () => {
 		const trigger = screen.getByTestId("dropdown-trigger")
 		fireEvent.click(trigger)
 
-		const searchInput = screen.getByPlaceholderText("common:ui.search_placeholder") as HTMLInputElement
+		const searchInput = screen.getByPlaceholderText("chat:apiConfigSelector.searchPlaceholder") as HTMLInputElement
 		fireEvent.change(searchInput, { target: { value: "test" } })
 
 		expect(searchInput.value).toBe("test")
@@ -356,9 +389,11 @@ describe("ApiConfigSelector", () => {
 		fireEvent.click(screen.getByTestId("dropdown-trigger"))
 
 		const popoverContent = screen.getByTestId("popover-content")
-		const sortButton = popoverContent.querySelector('[aria-label="settings:providers.sortProfiles"]') as HTMLElement
+		const sortButton = popoverContent.querySelector(
+			'[aria-label="chat:apiConfigSelector.sortProfiles"]',
+		) as HTMLElement
 		expect(sortButton).toBeInTheDocument()
-		expect(sortButton.parentElement).toHaveAttribute("title", "settings:providers.sortProfiles")
+		expect(sortButton.parentElement).toHaveAttribute("title", "chat:apiConfigSelector.sortProfiles")
 		fireEvent.click(sortButton)
 
 		expect(vi.mocked(vscode.postMessage)).toHaveBeenCalledWith({
@@ -387,7 +422,7 @@ describe("ApiConfigSelector", () => {
 		fireEvent.click(trigger)
 
 		// Check for the title
-		expect(screen.getByText("prompts:apiConfiguration.title")).toBeInTheDocument()
+		expect(screen.getByText("chat:apiConfigSelector.title")).toBeInTheDocument()
 
 		// Check for the info icon
 		const infoIcon = screen.getByTestId("popover-content").querySelector(".codicon-info")
@@ -401,7 +436,7 @@ describe("ApiConfigSelector", () => {
 		fireEvent.click(trigger)
 
 		// Check for the title
-		expect(screen.getByText("prompts:apiConfiguration.title")).toBeInTheDocument()
+		expect(screen.getByText("chat:apiConfigSelector.title")).toBeInTheDocument()
 
 		// Check that info icon is not present
 		const infoIcon = screen.getByTestId("popover-content").querySelector(".codicon-info")
@@ -420,9 +455,9 @@ describe("ApiConfigSelector", () => {
 		fireEvent.click(trigger)
 
 		// Should render info blurb instead of search for empty list
-		expect(screen.queryByPlaceholderText("common:ui.search_placeholder")).not.toBeInTheDocument()
-		expect(screen.getByText("prompts:apiConfiguration.select")).toBeInTheDocument()
-		expect(screen.getByText("prompts:apiConfiguration.title")).toBeInTheDocument()
+		expect(screen.queryByPlaceholderText("chat:apiConfigSelector.searchPlaceholder")).not.toBeInTheDocument()
+		expect(screen.getByText("chat:apiConfigSelector.description")).toBeInTheDocument()
+		expect(screen.getByText("chat:apiConfigSelector.title")).toBeInTheDocument()
 	})
 
 	test("maintains search value when pinning/unpinning", async () => {
@@ -443,7 +478,7 @@ describe("ApiConfigSelector", () => {
 		const trigger = screen.getByTestId("dropdown-trigger")
 		fireEvent.click(trigger)
 
-		const searchInput = screen.getByPlaceholderText("common:ui.search_placeholder") as HTMLInputElement
+		const searchInput = screen.getByPlaceholderText("chat:apiConfigSelector.searchPlaceholder") as HTMLInputElement
 		fireEvent.change(searchInput, { target: { value: "Config" } })
 
 		// Pin a config
@@ -489,7 +524,7 @@ describe("ApiConfigSelector", () => {
 		// Check for pinned configs sticky header
 		const pinnedStickyHeader = scrollContainer?.querySelector(".sticky.top-0.z-10.bg-vscode-dropdown-background")
 		expect(pinnedStickyHeader).toBeInTheDocument()
-		expect(pinnedStickyHeader).toHaveAttribute("aria-label", "Pinned configurations")
+		expect(pinnedStickyHeader).toHaveAttribute("aria-label", "chat:apiConfigSelector.pinnedConfigurations")
 
 		// Check for Config 1, 2, 3 being visible in the sticky header (pinned)
 		expect(screen.getAllByText("Config 1").length).toBeGreaterThan(0)
@@ -509,7 +544,9 @@ describe("ApiConfigSelector", () => {
 		}
 
 		// Check for unpinned configs section
-		const unpinnedSection = scrollContainer?.querySelector('[aria-label="All configurations"]')
+		const unpinnedSection = scrollContainer?.querySelector(
+			'[aria-label="chat:apiConfigSelector.allConfigurations"]',
+		)
 		expect(unpinnedSection).toBeInTheDocument()
 
 		// Verify separator exists as border on pinned section when unpinned configs exist
@@ -545,7 +582,9 @@ describe("ApiConfigSelector", () => {
 		expect(pinnedSection).not.toBeInTheDocument()
 
 		// Should have unpinned configs section with all configs
-		const unpinnedSection = scrollContainer?.querySelector('[aria-label="All configurations"]')
+		const unpinnedSection = scrollContainer?.querySelector(
+			'[aria-label="chat:apiConfigSelector.allConfigurations"]',
+		)
 		expect(unpinnedSection).toBeInTheDocument()
 
 		// All configs should be in the unpinned section

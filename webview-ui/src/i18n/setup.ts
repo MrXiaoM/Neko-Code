@@ -42,9 +42,10 @@ i18next.use({
 	process: (value: string) => value.replaceAll("{{agentName}}", _webviewAgentName),
 })
 
-// Initialize i18next for React
-// This will be initialized with the VSCode language in TranslationProvider
+// Initialize i18next for React with every locale namespace available from the first render.
+// TranslationProvider only needs to select the VS Code language at runtime.
 i18next.use(initReactI18next).init({
+	resources: translations,
 	lng: "en", // Default language (will be overridden)
 	fallbackLng: "en",
 	debug: false,

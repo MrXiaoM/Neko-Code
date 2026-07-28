@@ -115,6 +115,15 @@
 	},
 	"selectMode": "选择交互模式",
 	"selectApiConfig": "选择 API 配置",
+	"apiConfigSelector": {
+		"title": "API 配置",
+		"description": "选择用于此聊天的 API 配置",
+		"searchPlaceholder": "搜索...",
+		"noResults": "未找到结果",
+		"sortProfiles": "排序配置文件",
+		"pinnedConfigurations": "已置顶的配置",
+		"allConfigurations": "所有配置"
+	},
 	"lockApiConfigAcrossModes": "锁定此工作区所有模式的 API 配置",
 	"unlockApiConfigAcrossModes": "此工作区所有模式的 API 配置已锁定（点击解锁）",
 	"enhancePrompt": "增强提示词",
@@ -328,7 +337,7 @@
 		"triggerLabel_zero": "0 个自动批准",
 		"triggerLabel_one": "1 个自动批准",
 		"triggerLabel_other": "{{count}} 个自动批准",
-		"triggerLabelAll": "BRRR"
+		"triggerLabelAll": "全部自动批准"
 	},
 	"reasoning": {
 		"thinking": "思考中",

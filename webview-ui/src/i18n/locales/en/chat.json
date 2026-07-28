@@ -140,6 +140,15 @@
 	},
 	"selectMode": "Select mode for interaction",
 	"selectApiConfig": "Select API configuration",
+	"apiConfigSelector": {
+		"title": "API Configuration",
+		"description": "Select an API configuration for this chat",
+		"searchPlaceholder": "Search...",
+		"noResults": "No results found",
+		"sortProfiles": "Sort Profiles",
+		"pinnedConfigurations": "Pinned configurations",
+		"allConfigurations": "All configurations"
+	},
 	"lockApiConfigAcrossModes": "Lock API configuration across all modes in this workspace",
 	"unlockApiConfigAcrossModes": "API configuration is locked across all modes in this workspace (click to unlock)",
 	"enhancePrompt": "Enhance prompt with additional context",
