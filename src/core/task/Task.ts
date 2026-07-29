@@ -1571,13 +1571,15 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 		const isCommandLikeAsk = (ask: ClineAsk | undefined) =>
 			ask === "command" || ask === "tool" || ask === "use_mcp_server"
 
-		const lastCommandLikeIndex = findLastIndex(
-			this.clineMessages,
-			(msg) => msg.type === "ask" && isCommandLikeAsk(msg.ask) && (!msg.isAnswered || !msg.approvalState),
-		)
+		// Only annotate the ask that is currently awaiting a response. A resumed
+		// task may contain an unanswered historical command ask before the active
+		// resume_task ask; marking that old row as approved makes the UI claim the
+		// command executed even though resumption only continues the task loop.
+		const activeAskIndex = findLastIndex(this.clineMessages, (msg) => msg.ts === this.lastMessageTs)
+		const activeAsk = activeAskIndex === -1 ? undefined : this.clineMessages[activeAskIndex]
 
-		if (lastCommandLikeIndex !== -1) {
-			const message = this.clineMessages[lastCommandLikeIndex]
+		if (activeAsk?.type === "ask" && isCommandLikeAsk(activeAsk.ask)) {
+			const message = activeAsk
 			let didUpdate = false
 
 			if (askResponse === "yesButtonClicked") {

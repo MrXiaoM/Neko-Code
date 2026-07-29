@@ -177,6 +177,30 @@ describe("Task.ask auto-approval stamping", () => {
 		expect(postMessageToWebview).not.toHaveBeenCalledWith({ type: "clearApprovalButtons" })
 	})
 
+	it("does not approve a historical command when resuming a task", () => {
+		const task = buildTask(undefined)
+		const historicalCommand: ClineMessage = {
+			ts: 1,
+			type: "ask",
+			ask: "command",
+			text: "echo hi",
+		}
+		const resumeAsk: ClineMessage = {
+			ts: 2,
+			type: "ask",
+			ask: "resume_task",
+		}
+		setTaskMessages(task, [historicalCommand, resumeAsk])
+		setTaskField(task, "lastMessageTs", resumeAsk.ts)
+
+		task.handleWebviewAskResponse("yesButtonClicked")
+
+		expect(historicalCommand.isAnswered).toBeUndefined()
+		expect(historicalCommand.approvalState).toBeUndefined()
+		expect(resumeAsk.isAnswered).toBeUndefined()
+		expect(getTaskField(task, "askResponse")).toBe("yesButtonClicked")
+	})
+
 	it("stamps rejected when the user sends a message instead of approving a command", async () => {
 		const postMessageToWebview = vi.fn().mockResolvedValue(undefined)
 		const provider: ProviderStub = {
