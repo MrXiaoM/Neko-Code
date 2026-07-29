@@ -39,10 +39,11 @@ const makeParentTask = () =>
 		emit: vi.fn(),
 		flushPendingToolResultsToHistory: vi.fn().mockResolvedValue(true),
 		retrySaveApiConversationHistory: vi.fn(),
+		linkLatestNewTaskMessage: vi.fn().mockResolvedValue(true),
 	}) as any
 
 describe("ClineProvider.delegateParentAndOpenChild()", () => {
-	it("persists parent delegation metadata via atomicReadAndUpdate and emits TaskDelegated", async () => {
+	it("persists serial subtask callback metadata via atomicReadAndUpdate and emits TaskDelegated", async () => {
 		const providerEmit = vi.fn()
 		const parentTask = makeParentTask()
 
@@ -88,15 +89,17 @@ describe("ClineProvider.delegateParentAndOpenChild()", () => {
 		const [calledTaskId, updater] = taskHistoryStore.atomicReadAndUpdate.mock.calls[0]
 		expect(calledTaskId).toBe("parent-1")
 
-		// The updater must produce the correct delegation fields
+		// The parent remains active; only the newest child receives callback authority.
 		const result = updater(parentHistoryItem)
 		expect(result).toMatchObject({
 			id: "parent-1",
-			status: "delegated",
-			delegatedToId: "child-1",
-			awaitingChildId: "child-1",
+			status: "active",
+			callbackSubtaskId: "child-1",
 			childIds: expect.arrayContaining(["child-1"]),
 		})
+		expect(result.awaitingChildId).toBeUndefined()
+		expect(result.delegatedToId).toBeUndefined()
+		expect(parentTask.linkLatestNewTaskMessage).toHaveBeenCalledWith("child-1")
 
 		// child.start() called AFTER parent metadata is persisted
 		expect(childStart).toHaveBeenCalledTimes(1)
@@ -213,7 +216,7 @@ describe("ClineProvider.delegateParentAndOpenChild()", () => {
 		expect(callOrder).toEqual(["createTask", "atomicReadAndUpdate", "child.start"])
 	})
 
-	it("implicitly severs interrupted awaited child and re-delegates when parent is already delegated", async () => {
+	it("replaces legacy callback metadata when creating a newer child", async () => {
 		const oldChildId = "old-child"
 		const oldChild = { id: oldChildId, status: "interrupted" } as unknown as HistoryItem
 		const alreadyDelegatedParent: HistoryItem = {
@@ -254,20 +257,21 @@ describe("ClineProvider.delegateParentAndOpenChild()", () => {
 			mode: "code",
 		})
 
-		// The updater must sever the old link and apply the new delegation
+		// The newest child replaces old callback authority without waiting on it.
 		const [, updater] = taskHistoryStore.atomicReadAndUpdate.mock.calls[0]
 		const result = updater(alreadyDelegatedParent)
 		expect(result).toMatchObject({
-			status: "delegated",
-			awaitingChildId: "child-2",
-			delegatedToId: "child-2",
+			status: "active",
+			callbackSubtaskId: "child-2",
 		})
+		expect(result.awaitingChildId).toBeUndefined()
+		expect(result.delegatedToId).toBeUndefined()
 		// Old child ID preserved in childIds (audit trail)
 		expect(result.childIds).toContain(oldChildId)
 		expect(result.childIds).toContain("child-2")
 	})
 
-	it("rejects with 'Cannot re-delegate' when the existing awaited child is still active", async () => {
+	it("replaces callback authority when the previous child is still active", async () => {
 		const oldChildId = "old-child"
 		const activeChild = { id: oldChildId, status: "active" } as unknown as HistoryItem
 		const alreadyDelegatedParent: HistoryItem = {
@@ -317,11 +321,10 @@ describe("ClineProvider.delegateParentAndOpenChild()", () => {
 				initialTodos: [],
 				mode: "code",
 			}),
-		).rejects.toThrow("Cannot re-delegate")
+		).resolves.toBe(child)
 
-		// Rollback: child must not have started, and must be cleaned up
-		expect(child.start).not.toHaveBeenCalled()
-		expect((provider as any).deleteTaskWithId).toHaveBeenCalledWith("child-2", false)
+		expect(child.start).toHaveBeenCalledTimes(1)
+		expect((provider as any).deleteTaskWithId).not.toHaveBeenCalled()
 	})
 
 	it("rolls back the paused child and restores the parent when atomicReadAndUpdate fails", async () => {
@@ -446,16 +449,17 @@ describe("ClineProvider.delegateParentAndOpenChild()", () => {
 		const result = updater(delegatedParent)
 		expect(result).toMatchObject({
 			id: "parent-1",
-			status: "delegated",
-			delegatedToId: "child-2",
-			awaitingChildId: "child-2",
+			status: "active",
+			callbackSubtaskId: "child-2",
 			childIds: expect.arrayContaining(["old-child", "child-2"]),
 		})
-		// The interrupted child remains unchanged; only the parent's pointer is repointed.
+		expect(result.awaitingChildId).toBeUndefined()
+		expect(result.delegatedToId).toBeUndefined()
+		// The interrupted child remains unchanged; only the callback authority is replaced.
 		expect(updateTaskHistory).not.toHaveBeenCalled()
 	})
 
-	it("throws when parent status cannot be delegated (e.g. completed)", async () => {
+	it("allows a completed task to continue by creating a new child", async () => {
 		const parentTask = makeParentTask()
 		const childStart = vi.fn()
 		const completedParent: HistoryItem = {
@@ -495,13 +499,13 @@ describe("ClineProvider.delegateParentAndOpenChild()", () => {
 		await expect(
 			(ClineProvider.prototype as any).delegateParentAndOpenChild.call(provider, {
 				parentTaskId: "parent-1",
-				message: "Nope",
+				message: "Continue",
 				initialTodos: [],
 				mode: "code",
 			}),
-		).rejects.toThrow(/invalid status "completed"/)
+		).resolves.toMatchObject({ taskId: "child-x" })
 
-		expect(childStart).not.toHaveBeenCalled()
+		expect(childStart).toHaveBeenCalledTimes(1)
 	})
 })
 

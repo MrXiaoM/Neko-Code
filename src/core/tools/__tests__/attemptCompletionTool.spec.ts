@@ -624,7 +624,7 @@ describe("attemptCompletionTool", () => {
 
 				expect(mockAskFinishSubTaskApproval).not.toHaveBeenCalled()
 				expect(mockProvider.reopenParentFromDelegation).not.toHaveBeenCalled()
-				expect(mockProvider.log).toHaveBeenCalledWith(expect.stringContaining("Skipping delegation"))
+				expect(mockProvider.log).toHaveBeenCalledWith(expect.stringContaining("Skipping callback"))
 				expect(mockTask.ask).toHaveBeenCalledWith("completion_result", "", false)
 				expect(mockCaptureTaskCompleted).toHaveBeenCalledWith("child-1")
 			})
@@ -723,7 +723,7 @@ describe("attemptCompletionTool", () => {
 
 				expect(mockAskFinishSubTaskApproval).not.toHaveBeenCalled()
 				expect(mockProvider.reopenParentFromDelegation).not.toHaveBeenCalled()
-				expect(mockProvider.log).toHaveBeenCalledWith(expect.stringContaining("Skipping delegation"))
+				expect(mockProvider.log).toHaveBeenCalledWith(expect.stringContaining("Skipping callback"))
 				expect(mockTask.ask).toHaveBeenCalledWith("completion_result", "", false)
 				expect(mockCaptureTaskCompleted).toHaveBeenCalledWith("child-1")
 			})

@@ -1111,6 +1111,35 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 		return this.saveClineMessages()
 	}
 
+	/**
+	 * Binds the most recent approved newTask chat row to the child it created.
+	 * This durable link lets the webview navigate by identity rather than by the
+	 * relative position of messages and childIds.
+	 */
+	public async linkLatestNewTaskMessage(childTaskId: string): Promise<boolean> {
+		for (let i = this.clineMessages.length - 1; i >= 0; i--) {
+			const message = this.clineMessages[i]
+			if (message.type !== "ask" || message.ask !== "tool" || message.subtaskId) {
+				continue
+			}
+
+			try {
+				const tool = JSON.parse(message.text ?? "{}") as { tool?: string }
+				if (tool.tool !== "newTask") {
+					continue
+				}
+			} catch {
+				continue
+			}
+
+			message.subtaskId = childTaskId
+			await this.updateClineMessage(message)
+			return this.saveClineMessages()
+		}
+
+		return false
+	}
+
 	private async saveClineMessages(): Promise<boolean> {
 		try {
 			await saveTaskMessages({
@@ -1494,6 +1523,15 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 	}
 
 	handleWebviewAskResponse(askResponse: ClineAskResponse, text?: string, images?: string[]) {
+		if (askResponse === "messageResponse") {
+			// A new user message takes over scheduling from any previously created child.
+			// Some narrow test and compatibility providers do not implement this optional capability.
+			const provider = this.providerRef.deref()
+			if (typeof provider?.clearSubtaskCallback === "function") {
+				void provider.clearSubtaskCallback(this.taskId)
+			}
+		}
+
 		// Clear any pending auto-approval timeout when user responds
 		this.cancelAutoApprovalTimeout()
 

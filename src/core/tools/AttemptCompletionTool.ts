@@ -102,11 +102,12 @@ export class AttemptCompletionTool extends BaseTool<"attempt_completion"> {
 						} else if (status === "active" || status === "interrupted") {
 							historyLookupTaskId = task.parentTaskId
 							const { historyItem: parentHistory } = await provider.getTaskWithId(task.parentTaskId)
-
-							if (
-								(parentHistory?.status === "delegated" || parentHistory?.status === "active") &&
+							const isCurrentCallback = parentHistory?.callbackSubtaskId === task.taskId
+							const isLegacyCallback =
+								parentHistory?.callbackSubtaskId === undefined &&
 								parentHistory?.awaitingChildId === task.taskId
-							) {
+
+							if (isCurrentCallback || isLegacyCallback) {
 								const delegation = await this.delegateToParent(
 									task,
 									result,
@@ -122,9 +123,9 @@ export class AttemptCompletionTool extends BaseTool<"attempt_completion"> {
 								// Parent already detached, such as when the user cancelled this child.
 								// Fall through to the normal completion ask flow.
 								const msg =
-									`[AttemptCompletionTool] Skipping delegation for child ${task.taskId}: ` +
-									`parent ${task.parentTaskId} is not awaiting this child. ` +
-									`Diagnostic: { childStatus: "${status}", parentStatus: "${parentHistory?.status}", awaitingChildId: "${parentHistory?.awaitingChildId}" }`
+									`[AttemptCompletionTool] Skipping callback for child ${task.taskId}: ` +
+									`parent ${task.parentTaskId} has not authorized this child to write back. ` +
+									`Diagnostic: { childStatus: "${status}", parentStatus: "${parentHistory?.status}", callbackSubtaskId: "${parentHistory?.callbackSubtaskId}" }`
 								provider.log(msg)
 								console.warn(msg)
 							}

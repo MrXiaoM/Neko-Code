@@ -79,11 +79,12 @@ describe("ChatRow - subtask links", () => {
 	})
 
 	describe("newTask tool", () => {
-		it("should display 'Go to subtask' link when currentTaskItem has childIds", () => {
+		it("should display 'Go to subtask' link from the message subtaskId", () => {
 			const message = {
 				ts: Date.now(),
 				type: "ask" as const,
 				ask: "tool" as const,
+				subtaskId: "child-task-123",
 				text: JSON.stringify({
 					tool: "newTask",
 					mode: "code",
@@ -91,10 +92,7 @@ describe("ChatRow - subtask links", () => {
 				}),
 			}
 
-			// childIds maps by index to newTask messages - first newTask gets childIds[0]
-			renderChatRow(message, {
-				childIds: ["child-task-123"],
-			})
+			renderChatRow(message)
 
 			const goToSubtaskButton = screen.getByText("Go to subtask")
 			expect(goToSubtaskButton).toBeInTheDocument()
@@ -107,7 +105,7 @@ describe("ChatRow - subtask links", () => {
 			})
 		})
 
-		it("should display 'Go to subtask' link using index-matched childId for multiple newTasks", () => {
+		it("does not infer a link from legacy childIds", () => {
 			const message = {
 				ts: Date.now(),
 				type: "ask" as const,
@@ -119,22 +117,9 @@ describe("ChatRow - subtask links", () => {
 				}),
 			}
 
-			// The implementation maps newTask messages to childIds by index
-			// Since this is the first (and only) newTask message, it gets childIds[0]
-			renderChatRow(message, {
-				childIds: ["first-child", "second-child"],
-			})
+			renderChatRow(message, { childIds: ["first-child", "second-child"] })
 
-			const goToSubtaskButton = screen.getByText("Go to subtask")
-			expect(goToSubtaskButton).toBeInTheDocument()
-
-			fireEvent.click(goToSubtaskButton)
-
-			// First newTask message maps to first childId
-			expect(mockPostMessage).toHaveBeenCalledWith({
-				type: "showTaskWithId",
-				text: "first-child",
-			})
+			expect(screen.queryByText("Go to subtask")).toBeNull()
 		})
 
 		it("should not display 'Go to subtask' link when no child task exists", () => {

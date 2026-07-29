@@ -282,6 +282,8 @@ export const clineMessageSchema = z.object({
 	 */
 	contextTruncation: contextTruncationSchema.optional(),
 	isProtected: z.boolean().optional(),
+	/** Child created by this approved newTask chat message, when applicable. */
+	subtaskId: z.string().optional(),
 	apiProtocol: z.union([z.literal("openai"), z.literal("anthropic")]).optional(),
 	isAnswered: z.boolean().optional(),
 	/**

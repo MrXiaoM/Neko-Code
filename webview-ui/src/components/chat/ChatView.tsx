@@ -459,22 +459,11 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 							setSendingDisabled(false)
 							setClineAsk("resume_task")
 							setEnableButtons(true)
-							// For completed subtasks, show "Start New Task" instead of "Resume"
-							// A subtask is considered completed if:
-							// - It has a parentTaskId AND
-							// - Its messages contain a completion_result (either ask or say)
-							const isCompletedSubtask =
-								currentTaskItem?.parentTaskId &&
-								messages.some(
-									(msg) => msg.ask === "completion_result" || msg.say === "completion_result",
-								)
-							if (isCompletedSubtask) {
-								setPrimaryButtonText(t("chat:startNewTask.title"))
-								setSecondaryButtonText(undefined)
-							} else {
-								setPrimaryButtonText(t("chat:resumeTask.title"))
-								setSecondaryButtonText(t("chat:terminate.title"))
-							}
+							// Every historical task, including completed subtasks, can continue
+							// from its own chat history. Completion only controls whether a result
+							// is eligible to call back to its parent, not whether it is resumable.
+							setPrimaryButtonText(t("chat:resumeTask.title"))
+							setSecondaryButtonText(t("chat:terminate.title"))
 							setDidClickCancel(false) // special case where we reset the cancel button state
 							break
 						case "resume_completed_task":
@@ -860,30 +849,19 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 					}
 					break
 				case "resume_task":
-					// For completed subtasks (tasks with a parentTaskId and a completion_result),
-					// start a new task instead of resuming since the subtask is done
-					const isCompletedSubtaskForClick =
-						currentTaskItem?.parentTaskId &&
-						messagesRef.current.some(
-							(msg) => msg.ask === "completion_result" || msg.say === "completion_result",
-						)
-					if (isCompletedSubtaskForClick) {
-						startNewTask()
+					// Only send text/images if they exist
+					if (trimmedInput || (images && images.length > 0)) {
+						vscode.postMessage({
+							type: "askResponse",
+							askResponse: "yesButtonClicked",
+							text: trimmedInput,
+							images: images,
+						})
+						// Clear input state after sending
+						setInputValue("")
+						setSelectedImages([])
 					} else {
-						// Only send text/images if they exist
-						if (trimmedInput || (images && images.length > 0)) {
-							vscode.postMessage({
-								type: "askResponse",
-								askResponse: "yesButtonClicked",
-								text: trimmedInput,
-								images: images,
-							})
-							// Clear input state after sending
-							setInputValue("")
-							setSelectedImages([])
-						} else {
-							vscode.postMessage({ type: "askResponse", askResponse: "yesButtonClicked" })
-						}
+						vscode.postMessage({ type: "askResponse", askResponse: "yesButtonClicked" })
 					}
 					break
 				case "completion_result":
@@ -900,7 +878,7 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 
 			clearApprovalButtons()
 		},
-		[clineAsk, startNewTask, currentTaskItem?.parentTaskId, clearApprovalButtons],
+		[clineAsk, startNewTask, clearApprovalButtons],
 	)
 
 	const handleSecondaryButtonClick = useCallback(

@@ -585,9 +585,12 @@ export class ClineProvider
 			await this.runDelegationTransition(parentTaskId, async () => {
 				const { historyItem: parentHistory } = await this.getTaskWithId(parentTaskId)
 
-				if (parentHistory?.status !== "delegated" || parentHistory?.awaitingChildId !== childTaskId) {
+				const isCurrentCallback = parentHistory?.callbackSubtaskId === childTaskId
+				const isLegacyCallback =
+					parentHistory?.callbackSubtaskId === undefined && parentHistory?.awaitingChildId === childTaskId
+				if (!isCurrentCallback && !isLegacyCallback) {
 					this.log(
-						`[markDelegatedChildInterrupted] Parent ${parentTaskId} no longer delegated to child ${childTaskId} — skipping`,
+						`[markDelegatedChildInterrupted] Parent ${parentTaskId} has not authorized child ${childTaskId} — skipping`,
 					)
 					return
 				}
@@ -2116,6 +2119,35 @@ export class ClineProvider
 		return { historyItem, aggregatedCosts }
 	}
 
+	/**
+	 * Revokes a parent's outstanding subtask callback when the user resumes
+	 * direct conversation with that parent. Viewing task history does not call
+	 * this method, so read-only navigation never discards a valid callback.
+	 */
+	public async clearSubtaskCallback(taskId: string): Promise<void> {
+		try {
+			await this.taskHistoryStore.atomicReadAndUpdate(taskId, (historyItem) => {
+				if (!historyItem.callbackSubtaskId) {
+					return historyItem
+				}
+				return { ...historyItem, callbackSubtaskId: undefined }
+			})
+			this.recentTasksCache = undefined
+			if (this.isViewLaunched) {
+				const updatedItem = this.taskHistoryStore.get(taskId)
+				if (updatedItem) {
+					await this.postMessageToWebview({ type: "taskHistoryItemUpdated", taskHistoryItem: updatedItem })
+				}
+			}
+		} catch (error) {
+			this.log(
+				`[clearSubtaskCallback] Failed to clear callback for ${taskId}: ${
+					error instanceof Error ? error.message : String(error)
+				}`,
+			)
+		}
+	}
+
 	async showTaskWithId(id: string) {
 		if (id !== this.getCurrentTask()?.taskId) {
 			// If the user navigates from a delegated child back to its parent,
@@ -3490,16 +3522,16 @@ export class ClineProvider
 				await this.runDelegationTransition(task.parentTaskId, async () => {
 					const { historyItem: parentHistory } = await this.getTaskWithId(task.parentTaskId!)
 
-					if (parentHistory?.status === "delegated" && parentHistory?.awaitingChildId === task.taskId) {
-						// Mark the child interrupted and leave parent delegated with awaitingChildId
-						// intact — the user can resume this child later and it will report back.
+					const isCurrentCallback = parentHistory?.callbackSubtaskId === task.taskId
+					const isLegacyCallback =
+						parentHistory?.callbackSubtaskId === undefined && parentHistory?.awaitingChildId === task.taskId
+					if (isCurrentCallback || isLegacyCallback) {
+						// Preserve the child itself as resumable without locking its parent.
 						historyItem = { ...historyItem!, status: "interrupted" }
 						await this.updateTaskHistory(historyItem)
-						// Clear any stale fail-closed entry from a prior failed cancel attempt so
-						// reopenParentFromDelegation is not incorrectly blocked on resume.
 						this.cancelledDelegationChildIds.delete(task.taskId)
 						this.log(
-							`[cancelTask] Marked child ${task.taskId} interrupted; parent ${task.parentTaskId} stays delegated`,
+							`[cancelTask] Marked child ${task.taskId} interrupted; parent ${task.parentTaskId} remains active`,
 						)
 					}
 				})
@@ -3796,61 +3828,26 @@ export class ClineProvider
 			startTask: false,
 		})
 
-		// 5) Persist parent delegation metadata BEFORE the child starts writing.
-		//    atomicReadAndUpdate reads from the in-memory cache and writes back within a
-		//    single lock acquisition — no concurrent writer can slip between the read and
-		//    write, and the pure updater cannot re-enter the lock (no deadlock).
-		//    Broadcast and cache invalidation happen outside the lock after it releases.
-		//
-		//    If the parent is already "delegated" to a previous interrupted child (the user
-		//    navigated back to the parent and continued working), we implicitly sever the old
-		//    link here (delegated → active → delegated) so no explicit Abandon step is needed.
-		//    The old awaited child's status is re-read INSIDE the updater (which runs
-		//    synchronously under the store lock) so a concurrent abandon or completion cannot
-		//    slip between the status snapshot and the write. An active child must never be
-		//    silently detached.
+		// 5) Persist the serial subtask relationship before the child starts writing.
+		//    A child is the sole active task, so its parent must remain active rather than
+		//    entering a waiting state. callbackSubtaskId is a narrow, one-shot authority
+		//    for the newest unfinished child to write its final result back to the parent.
 		try {
 			await this.taskHistoryStore.atomicReadAndUpdate(parentTaskId, (historyItem) => {
-				const currentStatus = historyItem.status ?? "active"
-				if (currentStatus !== "active" && currentStatus !== "delegated") {
-					throw new Error(
-						`Cannot delegate parent ${parentTaskId}: invalid status "${currentStatus}" (expected active or delegated)`,
-					)
-				}
-
-				let base = historyItem
-				if (historyItem.status === "delegated") {
-					// Re-read the awaited child's current status under the store lock.
-					const awaitedChildStatus = historyItem.awaitingChildId
-						? this.taskHistoryStore.get(historyItem.awaitingChildId)?.status
-						: undefined
-					// Only sever the stale link when the old child is confirmed interrupted.
-					// If it is still active, throw so the rollback path cleans up the new child
-					// rather than silently detaching a live task.
-					if (awaitedChildStatus !== "interrupted") {
-						throw new Error(
-							`[delegateParentAndOpenChild] Cannot re-delegate: existing child ${historyItem.awaitingChildId} is ${awaitedChildStatus}, not interrupted`,
-						)
-					}
-					// Implicit sever of the stale interrupted-child link.
-					// The old child keeps its interrupted status; we just clear the parent's pointer.
-					base = {
-						...historyItem,
-						status: "active" as const,
-						awaitingChildId: undefined,
-						delegatedToId: undefined,
-					}
-				}
-				assertValidTransition(base.status, "delegated")
-				const childIds = Array.from(new Set([...(base.childIds ?? []), child.taskId]))
+				const childIds = Array.from(new Set([...(historyItem.childIds ?? []), child.taskId]))
 				return {
-					...base,
-					status: "delegated" as const,
-					delegatedToId: child.taskId,
-					awaitingChildId: child.taskId,
+					...historyItem,
+					status: "active" as const,
+					awaitingChildId: undefined,
+					delegatedToId: undefined,
+					callbackSubtaskId: child.taskId,
 					childIds,
 				}
 			})
+
+			if (!(await parent.linkLatestNewTaskMessage(child.taskId))) {
+				throw new Error(`[delegateParentAndOpenChild] Could not bind newTask message to child ${child.taskId}`)
+			}
 			this.recentTasksCache = undefined
 
 			if (this.isViewLaunched) {
@@ -3865,6 +3862,19 @@ export class ClineProvider
 					(err as Error)?.message ?? String(err)
 				}`,
 			)
+			try {
+				await this.taskHistoryStore.atomicReadAndUpdate(parentTaskId, (historyItem) =>
+					historyItem.callbackSubtaskId === child.taskId
+						? { ...historyItem, callbackSubtaskId: undefined }
+						: historyItem,
+				)
+			} catch (cleanupError) {
+				this.log(
+					`[delegateParentAndOpenChild] Failed to clear callback for rolled-back child ${child.taskId}: ${
+						(cleanupError as Error)?.message ?? String(cleanupError)
+					}`,
+				)
+			}
 			try {
 				// Only pop the stack if the child we just created is still on top.
 				// A concurrent delegation could have pushed another child since we created ours.
@@ -3928,19 +3938,16 @@ export class ClineProvider
 			// 1) Load parent from history and current persisted messages
 			const { historyItem } = await this.getTaskWithId(parentTaskId)
 
-			// Guard: re-validate delegation state after the async approval gap.
-			// cancelTask() or removeClineFromStack() may have already detached the parent
-			// (setting status → "active", awaitingChildId → undefined) while the user was
-			// approving the subtask finish.  If the parent no longer awaits this child,
-			// routing output back would corrupt an unrelated task.
-			if (
-				this.cancelledDelegationChildIds.has(childTaskId) ||
-				(historyItem.status !== "delegated" && historyItem.status !== "active") ||
-				historyItem.awaitingChildId !== childTaskId
-			) {
+			// Guard: only the newest unfinished child may write its result back.
+			// awaitingChildId is read solely for one-time compatibility with histories
+			// written before callbackSubtaskId existed.
+			const isCurrentCallback = historyItem.callbackSubtaskId === childTaskId
+			const isLegacyCallback =
+				historyItem.callbackSubtaskId === undefined && historyItem.awaitingChildId === childTaskId
+			if (this.cancelledDelegationChildIds.has(childTaskId) || (!isCurrentCallback && !isLegacyCallback)) {
 				this.log(
-					`[reopenParentFromDelegation] Aborting: parent ${parentTaskId} is no longer delegated to child ${childTaskId} ` +
-						`(status=${historyItem.status}, awaitingChildId=${historyItem.awaitingChildId})`,
+					`[reopenParentFromDelegation] Aborting: parent ${parentTaskId} has not authorized child ${childTaskId} ` +
+						`to write back (callbackSubtaskId=${historyItem.callbackSubtaskId})`,
 				)
 				return false
 			}
@@ -4106,6 +4113,7 @@ export class ClineProvider
 						status: "active" as const,
 						completedByChildId: childTaskId,
 						completionResultSummary,
+						callbackSubtaskId: undefined,
 						awaitingChildId: undefined,
 						delegatedToId: undefined,
 						childIds,

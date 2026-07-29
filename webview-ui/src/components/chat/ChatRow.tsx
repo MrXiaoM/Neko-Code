@@ -915,25 +915,9 @@ export const ChatRowContent = ({
 						</>
 					)
 				case "newTask":
-					// Find all newTask messages to determine which child task ID corresponds to this message
-					const newTaskMessages = clineMessages.filter((msg) => {
-						if (msg.type === "ask" && msg.ask === "tool") {
-							const t = safeJsonParse<ClineSayTool>(msg.text)
-							return t?.tool === "newTask"
-						}
-						return false
-					})
-					const thisNewTaskIndex = newTaskMessages.findIndex((msg) => msg.ts === message.ts)
-					const childIds = currentTaskItem?.childIds || []
-
-					// Only get the child task ID if this newTask has been approved (has a corresponding entry in childIds)
-					// This prevents showing a link to a previous task when the current newTask is still awaiting approval
-					// Note: We don't use delegatedToId here because it persists after child tasks complete and would
-					// incorrectly point to the previous task when a new newTask is awaiting approval
-					const childTaskId =
-						thisNewTaskIndex >= 0 && thisNewTaskIndex < childIds.length
-							? childIds[thisNewTaskIndex]
-							: undefined
+					// The backend writes subtaskId only after the approved creation succeeds.
+					// Never infer a link from childIds: its order is not a stable message identity.
+					const childTaskId = message.subtaskId
 
 					// Check if the next message is a subtask_result - if so, don't show the button
 					// since the result is displayed right after this message
