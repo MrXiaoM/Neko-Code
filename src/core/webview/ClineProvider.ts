@@ -1873,7 +1873,7 @@ export class ClineProvider
 			.getProfile({ id: idOrName })
 			.catch(() => this.providerSettingsManager.getProfile({ name: idOrName }))
 		const { id: profileId, name, ...apiConfiguration } = profile
-		this.postMessageToWebview({
+		await this.postMessageToWebview({
 			type: "apiConfigForEdit",
 			apiConfigForEdit: { id: profileId ?? "", name: name ?? "", apiConfiguration, requestId },
 		})

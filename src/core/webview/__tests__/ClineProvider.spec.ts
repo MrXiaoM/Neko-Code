@@ -2587,7 +2587,7 @@ describe("webviewMessageHandler no-floating-promises coverage", () => {
 		await webviewMessageHandler(provider, { type: "deleteTaskWithId", text: "task-2" })
 		await webviewMessageHandler(provider, { type: "exportTaskWithId", text: "task-2" })
 
-		expect(task.handleTerminalOperation).toHaveBeenCalledWith("continue")
+		expect(task.handleTerminalOperation).toHaveBeenCalledWith("continue", undefined)
 		expect(provider.exportTaskWithId).toHaveBeenCalledTimes(2)
 		expect(provider.showTaskWithId).toHaveBeenCalledWith("task-2")
 		expect(provider.condenseTaskContext).toHaveBeenCalledWith("task-2")
