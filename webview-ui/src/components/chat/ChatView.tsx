@@ -631,7 +631,7 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 	}, [modifiedMessages, clineAsk, enableButtons, primaryButtonText])
 
 	const canStopTask = useMemo(() => {
-		if (!task || currentTaskItem?.status === "completed" || currentTaskItem?.status === "interrupted") {
+		if (!task) {
 			return false
 		}
 
@@ -656,7 +656,7 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 				primaryButtonText !== undefined)
 
 		return !isWaitingForUserInteraction
-	}, [task, currentTaskItem?.status, messages, clineAsk, enableButtons, primaryButtonText])
+	}, [task, messages, clineAsk, enableButtons, primaryButtonText])
 
 	const markFollowUpAsAnswered = useCallback(() => {
 		const lastFollowUpMessage = messagesRef.current.findLast((msg: ClineMessage) => msg.ask === "followup")

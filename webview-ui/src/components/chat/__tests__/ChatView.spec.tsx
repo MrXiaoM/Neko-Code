@@ -215,6 +215,8 @@ vi.mock("react-i18next", () => ({
 
 interface ChatTextAreaProps {
 	onSend: () => void
+	onStop?: () => void
+	canStopTask?: boolean
 	inputValue?: string
 	setInputValue?: (value: string) => void
 	sendingDisabled?: boolean
@@ -260,6 +262,11 @@ vi.mock("../ChatTextArea", () => {
 					}}
 					data-sending-disabled={props.sendingDisabled}
 				/>
+				{props.canStopTask && (
+					<button type="button" aria-label="Stop task" onClick={props.onStop}>
+						Stop task
+					</button>
+				)}
 			</div>
 		)
 	})
@@ -1170,6 +1177,50 @@ describe("ChatView - Message Queueing Tests", () => {
 			}),
 		)
 	})
+})
+
+describe("ChatView - Task Stop Availability", () => {
+	beforeEach(() => {
+		vi.clearAllMocks()
+	})
+
+	it.each([
+		["root task", { id: "root-task", status: "completed" }],
+		["subtask", { id: "child-task", parentTaskId: "root-task", status: "interrupted" }],
+	])(
+		"keeps the stop action available for a running %s after a provider stream failure",
+		async (_label, currentTaskItem) => {
+			const { getByRole } = renderChatView()
+
+			mockPostMessage({
+				currentTaskItem,
+				clineMessages: [
+					{
+						type: "say",
+						say: "task",
+						ts: Date.now() - 1000,
+						text: "Current task",
+					},
+					{
+						type: "say",
+						say: "api_req_started",
+						ts: Date.now(),
+						text: JSON.stringify({
+							apiProtocol: "openai",
+							cost: 0,
+							cancelReason: "streaming_failed",
+							streamingFailedMessage: "Provider stream terminated",
+						}),
+					},
+				],
+			})
+
+			const stopButton = await waitFor(() => getByRole("button", { name: "Stop task" }))
+			fireEvent.click(stopButton)
+
+			expect(vscode.postMessage).toHaveBeenCalledWith({ type: "cancelTask" })
+		},
+	)
 })
 
 describe("ChatView - Follow-up Suggestions", () => {
