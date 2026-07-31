@@ -1316,7 +1316,7 @@
 	},
 	"integrations/terminal/__tests__/TerminalRegistry.spec.ts": {
 		"@typescript-eslint/no-explicit-any": {
-			"count": 25
+			"count": 27
 		}
 	},
 	"integrations/terminal/__tests__/setupTerminalTests.ts": {

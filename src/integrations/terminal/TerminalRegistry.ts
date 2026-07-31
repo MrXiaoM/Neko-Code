@@ -68,17 +68,23 @@ export class TerminalRegistry {
 						// events for a previous execution on the same reused terminal must
 						// not overwrite the current command's stream.
 						const process = terminal.process
+
+						// Stale-event guard: ownExecution is assigned synchronously right after
+						// shellIntegration.executeCommand() succeeds (no await in between), so
+						// `ownExecution === undefined` means the current process has NOT yet
+						// submitted its command to VSCode. VSCode cannot fire a start event for
+						// a command that was never submitted — therefore any start event that
+						// arrives while ownExecution is still undefined necessarily belongs to
+						// the PREVIOUS command on this (possibly reused) terminal, and must be
+						// ignored. Previously this branch was treated as "could be ours" and
+						// allowed through, which let a stale start event from the prior command
+						// hijack the new process's stream during the shell-integration wait —
+						// the terminal looked "running" but the new command never executed.
 						const isOwnExecution =
-							!(process instanceof TerminalProcess) ||
-							// Allow undefined only when the process hasn't started yet (cold
-							// terminal: process is assigned but run() hasn't called executeCommand).
-							// Once isHot is true, ownExecution is always set — a stale start
-							// event on a reused terminal must match exactly.
-							(!process.isHot && process.ownExecution === undefined) ||
-							process.ownExecution === e.execution
+							!(process instanceof TerminalProcess) || process.ownExecution === e.execution
 						if (!isOwnExecution) {
 							console.info(
-								"[TerminalRegistry] Ignoring onDidStartTerminalShellExecution for a different execution",
+								"[TerminalRegistry] Ignoring onDidStartTerminalShellExecution for a different or unsubmitted execution",
 								{ terminalId: terminal.id },
 							)
 							return
@@ -148,6 +154,31 @@ export class TerminalRegistry {
 
 					if (terminal instanceof Terminal && terminal.activeShellExecution === e.execution) {
 						terminal.activeShellExecution = undefined
+					}
+
+					// Unsubmitted-command guard: ownExecution is assigned synchronously right
+					// after shellIntegration.executeCommand() succeeds (no await in between),
+					// so `ownExecution === undefined` means the current process has NOT yet
+					// submitted its command to VSCode. VSCode cannot fire an end event for a
+					// command that was never submitted — therefore any end event arriving
+					// while ownExecution is still undefined necessarily belongs to an earlier
+					// command on this (possibly reused) terminal.
+					//
+					// This is the exact race the bug report describes: command A finishes
+					// (shellExecutionComplete() clears terminal.process), command B starts
+					// (busy=true, but still waiting on shell integration / Git Bash preflight,
+					// so ownExecution is undefined). A's late end event then arrives. The
+					// isStaleExecution check below cannot catch it (B's ownExecution is
+					// undefined), and the `!terminal.running` branch further down would
+					// deliver A's completion signal to B's process — marking B complete
+					// before it ever executed, leaving the chat stuck on "running" while the
+					// terminal shows nothing.
+					if (process instanceof TerminalProcess && process.ownExecution === undefined) {
+						console.info(
+							"[TerminalRegistry] Ignoring onDidEndTerminalShellExecution for an unsubmitted command",
+							{ terminalId: terminal.id, exitCode: e.exitCode },
+						)
+						return
 					}
 
 					// Guard against a late end event for an execution that has already been

@@ -505,6 +505,58 @@ describe("TerminalRegistry", () => {
 				expect.objectContaining({ exitCode: 127 }),
 			)
 		})
+
+		it("ignores an end event for a not-yet-submitted command (stale-end race)", async () => {
+			const terminal = TerminalRegistry.createTerminal("/test/path", "vscode") as Terminal
+
+			// Command A completed and its process was cleared by shellExecutionComplete().
+			// Command B then started on the SAME reused terminal: busy=true, but it is
+			// still waiting on shell integration / Git Bash preflight, so ownExecution
+			// is undefined (the command has not been submitted to VSCode yet).
+			const processB = new TerminalProcess(terminal)
+			terminal.process = processB
+			terminal.busy = true
+			terminal.running = false
+			const emitSpy = vi.spyOn(processB, "emit")
+
+			// Command A's late end event finally arrives. It must NOT complete B.
+			const executionA = { commandLine: { value: "command A" } } as any
+			await endHandler({
+				terminal: terminal.terminal,
+				execution: executionA,
+				exitCode: 0,
+			})
+
+			expect(emitSpy).not.toHaveBeenCalled()
+			// B must still be live and waiting for its own execution.
+			expect(terminal.process).toBe(processB)
+			expect(terminal.busy).toBe(true)
+			expect(terminal.running).toBe(false)
+		})
+
+		it("ignores a start event for a not-yet-submitted command (stale-start race)", async () => {
+			const terminal = TerminalRegistry.createTerminal("/test/path", "vscode") as Terminal
+
+			// Command B is starting on a reused terminal but has not submitted its
+			// command to VSCode yet (ownExecution is undefined). A stale start event
+			// from command A arrives — it must not hijack B's stream.
+			const processB = new TerminalProcess(terminal)
+			terminal.process = processB
+			terminal.busy = true
+			const setStreamSpy = vi.spyOn(terminal, "setActiveStream")
+
+			const executionA = { commandLine: { value: "command A" }, read: vi.fn() } as any
+			await startHandler({
+				terminal: terminal.terminal,
+				execution: executionA,
+			})
+
+			// The stale event must be ignored: read() must not be called and the
+			// terminal's active stream must not be replaced.
+			expect(executionA.read).not.toHaveBeenCalled()
+			expect(setStreamSpy).not.toHaveBeenCalled()
+			expect(terminal.process).toBe(processB)
+		})
 	})
 
 	describe("releaseTerminalsForTask", () => {
