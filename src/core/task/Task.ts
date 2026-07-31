@@ -412,6 +412,8 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 	didToolFailInCurrentTurn = false
 	didCompleteReadingStream = false
 	private _started = false
+	private _runPromise: Promise<void> | undefined
+	private readonly _isHistoryTask: boolean
 	// No streaming parser is required.
 	assistantMessageParser?: undefined
 	private providerProfileChangeListener?: (config: { name: string; provider?: string }) => void
@@ -494,6 +496,7 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 			task: historyItem ? historyItem.task : task,
 			images: historyItem ? [] : images,
 		}
+		this._isHistoryTask = !!historyItem && !task && !images
 
 		// Normal use-case is usually retry similar history task with new workspace.
 		this.workspacePath = parentTask
@@ -1471,7 +1474,7 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 		try {
 			await pWaitFor(
 				() => {
-					if (this.askResponse !== undefined || this.lastMessageTs !== askTs) {
+					if (this.abort || this.askResponse !== undefined || this.lastMessageTs !== askTs) {
 						return true
 					}
 
@@ -1496,6 +1499,11 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 				await nekoRegistration
 				await nekoNotifierClient.removeApproval(nekoNotificationId)
 			}
+		}
+
+		/* v8 ignore next 3 -- abort-while-waiting path; covered by e2e standalone-resume test */
+		if (this.abort) {
+			throw new Error(`[ZooCode#ask] task ${this.taskId}.${this.instanceId} aborted`)
 		}
 
 		if (this.lastMessageTs !== askTs) {
@@ -2022,6 +2030,31 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 		}
 	}
 
+	/**
+	 * Like `start()`, but returns the underlying promise so callers (e.g.
+	 * `TaskScheduler`) can await task completion and gate concurrency.
+	 * Idempotent: subsequent calls return the same in-flight promise.
+	 */
+	public run(): Promise<void> {
+		if (this._runPromise !== undefined) {
+			return this._runPromise
+		}
+		if (this._started) {
+			// Already launched via constructor or start() — no promise to return.
+			return Promise.resolve()
+		}
+		this._started = true
+
+		const { task, images } = this.metadata
+
+		this._runPromise = this._isHistoryTask
+			? this.resumeTaskFromHistory()
+			: task || images
+				? this.startTask(task ?? undefined, images ?? undefined)
+				: Promise.resolve()
+		return this._runPromise
+	}
+
 	private async startTask(task?: string, images?: string[]): Promise<void> {
 		try {
 			// `conversationHistory` (for API) and `clineMessages` (for webview)
@@ -2156,7 +2189,11 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 			)
 
 			let askType: ClineAsk
-			if (lastClineMessage?.ask === "completion_result" || hasCompletionResult) {
+			if (
+				this.initialStatus === "completed" ||
+				lastClineMessage?.ask === "completion_result" ||
+				hasCompletionResult
+			) {
 				askType = "resume_completed_task"
 			} else {
 				askType = "resume_task"

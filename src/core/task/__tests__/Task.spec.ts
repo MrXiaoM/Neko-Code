@@ -26,6 +26,7 @@ import { MultiSearchReplaceDiffStrategy } from "../../diff/strategies/multi-sear
 import type { ApiMessage } from "../../task-persistence"
 
 type TaskTestAccess = {
+	lastMessageTs: number
 	getSystemPrompt: () => Promise<string>
 	startTask: (task?: string, images?: string[]) => Promise<void>
 	resumeTaskFromHistory: () => Promise<void>
