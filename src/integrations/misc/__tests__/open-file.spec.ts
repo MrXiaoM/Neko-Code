@@ -58,7 +58,7 @@ vi.mock("../../utils/path", () => {
 
 // Mock i18n
 vi.mock("../../i18n", () => ({
-	t: vi.fn((key: string, params?: any) => {
+	t: vi.fn((key: string, _params?: unknown) => {
 		// Return the key without namespace prefix to match actual behavior
 		if (key.startsWith("common:")) {
 			return key.replace("common:", "")
@@ -88,8 +88,8 @@ describe("openFile", () => {
 				mtime: 0,
 				size: 0,
 			})
-			vi.mocked(vscode.workspace.openTextDocument).mockResolvedValue(mockDocument as any)
-			vi.mocked(vscode.window.showTextDocument).mockResolvedValue({} as any)
+			vi.mocked(vscode.workspace.openTextDocument).mockResolvedValue(mockDocument as vscode.TextDocument)
+			vi.mocked(vscode.window.showTextDocument).mockResolvedValue({} as vscode.TextEditor)
 
 			await openFile(invalidPath)
 
@@ -114,8 +114,8 @@ describe("openFile", () => {
 				mtime: 0,
 				size: 0,
 			})
-			vi.mocked(vscode.workspace.openTextDocument).mockResolvedValue(mockDocument as any)
-			vi.mocked(vscode.window.showTextDocument).mockResolvedValue({} as any)
+			vi.mocked(vscode.workspace.openTextDocument).mockResolvedValue(mockDocument as vscode.TextDocument)
+			vi.mocked(vscode.window.showTextDocument).mockResolvedValue({} as vscode.TextEditor)
 
 			await openFile(encodedPath)
 
@@ -140,8 +140,8 @@ describe("openFile", () => {
 				mtime: 0,
 				size: 0,
 			})
-			vi.mocked(vscode.workspace.openTextDocument).mockResolvedValue(mockDocument as any)
-			vi.mocked(vscode.window.showTextDocument).mockResolvedValue({} as any)
+			vi.mocked(vscode.workspace.openTextDocument).mockResolvedValue(mockDocument as vscode.TextDocument)
+			vi.mocked(vscode.window.showTextDocument).mockResolvedValue({} as vscode.TextEditor)
 
 			await openFile(pathWithSpecialChars)
 
@@ -161,8 +161,8 @@ describe("openFile", () => {
 				mtime: 0,
 				size: 0,
 			})
-			vi.mocked(vscode.workspace.openTextDocument).mockResolvedValue(mockDocument as any)
-			vi.mocked(vscode.window.showTextDocument).mockResolvedValue({} as any)
+			vi.mocked(vscode.workspace.openTextDocument).mockResolvedValue(mockDocument as vscode.TextDocument)
+			vi.mocked(vscode.window.showTextDocument).mockResolvedValue({} as vscode.TextEditor)
 
 			await openFile(normalPath)
 
@@ -217,14 +217,31 @@ describe("openFile", () => {
 		})
 	})
 
+	describe("line selection", () => {
+		it("selects the requested inclusive line range", async () => {
+			vi.mocked(vscode.workspace.fs.stat).mockResolvedValue({
+				type: vscode.FileType.File,
+				ctime: 0,
+				mtime: 0,
+				size: 0,
+			})
+			vi.mocked(vscode.workspace.openTextDocument).mockResolvedValue({} as vscode.TextDocument)
+			vi.mocked(vscode.window.showTextDocument).mockResolvedValue({} as vscode.TextEditor)
+
+			await openFile("./src/example.ts", { line: 163, endLine: 165 })
+
+			expect(vscode.Selection).toHaveBeenCalledWith(162, 0, 164, 0)
+		})
+	})
+
 	describe("file creation", () => {
 		it("should create new files when create option is true", async () => {
 			const newFilePath = "./new/file.txt"
 			const content = "Hello, world!"
 
 			vi.mocked(vscode.workspace.fs.stat).mockRejectedValue(new Error("File not found"))
-			vi.mocked(vscode.workspace.openTextDocument).mockResolvedValue({} as any)
-			vi.mocked(vscode.window.showTextDocument).mockResolvedValue({} as any)
+			vi.mocked(vscode.workspace.openTextDocument).mockResolvedValue({} as vscode.TextDocument)
+			vi.mocked(vscode.window.showTextDocument).mockResolvedValue({} as vscode.TextEditor)
 
 			await openFile(newFilePath, { create: true, content })
 

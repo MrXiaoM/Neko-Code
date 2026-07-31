@@ -2984,6 +2984,7 @@ describe("Cline", () => {
 				text: "tool call",
 				partial: false,
 			})
+			getTaskTestAccess(task).lastMessageTs = task.clineMessages[0].ts
 
 			task.handleWebviewAskResponse("yesButtonClicked")
 			await flushMicrotasks()

@@ -1421,7 +1421,10 @@ export const webviewMessageHandler = async (
 			if (!path.isAbsolute(filePath)) {
 				filePath = path.join(getCurrentCwd(), filePath)
 			}
-			await openFile(filePath, message.values as { create?: boolean; content?: string; line?: number })
+			await openFile(
+				filePath,
+				message.values as { create?: boolean; content?: string; line?: number; endLine?: number },
+			)
 			break
 		case "readFileContent": {
 			const relPath = message.text || ""

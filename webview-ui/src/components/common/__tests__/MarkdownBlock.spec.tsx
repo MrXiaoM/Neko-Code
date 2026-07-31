@@ -1,5 +1,6 @@
-import { render, screen } from "@/utils/test-utils"
+import { fireEvent, render, screen } from "@/utils/test-utils"
 
+import { vscode } from "@src/utils/vscode"
 import MarkdownBlock from "../MarkdownBlock"
 
 vi.mock("@src/utils/vscode", () => ({
@@ -8,13 +9,65 @@ vi.mock("@src/utils/vscode", () => ({
 	},
 }))
 
-vi.mock("@src/context/ExtensionStateContext", () => ({
-	useExtensionState: () => ({
-		theme: "dark",
-	}),
-}))
-
 describe("MarkdownBlock", () => {
+	describe("workspace references", () => {
+		const filePath = "src/core/prompts/system.ts"
+
+		it("renders an indexed file path as a clickable inline code reference", () => {
+			render(<MarkdownBlock markdown={`Open \`${filePath}\`.`} workspaceFilePaths={[filePath]} />)
+
+			const link = screen.getByRole("link", { name: filePath })
+			expect(link).toHaveAttribute("href", filePath)
+			expect(link.querySelector("code")).toHaveTextContent(filePath)
+
+			fireEvent.click(link)
+			expect(vscode.postMessage).toHaveBeenCalledWith({
+				type: "openFile",
+				text: `./${filePath}`,
+				values: undefined,
+			})
+		})
+
+		it.each([
+			["163", 163, undefined],
+			["163:165", 163, 165],
+			["163-165", 163, 165],
+			["L163:L165", 163, 165],
+			["L163-L165", 163, 165],
+		])("supports the %s file location format", (location, line, endLine) => {
+			render(<MarkdownBlock markdown={`\`${filePath}:${location}\``} workspaceFilePaths={[filePath]} />)
+
+			fireEvent.click(screen.getByRole("link"))
+			expect(vscode.postMessage).toHaveBeenCalledWith({
+				type: "openFile",
+				text: `./${filePath}`,
+				values: { line, endLine },
+			})
+		})
+
+		it("links indexed directories without allowing a location suffix", () => {
+			const { container } = render(
+				<MarkdownBlock markdown="`src/core/` and `src/core/:163`" workspaceFilePaths={["src/core/"]} />,
+			)
+
+			expect(screen.getByRole("link", { name: "src/core/" })).toBeInTheDocument()
+			expect(container.querySelectorAll("a")).toHaveLength(1)
+		})
+
+		it("does not link non-workspace, traversal, or fenced-code paths", () => {
+			const { container } = render(
+				<MarkdownBlock
+					markdown={
+						"`missing.ts` `../src/core/prompts/system.ts`\n\n```text\nsrc/core/prompts/system.ts\n```"
+					}
+					workspaceFilePaths={[filePath]}
+				/>,
+			)
+
+			expect(container.querySelectorAll("a")).toHaveLength(0)
+		})
+	})
+
 	it("should correctly handle URLs with trailing punctuation", async () => {
 		const markdown = "Check out this link: https://example.com."
 		const { container } = render(<MarkdownBlock markdown={markdown} />)

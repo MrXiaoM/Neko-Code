@@ -4,10 +4,11 @@ import * as vscode from "vscode"
 import { arePathsEqual, getWorkspacePath } from "../../utils/path"
 import { t } from "../../i18n"
 
-interface OpenFileOptions {
+export interface OpenFileOptions {
 	create?: boolean
 	content?: string
 	line?: number
+	endLine?: number
 }
 
 export async function openFile(filePath: string, options: OpenFileOptions = {}) {
@@ -137,7 +138,12 @@ export async function openFile(filePath: string, options: OpenFileOptions = {}) 
 		const document = await vscode.workspace.openTextDocument(uriToProcess)
 		const selection =
 			options.line !== undefined
-				? new vscode.Selection(Math.max(options.line - 1, 0), 0, Math.max(options.line - 1, 0), 0)
+				? new vscode.Selection(
+						Math.max(options.line - 1, 0),
+						0,
+						Math.max((options.endLine ?? options.line) - 1, 0),
+						0,
+					)
 				: undefined
 		await vscode.window.showTextDocument(document, {
 			preview: false,

@@ -32,6 +32,63 @@ const ALERT_LABELS: Record<AlertType, string> = {
 
 interface MarkdownBlockProps {
 	markdown?: string
+	workspaceFilePaths?: string[]
+}
+
+interface WorkspaceReference {
+	path: string
+	line?: number
+	endLine?: number
+}
+
+const WORKSPACE_REFERENCE_PATTERN = /^(.+?):L?(\d+)(?:(?::L?|-L?)(\d+))?$/
+
+function normalizeWorkspacePath(path: string): string | undefined {
+	const normalizedPath = path.replaceAll("\\", "/").replace(/^\.\//, "").replace(/\/$/, "")
+
+	if (
+		!normalizedPath ||
+		normalizedPath.startsWith("/") ||
+		normalizedPath.startsWith("//") ||
+		normalizedPath.split("/").includes("..")
+	) {
+		return undefined
+	}
+
+	return normalizedPath
+}
+
+function parseWorkspaceReference(value: string, filePaths: string[]): WorkspaceReference | undefined {
+	const findWorkspacePath = (rawPath: string) => {
+		const normalizedPath = normalizeWorkspacePath(rawPath)
+		return normalizedPath
+			? filePaths.find((filePath) => normalizeWorkspacePath(filePath) === normalizedPath)
+			: undefined
+	}
+
+	const exactPath = findWorkspacePath(value)
+	if (exactPath) {
+		return { path: exactPath }
+	}
+
+	const match = value.match(WORKSPACE_REFERENCE_PATTERN)
+	if (!match) {
+		return undefined
+	}
+
+	const [, rawPath, rawLine, rawEndLine] = match
+	const matchedPath = findWorkspacePath(rawPath)
+	if (!matchedPath || matchedPath.endsWith("/") || matchedPath.endsWith("\\")) {
+		return undefined
+	}
+
+	const line = Number.parseInt(rawLine, 10)
+	const endLine = rawEndLine ? Number.parseInt(rawEndLine, 10) : undefined
+	if (line < 1 || (endLine !== undefined && (endLine < 1 || endLine < line))) {
+		return undefined
+	}
+
+	return { path: matchedPath, line, endLine }
 }
 
 const StyledMarkdown = styled.div`
@@ -273,7 +330,7 @@ const StyledMarkdown = styled.div`
 	}
 `
 
-const MarkdownBlock = memo(({ markdown }: MarkdownBlockProps) => {
+const MarkdownBlock = memo(({ markdown, workspaceFilePaths = [] }: MarkdownBlockProps) => {
 	const components = useMemo(
 		() => ({
 			table: ({ children, ...props }: any) => {
@@ -361,12 +418,37 @@ const MarkdownBlock = memo(({ markdown }: MarkdownBlockProps) => {
 					</div>
 				)
 			},
-			code: ({ children, className, ...props }: any) => {
-				// This handles inline code
+			code: ({ children, className, node: _node, ...props }: any) => {
+				const content =
+					typeof children === "string" ? children : Array.isArray(children) ? children.join("") : ""
+				const reference = !className ? parseWorkspaceReference(content, workspaceFilePaths) : undefined
+
+				if (!reference) {
+					return (
+						<code className={className} {...props}>
+							{children}
+						</code>
+					)
+				}
+
 				return (
-					<code className={className} {...props}>
-						{children}
-					</code>
+					<a
+						href={reference.path}
+						onClick={(event) => {
+							event.preventDefault()
+							vscode.postMessage({
+								type: "openFile",
+								text: `./${reference.path}`,
+								values:
+									reference.line === undefined
+										? undefined
+										: { line: reference.line, endLine: reference.endLine },
+							})
+						}}>
+						<code className={className} {...props}>
+							{children}
+						</code>
+					</a>
 				)
 			},
 			blockquote: ({ children, className, "data-alert-type": alertType, ..._rest }: any) => {
@@ -391,7 +473,7 @@ const MarkdownBlock = memo(({ markdown }: MarkdownBlockProps) => {
 				)
 			},
 		}),
-		[],
+		[workspaceFilePaths],
 	)
 
 	return (
