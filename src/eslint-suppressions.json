@@ -871,7 +871,7 @@
 	},
 	"core/task/__tests__/ask-queued-message-drain.spec.ts": {
 		"@typescript-eslint/no-explicit-any": {
-			"count": 28
+			"count": 25
 		}
 	},
 	"core/task/__tests__/flushPendingToolResultsToHistory.spec.ts": {

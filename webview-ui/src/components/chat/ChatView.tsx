@@ -428,13 +428,6 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 							setPrimaryButtonText(t("chat:runCommand.title"))
 							setSecondaryButtonText(t("chat:reject.title"))
 							break
-						case "command_output":
-							setSendingDisabled(false)
-							setClineAsk("command_output")
-							setEnableButtons(true)
-							setPrimaryButtonText(t("chat:proceedWhileRunning.title"))
-							setSecondaryButtonText(t("chat:killCommand.title"))
-							break
 						case "use_mcp_server":
 							setSendingDisabled(isPartial)
 							setClineAsk("use_mcp_server")
@@ -502,16 +495,6 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 						case "error":
 						case "text":
 						case "command_output":
-							// A non-partial command_output say means the command
-							// finished; clear any lingering Proceed/Kill controls
-							// from the interactive ask so they don't stay up after
-							// completion.
-							if (lastMessage.partial !== true && clineAskRef.current === "command_output") {
-								setClineAsk(undefined)
-								setEnableButtons(false)
-								setPrimaryButtonText(undefined)
-								setSecondaryButtonText(undefined)
-							}
 							break
 						case "mcp_server_request_started":
 						case "mcp_server_response":
@@ -645,15 +628,8 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 			return false
 		}
 
-		// Preserve the send action while the extension is explicitly waiting for a
-		// user decision or answer. command_output is different: the command still
-		// owns execution resources, so the task-level stop action must remain available.
 		const isWaitingForUserInteraction =
-			clineAsk === "followup" ||
-			(clineAsk !== undefined &&
-				clineAsk !== "command_output" &&
-				enableButtons &&
-				primaryButtonText !== undefined)
+			clineAsk === "followup" || (clineAsk !== undefined && enableButtons && primaryButtonText !== undefined)
 
 		return !isWaitingForUserInteraction
 	}, [task, messages, clineAsk, enableButtons, primaryButtonText])
@@ -706,13 +682,7 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 				// - Task is busy (sendingDisabled)
 				// - API request in progress (isStreaming)
 				// - Queue has items (preserve message order during drain)
-				// - Command is running (command_output) - user's message should be queued for AI, not sent to terminal
-				if (
-					sendingDisabled ||
-					isStreaming ||
-					messageQueue.length > 0 ||
-					clineAskRef.current === "command_output"
-				) {
+				if (sendingDisabled || isStreaming || messageQueue.length > 0) {
 					try {
 						console.log("queueMessage", text, images)
 						vscode.postMessage({ type: "queueMessage", text, images })
@@ -882,9 +852,6 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 					// Waiting for feedback, but we can just present a new task button
 					startNewTask()
 					break
-				case "command_output":
-					vscode.postMessage({ type: "terminalOperation", terminalOperation: "continue" })
-					break
 			}
 
 			clearApprovalButtons()
@@ -929,9 +896,6 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 						// Responds to the API with a "This operation failed" and lets it try again
 						vscode.postMessage({ type: "askResponse", askResponse: "noButtonClicked" })
 					}
-					break
-				case "command_output":
-					vscode.postMessage({ type: "terminalOperation", terminalOperation: "abort" })
 					break
 			}
 			clearApprovalButtons()
@@ -1641,15 +1605,6 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 	useImperativeHandle(ref, () => ({
 		acceptInput: () => {
 			const hasInput = inputValue.trim() || selectedImages.length > 0
-
-			// Special case: during command_output, queue the message instead of
-			// triggering the primary button action (which would lose the message)
-			if (clineAskRef.current === "command_output" && hasInput) {
-				vscode.postMessage({ type: "queueMessage", text: inputValue.trim(), images: selectedImages })
-				setInputValue("")
-				setSelectedImages([])
-				return
-			}
 
 			if (enableButtons && primaryButtonText) {
 				handlePrimaryButtonClick(inputValue, selectedImages)

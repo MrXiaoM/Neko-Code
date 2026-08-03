@@ -11,6 +11,10 @@ async function buildTask() {
 	;(task as any).askResponseText = undefined
 	;(task as any).askResponseImages = undefined
 	;(task as any).lastMessageTs = undefined
+	Object.defineProperty(task, "backgroundSystemEvents", { value: [], writable: true })
+	Object.defineProperty(task, "taskLoopActive", { value: false, writable: true })
+	Object.defineProperty(task, "backgroundEventContinuation", { value: undefined, writable: true })
+	Object.defineProperty(task, "abandoned", { value: false, writable: true })
 
 	const { MessageQueueService } = await import("../../message-queue/MessageQueueService")
 	;(task as any).messageQueueService = new MessageQueueService()
@@ -40,24 +44,6 @@ describe("Task.ask queued message drain", () => {
 		expect(result.response).toBe("messageResponse")
 		expect(result.text).toBe("picked answer")
 		expect((task as any).messageQueueService.isEmpty()).toBe(true)
-	})
-
-	it("does not consume queued messages for command_output asks", async () => {
-		const task = await buildTask()
-
-		const askPromise = task.ask("command_output", "command is still running...", false)
-		;(task as any).messageQueueService.addMessage("1+1=?")
-
-		setTimeout(() => {
-			task.approveAsk()
-		}, 0)
-
-		const result = await askPromise
-
-		expect(result.response).toBe("yesButtonClicked")
-		expect(result.text).toBeUndefined()
-		expect((task as any).messageQueueService.isEmpty()).toBe(false)
-		expect((task as any).messageQueueService.messages[0]?.text).toBe("1+1=?")
 	})
 
 	it("does not auto-approve command asks from queued messages", async () => {
@@ -116,5 +102,50 @@ describe("Task.ask queued message drain", () => {
 		expect(result.response).toBe("noButtonClicked")
 		expect((task as any).messageQueueService.isEmpty()).toBe(false)
 		expect((task as any).messageQueueService.messages[0]?.text).toBe("queued during mcp approval")
+	})
+})
+
+describe("Task 后台命令完成事件", () => {
+	it("任务空闲时只启动一个包含最终命令结果的续跑回合", async () => {
+		const task = await buildTask()
+		const initiateTaskLoop = vi.fn(async () => {})
+		Object.defineProperty(task, "initiateTaskLoop", { value: initiateTaskLoop, writable: true })
+		Object.defineProperty(task, "taskId", { value: "task-id", writable: true })
+		Object.defineProperty(task, "instanceId", { value: "instance-id", writable: true })
+
+		task.enqueueBackgroundCommandCompletion("退出码：0\n输出：BUILD SUCCESSFUL")
+		task.enqueueBackgroundCommandCompletion("退出码：1\n输出：second command")
+
+		await vi.waitFor(() => expect(initiateTaskLoop).toHaveBeenCalledTimes(1))
+		expect(initiateTaskLoop).toHaveBeenCalledWith([
+			{
+				type: "text",
+				text: "<background_command_completion>\n退出码：0\n输出：BUILD SUCCESSFUL\n</background_command_completion>",
+			},
+			{
+				type: "text",
+				text: "<background_command_completion>\n退出码：1\n输出：second command\n</background_command_completion>",
+			},
+		])
+	})
+
+	it("任务活跃时在安全边界消费事件而不并发启动回合", async () => {
+		const task = await buildTask()
+		Object.defineProperty(task, "taskLoopActive", { value: true, writable: true })
+		Object.defineProperty(task, "backgroundSystemEvents", { value: [], writable: true })
+		Object.defineProperty(task, "userMessageContent", { value: [], writable: true })
+		const initiateTaskLoop = vi.fn(async () => {})
+		Object.defineProperty(task, "initiateTaskLoop", { value: initiateTaskLoop, writable: true })
+
+		task.enqueueBackgroundCommandCompletion("退出码：0\n输出：active command")
+		Reflect.apply(Object.getOwnPropertyDescriptor(Task.prototype, "consumeBackgroundSystemEvents")!.value, task, [])
+
+		expect(initiateTaskLoop).not.toHaveBeenCalled()
+		expect(Object.getOwnPropertyDescriptor(task, "userMessageContent")!.value).toEqual([
+			{
+				type: "text",
+				text: "<background_command_completion>\n退出码：0\n输出：active command\n</background_command_completion>",
+			},
+		])
 	})
 })

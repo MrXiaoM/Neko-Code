@@ -411,6 +411,9 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 	didAlreadyUseTool = false
 	didToolFailInCurrentTurn = false
 	didCompleteReadingStream = false
+	private backgroundSystemEvents: string[] = []
+	private taskLoopActive = false
+	private backgroundEventContinuation: Promise<void> | undefined
 	private _started = false
 	private _runPromise: Promise<void> | undefined
 	private readonly _isHistoryTask: boolean
@@ -1365,11 +1368,10 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 		const isBlocking = !(this.askResponse !== undefined || this.lastMessageTs !== askTs)
 		const isMessageQueued = !this.messageQueueService.isEmpty()
 		// Queued user messages must never implicitly approve dangerous operations.
-		// Keep them intact during command/tool/mcp approval asks and terminal
-		// flow-control (command_output). Drain only for conversational asks
-		// (e.g. followup) so the task does not hang on an unanswered prompt.
-		const shouldDrainQueuedMessageForAsk =
-			type !== "command" && type !== "command_output" && type !== "tool" && type !== "use_mcp_server"
+		// Keep them intact during command/tool/mcp approval asks. Drain only for
+		// conversational asks (e.g. followup) so the task does not hang on an
+		// unanswered prompt.
+		const shouldDrainQueuedMessageForAsk = type !== "command" && type !== "tool" && type !== "use_mcp_server"
 		const isStatusMutable = !partial && isBlocking && !isMessageQueued && approval.decision === "ask"
 
 		if (isStatusMutable) {
@@ -1507,9 +1509,6 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 		}
 
 		if (this.lastMessageTs !== askTs) {
-			// Could happen if we send multiple asks in a row i.e. with
-			// command_output. It's important that when we know an ask could
-			// fail, it is handled gracefully.
 			throw new AskIgnoredError("superseded")
 		}
 
@@ -2644,42 +2643,97 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 
 	// Task Loop
 
+	/**
+	 * Records a terminal completion that happened after its original native tool result
+	 * was returned. The completion is delivered in a later system turn, never as a
+	 * second tool_result for the original tool_use_id.
+	 */
+	public enqueueBackgroundCommandCompletion(text: string): void {
+		if (this.abort || this.abandoned) {
+			return
+		}
+
+		this.backgroundSystemEvents.push(text)
+
+		const activeAsk = this.lastMessageTs === undefined ? undefined : this.findMessageByTimestamp(this.lastMessageTs)
+		if (activeAsk?.type === "ask" && activeAsk.ask === "completion_result") {
+			// A completion claim must be reconsidered when a background command finishes.
+			// The attempt_completion tool turns this supersession into its own single result.
+			this.supersedePendingAsk()
+		}
+
+		this.scheduleBackgroundEventContinuation()
+	}
+
+	private consumeBackgroundSystemEvents(): void {
+		const events = this.backgroundSystemEvents.splice(0)
+		for (const event of events) {
+			this.userMessageContent.push({
+				type: "text",
+				text: `<background_command_completion>\n${event}\n</background_command_completion>`,
+			})
+		}
+	}
+
+	private scheduleBackgroundEventContinuation(): void {
+		if (this.taskLoopActive || this.backgroundEventContinuation || this.abort || this.abandoned) {
+			return
+		}
+
+		this.backgroundEventContinuation = Promise.resolve()
+			.then(async () => {
+				if (this.taskLoopActive || this.abort || this.abandoned || this.backgroundSystemEvents.length === 0) {
+					return
+				}
+
+				const events = this.backgroundSystemEvents.splice(0).map((event) => ({
+					type: "text" as const,
+					text: `<background_command_completion>\n${event}\n</background_command_completion>`,
+				}))
+				await this.initiateTaskLoop(events)
+			})
+			.catch((error) => {
+				console.error(
+					`[Task#backgroundCommandCompletion] task ${this.taskId}.${this.instanceId} failed:`,
+					error,
+				)
+			})
+			.finally(() => {
+				this.backgroundEventContinuation = undefined
+				if (this.backgroundSystemEvents.length > 0) {
+					this.scheduleBackgroundEventContinuation()
+				}
+			})
+	}
+
 	private async initiateTaskLoop(userContent: Anthropic.Messages.ContentBlockParam[]): Promise<void> {
-		// Kicks off the checkpoints initialization process in the background.
-		// `getCheckpointService` wraps its full body in a try/catch and returns
-		// `undefined` on failure (see src/core/checkpoints/index.ts), so the
-		// returned promise cannot reject. `void` is sufficient — no `.catch`
-		// arm needed.
-		void getCheckpointService(this)
+		this.taskLoopActive = true
+		try {
+			// Kicks off the checkpoints initialization process in the background.
+			// `getCheckpointService` wraps its full body in a try/catch and returns
+			// `undefined` on failure (see src/core/checkpoints/index.ts), so the
+			// returned promise cannot reject. `void` is sufficient — no `.catch`
+			// arm needed.
+			void getCheckpointService(this)
 
-		let nextUserContent = userContent
-		let includeFileDetails = true
+			let nextUserContent = userContent
+			let includeFileDetails = true
 
-		this.emit(RooCodeEventName.TaskStarted)
+			this.emit(RooCodeEventName.TaskStarted)
 
-		while (!this.abort) {
-			const didEndLoop = await this.recursivelyMakeClineRequests(nextUserContent, includeFileDetails)
-			includeFileDetails = false // We only need file details the first time.
+			while (!this.abort) {
+				const didEndLoop = await this.recursivelyMakeClineRequests(nextUserContent, includeFileDetails)
+				includeFileDetails = false // We only need file details the first time.
 
-			// The way this agentic loop works is that cline will be given a
-			// task that he then calls tools to complete. Unless there's an
-			// attempt_completion call, we keep responding back to him with his
-			// tool's responses until he either attempt_completion or does not
-			// use anymore tools. If he does not use anymore tools, we ask him
-			// to consider if he's completed the task and then call
-			// attempt_completion, otherwise proceed with completing the task.
-			// There is a MAX_REQUESTS_PER_TASK limit to prevent infinite
-			// requests, but Cline is prompted to finish the task as efficiently
-			// as he can.
-
-			if (didEndLoop) {
-				// For now a task never 'completes'. This will only happen if
-				// the user hits max requests and denies resetting the count.
-				break
-			} else {
-				// Pass 1 as the failed count since this is the first reminder in the outer loop
-				nextUserContent = [{ type: "text", text: formatResponse.noToolsUsed(1) }]
+				if (didEndLoop) {
+					break
+				} else {
+					nextUserContent = [{ type: "text", text: formatResponse.noToolsUsed(1) }]
+				}
 			}
+		} finally {
+			this.taskLoopActive = false
+			this.scheduleBackgroundEventContinuation()
 		}
 	}
 
@@ -3798,9 +3852,10 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 						)
 					}
 
-					// Drain messages queued while tools/streaming ran into this next-turn
-					// user content. Without this, queued text only surfaces on a later
-					// conversational ask (e.g. completion_result) and feels "stuck".
+					// Drain system events and user messages queued while tools/streaming ran into
+					// this next-turn content. Background command completions are intentionally
+					// system events, not synthetic user feedback or duplicate tool results.
+					this.consumeBackgroundSystemEvents()
 					await this.consumeQueuedMessagesForNextTurn()
 
 					// If the model did not tool use, then we need to tell it to
@@ -4987,7 +5042,7 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 	 * messageResponse is treated as reject for tool/command/mcp approvals.
 	 */
 	private isDangerousApprovalAsk(ask: ClineAsk | undefined): boolean {
-		return ask === "tool" || ask === "command" || ask === "use_mcp_server" || ask === "command_output"
+		return ask === "tool" || ask === "command" || ask === "use_mcp_server"
 	}
 
 	/**

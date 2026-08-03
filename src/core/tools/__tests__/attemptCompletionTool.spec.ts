@@ -40,6 +40,7 @@ vi.mock("../../../shared/package", () => ({
 
 import { attemptCompletionTool, AttemptCompletionCallbacks } from "../AttemptCompletionTool"
 import { Task } from "../../task/Task"
+import { AskIgnoredError } from "../../task/AskIgnoredError"
 import { AskApproval, HandleError, PushToolResult } from "../../../shared/tools"
 import * as vscode from "vscode"
 
@@ -794,6 +795,32 @@ describe("attemptCompletionTool", () => {
 				)
 				expect(mockPushToolResult).toHaveBeenCalledWith(expect.stringContaining("<user_message>"))
 			})
+		})
+
+		it("returns a single reconsideration result when a background command supersedes completion", async () => {
+			const block: AttemptCompletionToolUse = {
+				type: "tool_use",
+				name: "attempt_completion",
+				params: { result: "2" },
+				nativeArgs: { result: "2" },
+				partial: false,
+			}
+			mockTask.ask = vi.fn().mockRejectedValue(new AskIgnoredError("superseded"))
+
+			const callbacks: AttemptCompletionCallbacks = {
+				askApproval: mockAskApproval,
+				handleError: mockHandleError,
+				pushToolResult: mockPushToolResult,
+				askFinishSubTaskApproval: mockAskFinishSubTaskApproval,
+				toolDescription: mockToolDescription,
+			}
+
+			await attemptCompletionTool.handle(mockTask as Task, block, callbacks)
+
+			expect(mockHandleError).not.toHaveBeenCalled()
+			expect(mockCaptureTaskCompleted).not.toHaveBeenCalled()
+			expect(mockPushToolResult).toHaveBeenCalledTimes(1)
+			expect(mockPushToolResult).toHaveBeenCalledWith(expect.stringContaining("后台终端命令结束"))
 		})
 	})
 })

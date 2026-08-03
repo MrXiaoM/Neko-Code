@@ -4,6 +4,7 @@ import { RooCodeEventName, type HistoryItem } from "@roo-code/types"
 import { TelemetryService } from "@roo-code/telemetry"
 
 import { Task } from "../task/Task"
+import { AskIgnoredError } from "../task/AskIgnoredError"
 import { formatResponse } from "../prompts/responses"
 import { Package } from "../../shared/package"
 import type { ToolUse } from "../../shared/tools"
@@ -165,6 +166,14 @@ export class AttemptCompletionTool extends BaseTool<"attempt_completion"> {
 			const feedbackText = `<user_message>\n${text}\n</user_message>`
 			pushToolResult(formatResponse.toolResult(feedbackText, images))
 		} catch (error) {
+			if (error instanceof AskIgnoredError) {
+				pushToolResult(
+					formatResponse.toolResult(
+						"任务完成确认已因后台终端命令结束而取消；请根据即将送达的最终命令结果继续处理。",
+					),
+				)
+				return
+			}
 			await handleError("inspecting site", error as Error)
 		}
 	}
