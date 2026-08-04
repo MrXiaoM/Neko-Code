@@ -204,6 +204,7 @@ describe("Nested delegation resume (A → B → C)", () => {
 			userMessageContent: [],
 			consecutiveMistakeCount: 0,
 			emitFinalTokenUsageUpdate: vi.fn(),
+			flushTelemetryInstallment: vi.fn(),
 		} as unknown as Task
 
 		const blockC = {
@@ -252,6 +253,7 @@ describe("Nested delegation resume (A → B → C)", () => {
 			userMessageContent: [],
 			consecutiveMistakeCount: 0,
 			emitFinalTokenUsageUpdate: vi.fn(),
+			flushTelemetryInstallment: vi.fn(),
 		} as unknown as Task
 
 		const blockB = {

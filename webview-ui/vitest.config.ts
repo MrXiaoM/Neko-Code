@@ -5,6 +5,7 @@ import { resolveVerbosity } from "../src/utils/vitest-verbosity"
 
 const { silent, reporters, onConsoleLog } = resolveVerbosity()
 const isCI = process.env.CI === "true"
+const shouldUseSingleWorker = isCI || process.platform === "win32"
 
 export default defineConfig({
 	plugins: [react()],
@@ -17,8 +18,8 @@ export default defineConfig({
 		environment: "jsdom",
 		include: ["src/**/*.spec.{ts,tsx}", "src/**/*.test.{ts,tsx}"],
 		onConsoleLog,
-		maxWorkers: isCI ? 1 : undefined,
-		testTimeout: isCI ? 15000 : 5000,
+		maxWorkers: shouldUseSingleWorker ? 1 : undefined,
+		testTimeout: shouldUseSingleWorker ? 15000 : 5000,
 		server: {
 			deps: {
 				inline: ["@radix-ui/react-slot"],
