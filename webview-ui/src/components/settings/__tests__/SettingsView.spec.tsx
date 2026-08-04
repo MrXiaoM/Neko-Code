@@ -14,12 +14,16 @@ vi.mock("@src/utils/vscode", () => ({ vscode: { postMessage: vi.fn() } }))
 
 vi.mock("../ApiConfigManager", () => ({
 	__esModule: true,
-	default: ({ currentApiConfigName, onSelectConfig }: any) => {
+	default: ({ currentApiConfigName, onSelectConfig, onUpsertConfig, currentApiConfigId }: any) => {
 		return (
 			<div data-testid="api-config-management">
 				<span>Current config: {currentApiConfigName}</span>
+				<span data-testid="current-config-id">{currentApiConfigId}</span>
 				<button data-testid="switch-config-btn" onClick={() => onSelectConfig?.("other-profile-id")}>
 					Switch
+				</button>
+				<button data-testid="create-config-btn" onClick={() => onUpsertConfig?.("new-profile")}>
+					Create
 				</button>
 			</div>
 		)
@@ -1156,5 +1160,45 @@ describe("SettingsView - profile isolation", () => {
 		const afterLastDisplay = afterDisplays[afterDisplays.length - 1]
 		expect(afterLastDisplay.textContent).toContain("default")
 		expect(afterLastDisplay.textContent).not.toContain("chat-switched-profile")
+	})
+
+	it("selects a newly created profile in settings without activating it in chat", async () => {
+		renderSettingsView({
+			currentApiConfigId: "default-id",
+			currentApiConfigName: "default",
+			listApiConfigMeta: [{ id: "default-id", name: "default" }],
+		})
+
+		fireEvent.click(screen.getByTestId("tab-providers"))
+		fireEvent.click(screen.getByTestId("create-config-btn"))
+
+		expect(vscode.postMessage).toHaveBeenCalledWith(
+			expect.objectContaining({
+				type: "upsertApiConfiguration",
+				text: "new-profile",
+				values: { activate: false },
+			}),
+		)
+		expect(vscode.postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: "loadApiConfiguration" }))
+
+		act(() => {
+			window.postMessage(
+				{
+					type: "state",
+					state: {
+						currentApiConfigName: "default",
+						listApiConfigMeta: [
+							{ id: "default-id", name: "default" },
+							{ id: "new-profile-id", name: "new-profile" },
+						],
+					},
+				},
+				"*",
+			)
+		})
+
+		await waitFor(() => expect(screen.getByTestId("current-config-id")).toHaveTextContent("new-profile-id"))
+		expect(screen.getByTestId("api-config-management")).toHaveTextContent("new-profile")
+		expect(vscode.postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: "currentApiConfigName" }))
 	})
 })

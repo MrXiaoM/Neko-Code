@@ -169,6 +169,7 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 	const [editingProfileId, setEditingProfileId] = useState(initialEditingProfileId)
 	const [editingProfileName, setEditingProfileName] = useState(currentApiConfigName)
 	const editRequestId = useRef<string>()
+	const pendingCreatedProfileName = useRef<string>()
 	const isEditingActiveProfile = !editingProfileId || editingProfileId === resolvedCurrentApiConfigId
 
 	const {
@@ -257,6 +258,25 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 		setEditingProfileId(resolvedCurrentApiConfigId)
 		setEditingProfileName(currentApiConfigName)
 	}, [currentApiConfigName, editingProfileId, resolvedCurrentApiConfigId])
+
+	useEffect(() => {
+		const createdProfileName = pendingCreatedProfileName.current
+		if (!createdProfileName) {
+			return
+		}
+
+		const createdProfile = listApiConfigMeta?.find((entry) => entry.name === createdProfileName)
+		if (!createdProfile) {
+			return
+		}
+
+		pendingCreatedProfileName.current = undefined
+		const requestId = crypto.randomUUID()
+		editRequestId.current = requestId
+		setEditingProfileId(createdProfile.id)
+		setEditingProfileName(createdProfile.name)
+		vscode.postMessage({ type: "loadApiConfigForEdit", text: createdProfile.id, requestId })
+	}, [listApiConfigMeta])
 
 	useEffect(() => {
 		const activeProfileId = resolvedCurrentApiConfigId
@@ -913,13 +933,15 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 											})
 											setEditingProfileName(newName)
 										}}
-										onUpsertConfig={(configName: string) =>
+										onUpsertConfig={(configName: string) => {
+											pendingCreatedProfileName.current = configName
 											vscode.postMessage({
 												type: "upsertApiConfiguration",
 												text: configName,
 												apiConfiguration,
+												values: { activate: false },
 											})
-										}
+										}}
 										onReorderConfigs={(ids: string[]) =>
 											vscode.postMessage({ type: "reorderApiConfigurations", values: { ids } })
 										}

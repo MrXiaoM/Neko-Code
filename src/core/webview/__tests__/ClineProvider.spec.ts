@@ -2366,12 +2366,13 @@ describe("ClineProvider", () => {
 			expect(vscode.window.showErrorMessage).toHaveBeenCalledWith("errors.create_api_config")
 		})
 
-		test("handles successful upsertApiConfiguration", async () => {
+		test("handles successful non-activating upsertApiConfiguration", async () => {
 			await provider.resolveWebviewView(mockWebviewView)
 			const messageHandler = (mockWebviewView.webview.onDidReceiveMessage as any).mock.calls[0][0]
 
+			const setModeConfig = vi.fn()
 			;(provider as any).providerSettingsManager = {
-				setModeConfig: vi.fn(),
+				setModeConfig,
 				saveConfig: vi.fn().mockResolvedValue(undefined),
 				listConfig: vi
 					.fn()
@@ -2383,21 +2384,23 @@ describe("ClineProvider", () => {
 				apiKey: "test-key",
 			}
 
-			// Trigger upsertApiConfiguration
+			// Trigger an isolated settings-page upsert.
 			await messageHandler({
 				type: "upsertApiConfiguration",
 				text: "test-config",
 				apiConfiguration: testApiConfig,
+				values: { activate: false },
 			})
 
 			// Verify config was saved
 			expect(provider.providerSettingsManager.saveConfig).toHaveBeenCalledWith("test-config", testApiConfig)
 
-			// Verify state updates
+			// Non-activating upserts refresh only the profile list.
 			expect(mockContext.globalState.update).toHaveBeenCalledWith("listApiConfigMeta", [
 				{ name: "test-config", id: "test-id", apiProvider: "anthropic" },
 			])
-			expect(mockContext.globalState.update).toHaveBeenCalledWith("currentApiConfigName", "test-config")
+			expect(mockContext.globalState.update).not.toHaveBeenCalledWith("currentApiConfigName", "test-config")
+			expect(setModeConfig).not.toHaveBeenCalled()
 
 			// Verify state was posted to webview
 			expect(mockPostMessage).toHaveBeenCalledWith(expect.objectContaining({ type: "state" }))
@@ -2430,7 +2433,7 @@ describe("ClineProvider", () => {
 				apiKey: "test-key",
 			}
 
-			// Trigger upsertApiConfiguration
+			// Trigger the default activating upsert path.
 			await messageHandler({
 				type: "upsertApiConfiguration",
 				text: "test-config",
