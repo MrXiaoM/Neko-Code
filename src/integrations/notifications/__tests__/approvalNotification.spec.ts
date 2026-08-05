@@ -256,6 +256,9 @@ describe("approvalNotification", () => {
 			await initializeWindowsApprovalNotificationCallback(context)
 
 			const registrationCommands = execaCalls.filter((call) => call.command.includes("reg.exe add"))
+			// The process boundary is mocked for this test: commands are inspected from
+			// execaCalls and must never be executed against the Windows registry.
+			expect(execaMock).toHaveBeenCalledTimes(3)
 			expect(registrationCommands).toHaveLength(3)
 			const joined = registrationCommands.map((call) => call.command).join("\n")
 			expect(joined).toContain("HKCU\\Software\\Classes\\zoo-code-toast")

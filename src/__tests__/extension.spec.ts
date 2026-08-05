@@ -1,5 +1,13 @@
 // npx vitest run __tests__/extension.spec.ts
 
+const { initializeWindowsApprovalNotificationCallback, configureNekoNotifier, disposeNekoNotifier } = vi.hoisted(
+	() => ({
+		initializeWindowsApprovalNotificationCallback: vi.fn().mockResolvedValue(undefined),
+		configureNekoNotifier: vi.fn().mockResolvedValue(false),
+		disposeNekoNotifier: vi.fn().mockResolvedValue(undefined),
+	}),
+)
+
 import type * as vscode from "vscode"
 import type { AuthState } from "@roo-code/types"
 
@@ -181,6 +189,18 @@ vi.mock("../i18n", () => ({
 	t: vi.fn((key) => key),
 }))
 
+// Extension activation must not start OS notification infrastructure in unit tests.
+vi.mock("../integrations/notifications/approvalNotification", () => ({
+	initializeWindowsApprovalNotificationCallback,
+}))
+
+vi.mock("../integrations/notifications/nekoNotifierClient", () => ({
+	nekoNotifierClient: {
+		configure: configureNekoNotifier,
+		dispose: disposeNekoNotifier,
+	},
+}))
+
 // Mock ClineProvider
 vi.mock("../core/webview/ClineProvider", async () => {
 	const mockInstance = {
@@ -266,6 +286,17 @@ describe("extension.ts", () => {
 		await activate(mockContext)
 
 		expect(dotenv.config).toHaveBeenCalledTimes(1)
+	})
+
+	test("uses mocked notification infrastructure during activation", async () => {
+		vi.resetModules()
+		const { activate } = await import("../extension")
+
+		await activate(mockContext)
+
+		expect(initializeWindowsApprovalNotificationCallback).toHaveBeenCalledWith(mockContext)
+		expect(configureNekoNotifier).toHaveBeenCalledWith(undefined)
+		expect(disposeNekoNotifier).not.toHaveBeenCalled()
 	})
 
 	describe("cloud auth state handling", () => {
