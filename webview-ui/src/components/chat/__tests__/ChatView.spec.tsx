@@ -1117,6 +1117,46 @@ describe("ChatView - Message Queueing Tests", () => {
 	})
 })
 
+describe("ChatView - Resume Task", () => {
+	beforeEach(() => {
+		vi.clearAllMocks()
+	})
+
+	it("sends the draft as user feedback when resuming a task", async () => {
+		const { getByRole, getByTestId } = renderChatView()
+
+		mockPostMessage({
+			clineMessages: [
+				{
+					type: "say",
+					say: "task",
+					ts: Date.now() - 1000,
+					text: "Interrupted task",
+				},
+				{
+					type: "ask",
+					ask: "resume_task",
+					ts: Date.now(),
+				},
+			],
+		})
+
+		const input = (await waitFor(() => getByTestId("chat-textarea"))).querySelector("input")!
+		fireEvent.change(input, { target: { value: "Continue with the current draft" } })
+		vi.mocked(vscode.postMessage).mockClear()
+
+		fireEvent.click(getByRole("button", { name: "chat:resumeTask.title" }))
+
+		expect(vscode.postMessage).toHaveBeenCalledWith({
+			type: "askResponse",
+			askResponse: "messageResponse",
+			text: "Continue with the current draft",
+			images: [],
+		})
+		expect(input).toHaveValue("")
+	})
+})
+
 describe("ChatView - Task Stop Availability", () => {
 	beforeEach(() => {
 		vi.clearAllMocks()

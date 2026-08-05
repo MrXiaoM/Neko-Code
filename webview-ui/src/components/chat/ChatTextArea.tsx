@@ -22,6 +22,7 @@ import {
 } from "@src/utils/context-mentions"
 import { cn } from "@src/lib/utils"
 import { convertToMentionPath } from "@src/utils/path-mentions"
+import { replaceTextAreaValue } from "@src/utils/nativeTextArea"
 import { StandardTooltip } from "@src/components/ui"
 
 import Thumbnails from "../common/Thumbnails"
@@ -136,25 +137,8 @@ export const ChatTextArea = forwardRef<HTMLTextAreaElement, ChatTextAreaProps>(
 				const message = event.data
 
 				if (message.type === "enhancedPrompt") {
-					if (message.text && textAreaRef.current) {
-						try {
-							// Use execCommand to replace text while preserving undo history
-							if (document.execCommand) {
-								// Use native browser methods to preserve undo stack
-								const textarea = textAreaRef.current
-
-								// Focus the textarea to ensure it's the active element
-								textarea.focus()
-
-								// Select all text first
-								textarea.select()
-								document.execCommand("insertText", false, message.text)
-							} else {
-								setInputValue(message.text)
-							}
-						} catch {
-							setInputValue(message.text)
-						}
+					if (message.text && !replaceTextAreaValue(textAreaRef.current, message.text)) {
+						setInputValue(message.text)
 					}
 
 					setIsEnhancingPrompt(false)
@@ -324,7 +308,9 @@ export const ChatTextArea = forwardRef<HTMLTextAreaElement, ChatTextAreaProps>(
 				if (type === ContextMenuOptionType.Mode && value) {
 					// Handle mode selection.
 					setMode(value)
-					setInputValue("")
+					if (!replaceTextAreaValue(textAreaRef.current, "")) {
+						setInputValue("")
+					}
 					setShowContextMenu(false)
 					vscode.postMessage({ type: "mode", text: value })
 					return
@@ -333,12 +319,13 @@ export const ChatTextArea = forwardRef<HTMLTextAreaElement, ChatTextAreaProps>(
 				if (type === ContextMenuOptionType.Command && value) {
 					// Handle command selection.
 					setSelectedMenuIndex(-1)
-					setInputValue("")
 					setShowContextMenu(false)
 
-					// Insert the command mention into the textarea
+					// Replace the selected slash command as one native edit so Ctrl+Z restores the draft.
 					const commandMention = `/${value}`
-					setInputValue(commandMention + " ")
+					if (!replaceTextAreaValue(textAreaRef.current, commandMention + " ")) {
+						setInputValue(commandMention + " ")
+					}
 					setCursorPosition(commandMention.length + 1)
 					setIntendedCursorPosition(commandMention.length + 1)
 

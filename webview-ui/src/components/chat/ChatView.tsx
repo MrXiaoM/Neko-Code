@@ -9,6 +9,7 @@ import { useDebounceEffect } from "@src/utils/useDebounceEffect"
 import { appendImages } from "@src/utils/imageUtils"
 import { getCostBreakdownIfNeeded } from "@src/utils/costFormatting"
 import { batchConsecutive } from "@src/utils/batchConsecutive"
+import { replaceTextAreaValue } from "@src/utils/nativeTextArea"
 
 import type { ClineAsk, ClineSayTool, ClineMessage, ExtensionMessage, AudioType, SuggestionItem } from "@roo-code/types"
 import { getCompletionCheckpoint, getSuggestionMode, isRetiredProvider } from "@roo-code/types"
@@ -641,6 +642,19 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 		}
 	}, [])
 
+	const clearChatInput = useCallback(() => {
+		if (!replaceTextAreaValue(textAreaRef.current, "")) {
+			// Fallback for browsers that do not support execCommand. This does not preserve
+			// the native undo stack, but it keeps the controlled input state in sync.
+			setInputValue("")
+		}
+	}, [])
+
+	const clearChatInputAndImages = useCallback(() => {
+		clearChatInput()
+		setSelectedImages([])
+	}, [clearChatInput])
+
 	const handleChatReset = useCallback(() => {
 		// Clear any pending auto-approval timeout
 		if (autoApproveTimeoutRef.current) {
@@ -651,15 +665,14 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 		userRespondedRef.current = false
 
 		// Only reset message-specific state, preserving mode.
-		setInputValue("")
+		clearChatInputAndImages()
 		setSendingDisabled(true)
-		setSelectedImages([])
 		setClineAsk(undefined)
 		setEnableButtons(false)
 		// Do not reset mode here as it should persist.
 		// setPrimaryButtonText(undefined)
 		// setSecondaryButtonText(undefined)
-	}, [])
+	}, [clearChatInputAndImages])
 
 	/**
 	 * Handles sending messages to the extension
@@ -686,8 +699,7 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 					try {
 						console.log("queueMessage", text, images)
 						vscode.postMessage({ type: "queueMessage", text, images })
-						setInputValue("")
-						setSelectedImages([])
+						clearChatInputAndImages()
 					} catch (error) {
 						console.error(
 							`Failed to queue message: ${error instanceof Error ? error.message : String(error)}`,
@@ -739,6 +751,7 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 		[
 			handleChatReset,
 			markFollowUpAsAnswered,
+			clearChatInputAndImages,
 			sendingDisabled,
 			isStreaming,
 			messageQueue.length,
@@ -781,10 +794,9 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 				text,
 				images: selectedImages,
 			})
-			setInputValue("")
-			setSelectedImages([])
+			clearChatInputAndImages()
 		}
-	}, [inputValue, selectedImages])
+	}, [inputValue, selectedImages, clearChatInputAndImages])
 
 	// Resets the approval button UI to its hidden/disabled state. Shared by the
 	// manual click handlers and by the backend-driven clearApprovalButtons
@@ -822,25 +834,21 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 							text: trimmedInput,
 							images: images,
 						})
-						// Clear input state after sending
-						setInputValue("")
-						setSelectedImages([])
+						clearChatInputAndImages()
 					} else {
 						vscode.postMessage({ type: "askResponse", askResponse: "yesButtonClicked" })
 					}
 					break
 				case "resume_task":
-					// Only send text/images if they exist
+					// A message response preserves the draft as user feedback while resuming.
 					if (trimmedInput || (images && images.length > 0)) {
 						vscode.postMessage({
 							type: "askResponse",
-							askResponse: "yesButtonClicked",
+							askResponse: "messageResponse",
 							text: trimmedInput,
 							images: images,
 						})
-						// Clear input state after sending
-						setInputValue("")
-						setSelectedImages([])
+						clearChatInputAndImages()
 					} else {
 						vscode.postMessage({ type: "askResponse", askResponse: "yesButtonClicked" })
 					}
@@ -856,7 +864,7 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 
 			clearApprovalButtons()
 		},
-		[clineAsk, startNewTask, clearApprovalButtons],
+		[clineAsk, startNewTask, clearApprovalButtons, clearChatInputAndImages],
 	)
 
 	const handleSecondaryButtonClick = useCallback(
@@ -889,9 +897,7 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 							text: trimmedInput,
 							images: images,
 						})
-						// Clear input state after sending
-						setInputValue("")
-						setSelectedImages([])
+						clearChatInputAndImages()
 					} else {
 						// Responds to the API with a "This operation failed" and lets it try again
 						vscode.postMessage({ type: "askResponse", askResponse: "noButtonClicked" })
@@ -900,7 +906,7 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 			}
 			clearApprovalButtons()
 		},
-		[clineAsk, startNewTask, isStreaming, setDidClickCancel, clearApprovalButtons],
+		[clineAsk, startNewTask, isStreaming, setDidClickCancel, clearApprovalButtons, clearChatInputAndImages],
 	)
 
 	const { info: model } = useSelectedModel(apiConfiguration)
