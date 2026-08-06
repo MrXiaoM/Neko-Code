@@ -300,6 +300,7 @@ export const clineMessageSchema = z.object({
 	 * Distinct from `isAnswered`, which only tracks whether buttons should hide.
 	 */
 	approvalState: approvalStateSchema.optional(),
+	autoApprovalDecision: z.union([z.literal("approve"), z.literal("deny")]).optional(),
 })
 
 export type ClineMessage = z.infer<typeof clineMessageSchema>

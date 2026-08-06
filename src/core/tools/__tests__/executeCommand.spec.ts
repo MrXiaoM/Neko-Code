@@ -343,6 +343,12 @@ describe("executeCommand", () => {
 					status: "started",
 					pid: 1234,
 					command: "echo success",
+					terminalInfo: {
+						provider: "vscode",
+						cwd: "/test/project",
+						willReuseTerminal: true,
+						terminalId: 1,
+					},
 				}),
 			})
 		})

@@ -52,6 +52,14 @@ vitest.mock("../../../integrations/terminal/TerminalRegistry", () => ({
 vitest.mock("../../task/Task")
 vitest.mock("../../prompts/responses")
 
+const mockRunDcg = vitest.fn()
+const mockEnsureDcgInstalled = vitest.fn()
+
+vitest.mock("../../../services/destructive-command-guard", () => ({
+	runDcg: mockRunDcg,
+	ensureDcgInstalled: mockEnsureDcgInstalled,
+}))
+
 // Import the module
 import * as executeCommandModule from "../ExecuteCommandTool"
 const { executeCommandTool, parseCommandApprovalMessage } = executeCommandModule
@@ -90,6 +98,9 @@ describe("executeCommandTool", () => {
 			enqueueBackgroundCommandCompletion: vitest.fn(),
 			providerRef: {
 				deref: vitest.fn().mockResolvedValue({
+					contextProxy: {
+						getValue: vitest.fn().mockReturnValue(false),
+					},
 					getState: vitest.fn().mockResolvedValue({
 						terminalOutputLineLimit: 500,
 						terminalOutputCharacterLimit: 100000,
@@ -105,6 +116,8 @@ describe("executeCommandTool", () => {
 		mockAskApproval = vitest.fn().mockResolvedValue(true)
 		mockHandleError = vitest.fn().mockResolvedValue(undefined)
 		mockPushToolResult = vitest.fn()
+		mockRunDcg.mockResolvedValue({ decision: "allow" })
+		mockEnsureDcgInstalled.mockResolvedValue("/test/storage/dcg")
 
 		// Setup vscode config mock
 		const mockConfig = {
@@ -227,6 +240,143 @@ describe("executeCommandTool", () => {
 	})
 
 	describe("Error handling", () => {
+		it.each([
+			[undefined, undefined, "executeCommand.destructiveCommandGuard.blocked"],
+			["matches a destructive pattern", undefined, "executeCommand.destructiveCommandGuard.blockedWithReason"],
+			[undefined, "recursive-delete", "executeCommand.destructiveCommandGuard.blockedWithRule"],
+			[
+				"matches a destructive pattern",
+				"recursive-delete",
+				"executeCommand.destructiveCommandGuard.blockedWithReasonAndRule",
+			],
+		])("selects the localized DCG block message for reason %s and rule %s", (reason, ruleId, expected) => {
+			expect(executeCommandModule.formatDcgBlockedMessage(reason, ruleId)).toBe(expected)
+		})
+
+		it("shows a DCG block message as an error before requesting explicit approval", async () => {
+			const provider = await mockCline.providerRef.deref()
+			provider.context = { globalStorageUri: { fsPath: "/test/storage" } }
+			provider.contextProxy.getValue.mockReturnValue(true)
+			provider.getState.mockResolvedValue({
+				destructiveCommandGuardEnabled: true,
+				terminalShellIntegrationDisabled: true,
+			})
+			mockRunDcg.mockResolvedValue({
+				decision: "deny",
+				reason: "matches a destructive pattern",
+				ruleId: "recursive-delete",
+			})
+			mockAskApproval.mockResolvedValue(false)
+
+			await executeCommandTool.handle(mockCline as unknown as Task, mockToolUse, {
+				askApproval: mockAskApproval as unknown as AskApproval,
+				handleError: mockHandleError as unknown as HandleError,
+				pushToolResult: mockPushToolResult as unknown as PushToolResult,
+			})
+
+			expect(mockCline.say).toHaveBeenCalledWith(
+				"error",
+				"executeCommand.destructiveCommandGuard.blockedWithReasonAndRule",
+			)
+			expect(mockAskApproval).toHaveBeenCalledWith(
+				"command",
+				expect.stringMatching(/^\{"command":"echo test","terminalInfo":/),
+				undefined,
+				true,
+			)
+		})
+
+		it("requests normal approval when DCG allows the command", async () => {
+			const provider = await mockCline.providerRef.deref()
+			provider.context = { globalStorageUri: { fsPath: "/test/storage" } }
+			provider.contextProxy.getValue.mockReturnValue(true)
+			provider.getState.mockResolvedValue({
+				destructiveCommandGuardEnabled: true,
+				terminalShellIntegrationDisabled: true,
+			})
+			mockRunDcg.mockResolvedValue({ decision: "allow" })
+
+			await executeCommandTool.handle(mockCline as unknown as Task, mockToolUse, {
+				askApproval: mockAskApproval as unknown as AskApproval,
+				handleError: mockHandleError as unknown as HandleError,
+				pushToolResult: mockPushToolResult as unknown as PushToolResult,
+			})
+
+			expect(mockAskApproval).toHaveBeenCalledWith(
+				"command",
+				expect.stringMatching(/^\{"command":"echo test","terminalInfo":/),
+			)
+			expect(mockPushToolResult).toHaveBeenCalled()
+		})
+
+		it("installs or updates DCG before evaluating an enabled command", async () => {
+			const provider = await mockCline.providerRef.deref()
+			provider.context = { globalStorageUri: { fsPath: "/test/storage" } }
+			provider.contextProxy.getValue.mockReturnValue(true)
+			provider.getState.mockResolvedValue({
+				destructiveCommandGuardEnabled: true,
+				terminalShellIntegrationDisabled: true,
+			})
+			await executeCommandTool.handle(mockCline as unknown as Task, mockToolUse, {
+				askApproval: mockAskApproval as unknown as AskApproval,
+				handleError: mockHandleError as unknown as HandleError,
+				pushToolResult: mockPushToolResult as unknown as PushToolResult,
+			})
+
+			expect(mockEnsureDcgInstalled).toHaveBeenCalledWith("/test/storage")
+			expect(mockRunDcg).toHaveBeenCalledWith("/test/storage/dcg", "echo test", "/test/workspace")
+		})
+
+		it("fails closed when the DCG install or update fails", async () => {
+			const provider = await mockCline.providerRef.deref()
+			provider.context = { globalStorageUri: { fsPath: "/test/storage" } }
+			provider.contextProxy.getValue.mockReturnValue(true)
+			provider.getState.mockResolvedValue({
+				destructiveCommandGuardEnabled: true,
+				terminalShellIntegrationDisabled: true,
+			})
+			mockEnsureDcgInstalled.mockRejectedValue(new Error("download failed"))
+
+			await executeCommandTool.handle(mockCline as unknown as Task, mockToolUse, {
+				askApproval: mockAskApproval as unknown as AskApproval,
+				handleError: mockHandleError as unknown as HandleError,
+				pushToolResult: mockPushToolResult as unknown as PushToolResult,
+			})
+
+			expect(mockHandleError).toHaveBeenCalledWith(
+				"executing command",
+				expect.objectContaining({ message: "download failed" }),
+			)
+			expect(mockRunDcg).not.toHaveBeenCalled()
+			expect(mockAskApproval).not.toHaveBeenCalled()
+			expect(executeCommandModule.executeCommandInTerminal).not.toHaveBeenCalled()
+		})
+
+		it("fails closed when DCG is unavailable for the current platform", async () => {
+			const provider = await mockCline.providerRef.deref()
+			provider.context = { globalStorageUri: { fsPath: "/test/storage" } }
+			provider.contextProxy.getValue.mockReturnValue(true)
+			provider.getState.mockResolvedValue({
+				destructiveCommandGuardEnabled: true,
+				terminalShellIntegrationDisabled: true,
+			})
+			mockEnsureDcgInstalled.mockResolvedValue(undefined)
+
+			await executeCommandTool.handle(mockCline as unknown as Task, mockToolUse, {
+				askApproval: mockAskApproval as unknown as AskApproval,
+				handleError: mockHandleError as unknown as HandleError,
+				pushToolResult: mockPushToolResult as unknown as PushToolResult,
+			})
+
+			expect(mockHandleError).toHaveBeenCalledWith(
+				"executing command",
+				expect.objectContaining({ message: "errors.destructiveCommandGuard.unavailable" }),
+			)
+			expect(mockRunDcg).not.toHaveBeenCalled()
+			expect(mockAskApproval).not.toHaveBeenCalled()
+			expect(executeCommandModule.executeCommandInTerminal).not.toHaveBeenCalled()
+		})
+
 		it("should handle missing command parameter", async () => {
 			// Setup
 			mockToolUse.params.command = undefined
@@ -368,7 +518,7 @@ describe("executeCommandTool", () => {
 		})
 	})
 
-	describe("长运行命令等待策略", () => {
+	describe("长运行命令前台完成与超时策略", () => {
 		type MockProcess = Promise<void> & {
 			continue: ReturnType<typeof vitest.fn>
 			abort: ReturnType<typeof vitest.fn>
@@ -377,6 +527,7 @@ describe("executeCommandTool", () => {
 		interface ControllableTerminal {
 			callbacks: RooTerminalCallbacks | undefined
 			proc: MockProcess
+			provider: string | undefined
 			resolveProcess: () => void
 		}
 
@@ -385,6 +536,7 @@ describe("executeCommandTool", () => {
 			const state: ControllableTerminal = {
 				callbacks: undefined,
 				proc: undefined as unknown as MockProcess,
+				provider: undefined,
 				resolveProcess: () => {},
 			}
 			const processPromise = new Promise<void>((resolve) => {
@@ -394,13 +546,18 @@ describe("executeCommandTool", () => {
 				continue: vitest.fn(() => state.resolveProcess()),
 				abort: vitest.fn(),
 			})
-			;(TerminalRegistry.getOrCreateTerminal as ReturnType<typeof vitest.fn>).mockResolvedValue({
-				runCommand: vitest.fn((_cmd: string, callbacks: RooTerminalCallbacks) => {
-					state.callbacks = callbacks
-					return state.proc
-				}),
-				getCurrentWorkingDirectory: vitest.fn().mockReturnValue("/test/workspace"),
-			})
+			;(TerminalRegistry.getOrCreateTerminal as ReturnType<typeof vitest.fn>).mockImplementation(
+				async (_cwd: string, _taskId: string, provider: string) => {
+					state.provider = provider
+					return {
+						runCommand: vitest.fn((_cmd: string, callbacks: RooTerminalCallbacks) => {
+							state.callbacks = callbacks
+							return state.proc
+						}),
+						getCurrentWorkingDirectory: vitest.fn().mockReturnValue("/test/workspace"),
+					}
+				},
+			)
 			return state
 		}
 
@@ -413,7 +570,7 @@ describe("executeCommandTool", () => {
 			})
 		}
 
-		it("跨过旧的五秒阈值仍等待命令完成", async () => {
+		it("跨过旧的五秒阈值后，仍等待内嵌终端完成而不向代理提前返回", async () => {
 			vitest.useFakeTimers()
 			const terminal = await setupControllableTerminal()
 			const handlePromise = handleCommand("sleep 60", 300)
@@ -421,6 +578,7 @@ describe("executeCommandTool", () => {
 			await vitest.waitFor(() => expect(terminal.callbacks).toBeDefined())
 			const callbacks = terminal.callbacks!
 			const proc = terminal.proc as unknown as RooTerminalProcess
+			expect(terminal.provider).toBe("execa")
 			callbacks.onShellExecutionStarted!(1234, proc)
 			await callbacks.onLine("working...\n", proc)
 
@@ -430,7 +588,51 @@ describe("executeCommandTool", () => {
 			expect(terminal.proc.continue).not.toHaveBeenCalled()
 			expect(mockPushToolResult).not.toHaveBeenCalled()
 
+			let toolResolved = false
+			void handlePromise.then(() => {
+				toolResolved = true
+			})
+			await vitest.advanceTimersByTimeAsync(0)
+			expect(toolResolved).toBe(false)
+
 			await callbacks.onCompleted!("working...\n", proc)
+			callbacks.onShellExecutionComplete!({ exitCode: 0 }, proc)
+			terminal.resolveProcess()
+			await vitest.advanceTimersByTimeAsync(100)
+
+			await handlePromise
+
+			expect(mockPushToolResult).toHaveBeenCalled()
+			const result = mockPushToolResult.mock.calls[0][0]
+			expect(result).toContain("working...")
+			expect(result).toContain("退出码：0")
+		})
+
+		it("在 Shell 集成终端输出后仍等待命令完成", async () => {
+			vitest.useFakeTimers()
+			mockCline.providerRef.deref.mockResolvedValue({
+				contextProxy: { getValue: vitest.fn().mockReturnValue(false) },
+				getState: vitest.fn().mockResolvedValue({ terminalShellIntegrationDisabled: false }),
+				postMessageToWebview: vitest.fn(),
+			})
+			vitest.spyOn(Terminal, "isActiveShellCmdExe").mockReturnValue(false)
+			const terminal = await setupControllableTerminal()
+
+			const handlePromise = handleCommand("Write-Output hello")
+
+			await vitest.waitFor(() => expect(terminal.callbacks).toBeDefined())
+			const callbacks = terminal.callbacks!
+			const proc = terminal.proc as unknown as RooTerminalProcess
+
+			expect(terminal.provider).toBe("vscode")
+			callbacks.onShellExecutionStarted!(1234, proc)
+			await callbacks.onLine("hello\n", proc)
+			await vitest.advanceTimersByTimeAsync(6_000)
+
+			expect(mockCline.ask).not.toHaveBeenCalled()
+			expect(terminal.proc.continue).not.toHaveBeenCalled()
+
+			await callbacks.onCompleted!("hello\n", proc)
 			callbacks.onShellExecutionComplete!({ exitCode: 0 }, proc)
 			terminal.resolveProcess()
 			await vitest.advanceTimersByTimeAsync(100)
@@ -439,7 +641,7 @@ describe("executeCommandTool", () => {
 			expect(mockPushToolResult.mock.calls[0][0]).toContain("退出码：0")
 		})
 
-		it("只在显式 timeout 到期时转入后台，并在完成后投递最终系统事件", async () => {
+		it("仅在显式 timeout 到期时转入后台，并在完成后投递最终系统事件", async () => {
 			vitest.useFakeTimers()
 			const terminal = await setupControllableTerminal()
 			const handlePromise = handleCommand("sleep 60", 300)
@@ -470,6 +672,33 @@ describe("executeCommandTool", () => {
 			expect(mockCline.enqueueBackgroundCommandCompletion).toHaveBeenCalledWith(
 				expect.stringContaining("BUILD SUCCESSFUL"),
 			)
+		})
+
+		it("允许显式的代理超时将命令转入后台", async () => {
+			vitest.useFakeTimers()
+			const terminal = await setupControllableTerminal()
+
+			const handlePromise = handleCommand("npm run dev", 2)
+
+			await vitest.waitFor(() => expect(terminal.callbacks).toBeDefined())
+			const callbacks = terminal.callbacks!
+			const proc = terminal.proc as unknown as RooTerminalProcess
+
+			callbacks.onShellExecutionStarted!(1234, proc)
+			await callbacks.onLine("server starting...\n", proc)
+
+			// 仅显式工具超时可使前台命令提前返回。
+			await vitest.advanceTimersByTimeAsync(2_000)
+			expect(terminal.proc.continue).toHaveBeenCalled()
+			expect(mockCline.supersedePendingAsk).toHaveBeenCalled()
+
+			await callbacks.onLine("listening...\n", proc)
+			expect(mockCline.ask).not.toHaveBeenCalled()
+
+			await handlePromise
+
+			expect(mockPushToolResult).toHaveBeenCalled()
+			expect(mockPushToolResult.mock.calls[0][0]).toContain("依然在运行")
 		})
 	})
 })

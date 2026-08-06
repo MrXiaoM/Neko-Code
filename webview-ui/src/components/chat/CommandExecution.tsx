@@ -43,12 +43,21 @@ interface CommandExecutionProps {
 	icon?: JSX.Element | null
 	title?: JSX.Element | null
 	approvalState?: ApprovalState
+	isDenied?: boolean
 }
 
-export const CommandExecution = ({ executionId, text, icon, title, approvalState }: CommandExecutionProps) => {
+export const CommandExecution = ({
+	executionId,
+	text,
+	icon,
+	title,
+	approvalState,
+	isDenied = false,
+}: CommandExecutionProps) => {
 	const { t } = useTranslation()
 	const {
 		terminalShellIntegrationDisabled = false,
+		destructiveCommandGuardEnabled = false,
 		allowedCommands = [],
 		deniedCommands = [],
 		setAllowedCommands,
@@ -121,8 +130,8 @@ export const CommandExecution = ({ executionId, text, icon, title, approvalState
 	}
 
 	const handleDenyPatternChange = (pattern: string) => {
-		const isDenied = deniedCommands.includes(pattern)
-		const newDenied = isDenied ? deniedCommands.filter((p) => p !== pattern) : [...deniedCommands, pattern]
+		const isPatternDenied = deniedCommands.includes(pattern)
+		const newDenied = isPatternDenied ? deniedCommands.filter((p) => p !== pattern) : [...deniedCommands, pattern]
 		const newAllowed = allowedCommands.filter((p) => p !== pattern)
 
 		setAllowedCommands(newAllowed)
@@ -303,7 +312,7 @@ export const CommandExecution = ({ executionId, text, icon, title, approvalState
 					<CodeBlock source={command} language="shell" />
 					<OutputContainer isExpanded={isExpanded} output={output} />
 				</div>
-				{command && command.trim() && (
+				{command && command.trim() && !destructiveCommandGuardEnabled && !isDenied && (
 					<CommandPatternSelector
 						patterns={commandPatterns}
 						allowedCommands={allowedCommands}

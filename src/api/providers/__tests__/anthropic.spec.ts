@@ -2,6 +2,7 @@
 
 import { AnthropicHandler } from "../anthropic"
 import { ApiHandlerOptions } from "../../../shared/api"
+import { asyncStreamFrom, collectStream } from "../../../test-utils/stream"
 
 // Mock TelemetryService
 vitest.mock("@roo-code/telemetry", () => ({
@@ -31,36 +32,34 @@ vitest.mock("@anthropic-ai/sdk", () => {
 							},
 						}
 					}
-					return {
-						async *[Symbol.asyncIterator]() {
-							yield {
-								type: "message_start",
-								message: {
-									usage: {
-										input_tokens: 100,
-										output_tokens: 50,
-										cache_creation_input_tokens: 20,
-										cache_read_input_tokens: 10,
-									},
+					return asyncStreamFrom([
+						{
+							type: "message_start",
+							message: {
+								usage: {
+									input_tokens: 100,
+									output_tokens: 50,
+									cache_creation_input_tokens: 20,
+									cache_read_input_tokens: 10,
 								},
-							}
-							yield {
-								type: "content_block_start",
-								index: 0,
-								content_block: {
-									type: "text",
-									text: "Hello",
-								},
-							}
-							yield {
-								type: "content_block_delta",
-								delta: {
-									type: "text_delta",
-									text: " world",
-								},
-							}
+							},
 						},
-					}
+						{
+							type: "content_block_start",
+							index: 0,
+							content_block: {
+								type: "text",
+								text: "Hello",
+							},
+						},
+						{
+							type: "content_block_delta",
+							delta: {
+								type: "text_delta",
+								text: " world",
+							},
+						},
+					])
 				}),
 			},
 		}
@@ -167,10 +166,7 @@ describe("AnthropicHandler", () => {
 				},
 			])
 
-			const chunks: any[] = []
-			for await (const chunk of stream) {
-				chunks.push(chunk)
-			}
+			const chunks: any[] = await collectStream(stream)
 
 			// Verify usage information
 			const usageChunk = chunks.find((chunk) => chunk.type === "usage")
@@ -204,9 +200,7 @@ describe("AnthropicHandler", () => {
 				},
 			])
 
-			for await (const _chunk of stream) {
-				// Consume stream
-			}
+			await collectStream(stream)
 
 			const requestOptions = mockCreate.mock.calls[mockCreate.mock.calls.length - 1]?.[1]
 			expect(requestOptions?.headers?.["anthropic-beta"]).toContain("context-1m-2025-08-07")
@@ -226,9 +220,7 @@ describe("AnthropicHandler", () => {
 				},
 			])
 
-			for await (const _chunk of stream) {
-				// Consume stream
-			}
+			await collectStream(stream)
 
 			const requestBody = mockCreate.mock.calls[mockCreate.mock.calls.length - 1]?.[0]
 			const requestOptions = mockCreate.mock.calls[mockCreate.mock.calls.length - 1]?.[1]
@@ -251,9 +243,7 @@ describe("AnthropicHandler", () => {
 				},
 			])
 
-			for await (const _chunk of stream) {
-				// Consume stream
-			}
+			await collectStream(stream)
 
 			const requestBody = mockCreate.mock.calls[mockCreate.mock.calls.length - 1]?.[0]
 			expect(requestBody?.thinking).toEqual({ type: "adaptive" })
@@ -274,9 +264,7 @@ describe("AnthropicHandler", () => {
 				},
 			])
 
-			for await (const _chunk of stream) {
-				// Consume stream
-			}
+			await collectStream(stream)
 
 			const requestBody = mockCreate.mock.calls[mockCreate.mock.calls.length - 1]?.[0]
 			expect(requestBody?.thinking).toBeUndefined()
@@ -298,9 +286,7 @@ describe("AnthropicHandler", () => {
 				},
 			])
 
-			for await (const _chunk of stream) {
-				// Consume stream
-			}
+			await collectStream(stream)
 
 			const requestBody = mockCreate.mock.calls[mockCreate.mock.calls.length - 1]?.[0]
 			expect(requestBody?.thinking).toEqual({ type: "adaptive" })
@@ -321,9 +307,7 @@ describe("AnthropicHandler", () => {
 				},
 			])
 
-			for await (const _chunk of stream) {
-				// Consume stream
-			}
+			await collectStream(stream)
 
 			const requestBody = mockCreate.mock.calls[mockCreate.mock.calls.length - 1]?.[0]
 			const requestOptions = mockCreate.mock.calls[mockCreate.mock.calls.length - 1]?.[1]
@@ -346,9 +330,7 @@ describe("AnthropicHandler", () => {
 				},
 			])
 
-			for await (const _chunk of stream) {
-				// Consume stream
-			}
+			await collectStream(stream)
 
 			const requestBody = mockCreate.mock.calls[mockCreate.mock.calls.length - 1]?.[0]
 			expect(requestBody?.thinking).toEqual({ type: "adaptive" })
@@ -369,9 +351,7 @@ describe("AnthropicHandler", () => {
 				},
 			])
 
-			for await (const _chunk of stream) {
-				// Consume stream
-			}
+			await collectStream(stream)
 
 			const requestBody = mockCreate.mock.calls[mockCreate.mock.calls.length - 1]?.[0]
 			expect(requestBody?.thinking).toBeUndefined()
@@ -393,9 +373,7 @@ describe("AnthropicHandler", () => {
 				},
 			])
 
-			for await (const _chunk of stream) {
-				// Consume stream
-			}
+			await collectStream(stream)
 
 			const requestBody = mockCreate.mock.calls[mockCreate.mock.calls.length - 1]?.[0]
 			expect(requestBody?.thinking).toEqual({ type: "adaptive" })
@@ -417,9 +395,7 @@ describe("AnthropicHandler", () => {
 				},
 			])
 
-			for await (const _chunk of stream) {
-				// Consume stream
-			}
+			await collectStream(stream)
 
 			const requestBody = mockCreate.mock.calls[mockCreate.mock.calls.length - 1]?.[0]
 			const requestOptions = mockCreate.mock.calls[mockCreate.mock.calls.length - 1]?.[1]
@@ -444,9 +420,7 @@ describe("AnthropicHandler", () => {
 				},
 			])
 
-			for await (const _chunk of stream) {
-				// Consume stream
-			}
+			await collectStream(stream)
 
 			const requestBody = mockCreate.mock.calls[mockCreate.mock.calls.length - 1]?.[0]
 			const requestOptions = mockCreate.mock.calls[mockCreate.mock.calls.length - 1]?.[1]
@@ -471,9 +445,7 @@ describe("AnthropicHandler", () => {
 				},
 			])
 
-			for await (const _chunk of stream) {
-				// Consume stream
-			}
+			await collectStream(stream)
 
 			const requestBody = mockCreate.mock.calls[mockCreate.mock.calls.length - 1]?.[0]
 			const requestOptions = mockCreate.mock.calls[mockCreate.mock.calls.length - 1]?.[1]
@@ -497,9 +469,7 @@ describe("AnthropicHandler", () => {
 				},
 			])
 
-			for await (const _chunk of stream) {
-				// Consume stream
-			}
+			await collectStream(stream)
 
 			const requestBody = mockCreate.mock.calls[mockCreate.mock.calls.length - 1]?.[0]
 			expect(requestBody?.model).toBe("claude-sonnet-5-bf")
@@ -862,11 +832,7 @@ describe("AnthropicHandler", () => {
 			]
 
 			const stream = handler.createMessage(systemPrompt, messagesWithReasoning)
-			const chunks: any[] = []
-
-			for await (const chunk of stream) {
-				chunks.push(chunk)
-			}
+			const chunks: any[] = await collectStream(stream)
 
 			// Verify the API was called with filtered messages (no reasoning blocks)
 			const calledMessages = mockCreate.mock.calls[mockCreate.mock.calls.length - 1][0].messages
@@ -909,11 +875,7 @@ describe("AnthropicHandler", () => {
 			]
 
 			const stream = handler.createMessage(systemPrompt, messagesWithOnlyReasoning)
-			const chunks: any[] = []
-
-			for await (const chunk of stream) {
-				chunks.push(chunk)
-			}
+			const chunks: any[] = await collectStream(stream)
 
 			// Verify empty message was filtered out
 			const calledMessages = mockCreate.mock.calls[mockCreate.mock.calls.length - 1][0].messages
@@ -955,9 +917,7 @@ describe("AnthropicHandler", () => {
 			})
 
 			// Consume the stream to trigger the API call
-			for await (const _chunk of stream) {
-				// Just consume
-			}
+			await collectStream(stream)
 
 			expect(mockCreate).toHaveBeenCalledWith(
 				expect.objectContaining({
@@ -989,9 +949,7 @@ describe("AnthropicHandler", () => {
 			})
 
 			// Consume the stream to trigger the API call
-			for await (const _chunk of stream) {
-				// Just consume
-			}
+			await collectStream(stream)
 
 			// Tool calling is request-driven: if tools are provided, we should include them.
 			expect(mockCreate).toHaveBeenCalledWith(
@@ -1013,9 +971,7 @@ describe("AnthropicHandler", () => {
 			})
 
 			// Consume the stream to trigger the API call
-			for await (const _chunk of stream) {
-				// Just consume
-			}
+			await collectStream(stream)
 
 			// Tools are now always present (minimum 6 from ALWAYS_AVAILABLE_TOOLS)
 			expect(mockCreate).toHaveBeenCalledWith(
@@ -1036,9 +992,7 @@ describe("AnthropicHandler", () => {
 			})
 
 			// Consume the stream to trigger the API call
-			for await (const _chunk of stream) {
-				// Just consume
-			}
+			await collectStream(stream)
 
 			expect(mockCreate).toHaveBeenCalledWith(
 				expect.objectContaining({
@@ -1057,9 +1011,7 @@ describe("AnthropicHandler", () => {
 			})
 
 			// Consume the stream to trigger the API call
-			for await (const _chunk of stream) {
-				// Just consume
-			}
+			await collectStream(stream)
 
 			expect(mockCreate).toHaveBeenCalledWith(
 				expect.objectContaining({
@@ -1078,9 +1030,7 @@ describe("AnthropicHandler", () => {
 			})
 
 			// Consume the stream to trigger the API call
-			for await (const _chunk of stream) {
-				// Just consume
-			}
+			await collectStream(stream)
 
 			// Tools are now always present (minimum 6 from ALWAYS_AVAILABLE_TOOLS)
 			// When tool_choice is 'none', the converter returns undefined for tool_choice
@@ -1103,9 +1053,7 @@ describe("AnthropicHandler", () => {
 			})
 
 			// Consume the stream to trigger the API call
-			for await (const _chunk of stream) {
-				// Just consume
-			}
+			await collectStream(stream)
 
 			expect(mockCreate).toHaveBeenCalledWith(
 				expect.objectContaining({
@@ -1125,9 +1073,7 @@ describe("AnthropicHandler", () => {
 			})
 
 			// Consume the stream to trigger the API call
-			for await (const _chunk of stream) {
-				// Just consume
-			}
+			await collectStream(stream)
 
 			expect(mockCreate).toHaveBeenCalledWith(
 				expect.objectContaining({
@@ -1138,9 +1084,9 @@ describe("AnthropicHandler", () => {
 		})
 
 		it("should handle tool_use blocks in stream and emit tool_call_partial", async () => {
-			mockCreate.mockImplementationOnce(async () => ({
-				async *[Symbol.asyncIterator]() {
-					yield {
+			mockCreate.mockImplementationOnce(async () =>
+				asyncStreamFrom([
+					{
 						type: "message_start",
 						message: {
 							usage: {
@@ -1148,8 +1094,8 @@ describe("AnthropicHandler", () => {
 								output_tokens: 50,
 							},
 						},
-					}
-					yield {
+					},
+					{
 						type: "content_block_start",
 						index: 0,
 						content_block: {
@@ -1157,9 +1103,9 @@ describe("AnthropicHandler", () => {
 							id: "toolu_123",
 							name: "get_weather",
 						},
-					}
-				},
-			}))
+					},
+				]),
+			)
 
 			// Handler uses native protocol by default
 			const stream = handler.createMessage(systemPrompt, messages, {
@@ -1167,10 +1113,7 @@ describe("AnthropicHandler", () => {
 				tools: mockTools,
 			})
 
-			const chunks: any[] = []
-			for await (const chunk of stream) {
-				chunks.push(chunk)
-			}
+			const chunks: any[] = await collectStream(stream)
 
 			// Find the tool_call_partial chunk
 			const toolCallChunk = chunks.find((chunk) => chunk.type === "tool_call_partial")
@@ -1185,9 +1128,9 @@ describe("AnthropicHandler", () => {
 		})
 
 		it("should handle input_json_delta in stream and emit tool_call_partial arguments", async () => {
-			mockCreate.mockImplementationOnce(async () => ({
-				async *[Symbol.asyncIterator]() {
-					yield {
+			mockCreate.mockImplementationOnce(async () =>
+				asyncStreamFrom([
+					{
 						type: "message_start",
 						message: {
 							usage: {
@@ -1195,8 +1138,8 @@ describe("AnthropicHandler", () => {
 								output_tokens: 50,
 							},
 						},
-					}
-					yield {
+					},
+					{
 						type: "content_block_start",
 						index: 0,
 						content_block: {
@@ -1204,29 +1147,29 @@ describe("AnthropicHandler", () => {
 							id: "toolu_123",
 							name: "get_weather",
 						},
-					}
-					yield {
+					},
+					{
 						type: "content_block_delta",
 						index: 0,
 						delta: {
 							type: "input_json_delta",
 							partial_json: '{"location":',
 						},
-					}
-					yield {
+					},
+					{
 						type: "content_block_delta",
 						index: 0,
 						delta: {
 							type: "input_json_delta",
 							partial_json: '"London"}',
 						},
-					}
-					yield {
+					},
+					{
 						type: "content_block_stop",
 						index: 0,
-					}
-				},
-			}))
+					},
+				]),
+			)
 
 			// Handler uses native protocol by default
 			const stream = handler.createMessage(systemPrompt, messages, {
@@ -1234,10 +1177,7 @@ describe("AnthropicHandler", () => {
 				tools: mockTools,
 			})
 
-			const chunks: any[] = []
-			for await (const chunk of stream) {
-				chunks.push(chunk)
-			}
+			const chunks: any[] = await collectStream(stream)
 
 			// Find the tool_call_partial chunks
 			const toolCallChunks = chunks.filter((chunk) => chunk.type === "tool_call_partial")
