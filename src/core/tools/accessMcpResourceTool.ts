@@ -6,6 +6,7 @@ import { formatResponse } from "../prompts/responses"
 
 import { BaseTool, ToolCallbacks } from "./BaseTool"
 import { ensureMcpServerAllowed } from "./mcpServerRestriction"
+import { requestExternalToolResultApproval } from "./ExternalToolResultApproval"
 
 interface AccessMcpResourceParams {
 	server_name: string
@@ -90,8 +91,13 @@ export class AccessMcpResourceTool extends BaseTool<"access_mcp_resource"> {
 				}
 			})
 
-			await task.say("mcp_server_response", resourceResultPretty, images)
-			pushToolResult(formatResponse.toolResult(resourceResultPretty, images))
+			const resultApproval = await requestExternalToolResultApproval(task, "mcp_resource", uri, {
+				text: resourceResultPretty,
+				images,
+			})
+
+			await task.say("mcp_server_response", resultApproval.result.text, resultApproval.result.images)
+			pushToolResult(formatResponse.toolResult(resultApproval.result.text, resultApproval.result.images))
 		} catch (error) {
 			await handleError("accessing MCP resource", error instanceof Error ? error : new Error(String(error)))
 		}

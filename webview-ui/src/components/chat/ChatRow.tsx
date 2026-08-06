@@ -11,6 +11,7 @@ import type {
 	SuggestionItem,
 	ClineApiReqInfo,
 	ClineAskUseMcpServer,
+	ClineAskExternalToolResult,
 	ClineSayTool,
 	CompletionCheckpoint,
 } from "@roo-code/types"
@@ -79,6 +80,14 @@ import { cn } from "@/lib/utils"
 import { MiddleTruncatedPath } from "../ui/MiddleTruncatedPath"
 import { OpenMarkdownPreviewButton } from "./OpenMarkdownPreviewButton"
 import { SeeNewChangesButtons } from "./SeeNewChangesButtons"
+
+function formatByteSize(bytes: number): string {
+	if (bytes < 1024) {
+		return `${bytes} B`
+	}
+
+	return `${(bytes / 1024).toFixed(1)} KiB`
+}
 
 // Helper function to get previous todos before a specific message
 function getPreviousTodos(messages: ClineMessage[], currentMessageTs: number): any[] {
@@ -333,6 +342,22 @@ export const ChatRowContent = ({
 							: t("chat:mcp.wantsToAccessResource", { serverName: mcpServerUse.serverName })}
 					</span>,
 				]
+			case "external_tool_result": {
+				const externalToolResult = safeJsonParse<ClineAskExternalToolResult>(message.text)
+				if (externalToolResult === undefined) {
+					return [null, null]
+				}
+
+				return [
+					<span
+						className="codicon codicon-warning"
+						style={{ color: "var(--vscode-editorWarning-foreground)" }}
+					/>,
+					<span style={{ color: normalColor, fontWeight: "bold" }}>
+						{t("chat:externalToolResult.title")}
+					</span>,
+				]
+			}
 			case "completion_result":
 				return [
 					<span
@@ -1780,6 +1805,44 @@ export const ChatRowContent = ({
 							</div>
 						</>
 					)
+				case "external_tool_result": {
+					const externalToolResult = safeJsonParse<ClineAskExternalToolResult>(message.text)
+					if (externalToolResult === undefined) {
+						return null
+					}
+
+					return (
+						<>
+							<div style={headerStyle}>
+								{icon}
+								{title}
+							</div>
+							<div className="w-full bg-vscode-editor-background border border-vscode-border rounded-xs p-2 mt-2">
+								<div className="text-sm text-vscode-foreground">
+									{t("chat:externalToolResult.description", {
+										name: externalToolResult.name,
+										source: externalToolResult.source,
+										byteSize: formatByteSize(externalToolResult.byteSize),
+										threshold: formatByteSize(externalToolResult.thresholdBytes),
+									})}
+								</div>
+								{externalToolResult.imageCount > 0 && (
+									<div className="text-xs text-vscode-descriptionForeground mt-1">
+										{t("chat:externalToolResult.images", { count: externalToolResult.imageCount })}
+									</div>
+								)}
+								{externalToolResult.preview && (
+									<div className="mt-2 pt-2 border-t border-vscode-border">
+										<div className="text-xs text-vscode-descriptionForeground mb-1">
+											{t("chat:externalToolResult.preview")}
+										</div>
+										<Markdown markdown={externalToolResult.preview} />
+									</div>
+								)}
+							</div>
+						</>
+					)
+				}
 				case "completion_result":
 					if (message.text) {
 						return (

@@ -147,7 +147,12 @@
 		"noResults": "No results found",
 		"sortProfiles": "Sort Profiles",
 		"pinnedConfigurations": "Pinned configurations",
-		"allConfigurations": "All configurations"
+		"allConfigurations": "All configurations",
+		"currentConfiguration": "Current configuration",
+		"reasoningOff": "Reasoning Off",
+		"reasoningOn": "Reasoning On",
+		"reasoningUnavailable": "Reasoning unavailable",
+		"modelUnavailable": "Model unavailable"
 	},
 	"lockApiConfigAcrossModes": "Lock API configuration across all modes in this workspace",
 	"unlockApiConfigAcrossModes": "API configuration is locked across all modes in this workspace (click to unlock)",
@@ -321,6 +326,18 @@
 	"mcp": {
 		"wantsToUseTool": "Zoo wants to use a tool on the {{serverName}} MCP server",
 		"wantsToAccessResource": "Zoo wants to access a resource on the {{serverName}} MCP server"
+	},
+	"externalToolResult": {
+		"title": "Large external tool result",
+		"description": "{{source}} result from {{name}} is {{byteSize}}, exceeding the {{threshold}} return limit.",
+		"images": "Includes {{count}} image(s).",
+		"preview": "Preview",
+		"return": {
+			"title": "Return result"
+		},
+		"reject": {
+			"title": "Reject return"
+		}
 	},
 	"modes": {
 		"wantsToSwitch": "Zoo wants to switch to {{mode}} mode",

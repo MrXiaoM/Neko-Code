@@ -1,9 +1,12 @@
+import type { ProviderSettings } from "@roo-code/types"
+
 import { render, screen, fireEvent, waitFor } from "@/utils/test-utils"
 import { vscode } from "@/utils/vscode"
 
 import { ApiConfigSelector } from "../ApiConfigSelector"
 
-const { translate } = vi.hoisted(() => ({
+const { popoverState, translate } = vi.hoisted(() => ({
+	popoverState: { onOpenChange: undefined as ((open: boolean) => void) | undefined },
 	translate: vi.fn((key: string) => key),
 }))
 
@@ -39,18 +42,26 @@ vi.mock("@roo-code/types", () => ({
 
 // Mock Popover components to be testable
 vi.mock("@/components/ui", () => ({
-	Popover: ({ children, open }: any) => (
-		<div data-testid="popover-root" data-open={open}>
-			{children}
-		</div>
-	),
+	Popover: ({ children, open, onOpenChange }: any) => {
+		popoverState.onOpenChange = onOpenChange
+		return (
+			<div data-testid="popover-root" data-open={open}>
+				{children}
+			</div>
+		)
+	},
 	PopoverTrigger: ({ children, disabled, ...props }: any) => (
-		<button data-testid="dropdown-trigger" disabled={disabled} onClick={() => props.onClick?.()} {...props}>
+		<button
+			data-testid="dropdown-trigger"
+			disabled={disabled}
+			onClick={() => popoverState.onOpenChange?.(true)}
+			{...props}>
 			{children}
 		</button>
 	),
 	PopoverContent: ({ children }: any) => <div data-testid="popover-content">{children}</div>,
 	StandardTooltip: ({ children, content }: any) => <span title={content}>{children}</span>,
+	Slider: ({ "aria-label": ariaLabel }: any) => <div data-testid="reasoning-slider" aria-label={ariaLabel} />,
 	Button: ({ children, onClick, ...props }: any) => (
 		<button onClick={onClick} {...props}>
 			{children}
@@ -72,6 +83,10 @@ describe("ApiConfigSelector", () => {
 			{ id: "config2", name: "Config 2", modelId: "gpt-4" },
 			{ id: "config3", name: "Config 3", modelId: "claude-3-sonnet-20240229" },
 		],
+		apiConfiguration: { apiProvider: "anthropic", apiModelId: "claude-3-opus-20240229" } satisfies ProviderSettings,
+		modelId: "claude-3-opus-20240229",
+		modelInfo: undefined,
+		onReasoningEffortCommit: vi.fn(),
 		pinnedApiConfigs: { config1: true },
 		togglePinnedApiConfig: mockTogglePinnedApiConfig,
 		lockApiConfigAcrossModes: false,
@@ -280,7 +295,7 @@ describe("ApiConfigSelector", () => {
 		})
 	})
 
-	test("calls onChange when a config is selected", () => {
+	test("calls onChange and keeps the popover open when a config is selected", () => {
 		render(<ApiConfigSelector {...defaultProps} />)
 
 		const trigger = screen.getByTestId("dropdown-trigger")
@@ -290,6 +305,7 @@ describe("ApiConfigSelector", () => {
 		fireEvent.click(config2)
 
 		expect(mockOnChange).toHaveBeenCalledWith("config2")
+		expect(screen.getByTestId("popover-root")).toHaveAttribute("data-open", "true")
 	})
 
 	test("shows check mark for selected config", () => {

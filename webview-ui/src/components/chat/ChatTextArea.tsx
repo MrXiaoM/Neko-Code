@@ -3,7 +3,7 @@ import { useEvent } from "react-use"
 import DynamicTextArea from "react-textarea-autosize"
 import { VolumeX, Image, WandSparkles, SendHorizontal, X, ListEnd, Square } from "lucide-react"
 
-import type { ExtensionMessage } from "@roo-code/types"
+import type { ExtensionMessage, ProviderSettings } from "@roo-code/types"
 
 import { mentionRegex, mentionRegexGlobal, commandRegexGlobal, unescapeSpaces } from "@roo/context-mentions"
 import { WebviewMessage } from "@roo/WebviewMessage"
@@ -24,6 +24,7 @@ import { cn } from "@src/lib/utils"
 import { convertToMentionPath } from "@src/utils/path-mentions"
 import { replaceTextAreaValue } from "@src/utils/nativeTextArea"
 import { StandardTooltip } from "@src/components/ui"
+import { useSelectedModel } from "@src/components/ui/hooks/useSelectedModel"
 
 import Thumbnails from "../common/Thumbnails"
 import { ModeSelector } from "./ModeSelector"
@@ -102,7 +103,11 @@ export const ChatTextArea = forwardRef<HTMLTextAreaElement, ChatTextAreaProps>(
 			commands,
 			enterBehavior,
 			lockApiConfigAcrossModes,
+			apiConfiguration,
+			setApiConfiguration,
 		} = useExtensionState()
+
+		const { id: selectedModelId, info: selectedModelInfo } = useSelectedModel(apiConfiguration)
 
 		// Find the ID and display text for the currently selected API configuration.
 		const { currentConfigId, displayName } = useMemo(() => {
@@ -113,11 +118,29 @@ export const ChatTextArea = forwardRef<HTMLTextAreaElement, ChatTextAreaProps>(
 			}
 		}, [listApiConfigMeta, currentApiConfigName])
 
+		const pendingReasoningEffortSavesRef = useRef(
+			new Map<string, { apiConfiguration: ProviderSettings; timer: number }>(),
+		)
 		const [gitCommits, setGitCommits] = useState<any[]>([])
 		const [showDropdown, setShowDropdown] = useState(false)
 		const [fileSearchResults, setFileSearchResults] = useState<SearchResult[]>([])
 		const [searchLoading, setSearchLoading] = useState(false)
 		const [searchRequestId, setSearchRequestId] = useState<string>("")
+
+		useEffect(
+			() => () => {
+				pendingReasoningEffortSavesRef.current.forEach(({ apiConfiguration, timer }, configId) => {
+					window.clearTimeout(timer)
+					vscode.postMessage({
+						type: "saveApiConfigurationById",
+						text: configId,
+						apiConfiguration,
+					})
+				})
+				pendingReasoningEffortSavesRef.current.clear()
+			},
+			[],
+		)
 
 		// Close dropdown when clicking outside.
 		useEffect(() => {
@@ -935,6 +958,44 @@ export const ChatTextArea = forwardRef<HTMLTextAreaElement, ChatTextAreaProps>(
 			vscode.postMessage({ type: "lockApiConfigAcrossModes", bool: newValue })
 		}, [lockApiConfigAcrossModes])
 
+		const handleReasoningEffortCommit = useCallback(
+			(
+				settings: Pick<ProviderSettings, "enableReasoningEffort" | "reasoningEffort" | "openAiCustomModelInfo">,
+			) => {
+				if (!currentConfigId) {
+					return
+				}
+
+				const pendingSave = pendingReasoningEffortSavesRef.current.get(currentConfigId)
+				const updatedConfiguration = { ...(pendingSave?.apiConfiguration ?? apiConfiguration), ...settings }
+				setApiConfiguration(settings)
+
+				if (pendingSave) {
+					window.clearTimeout(pendingSave.timer)
+				}
+
+				const timer = window.setTimeout(() => {
+					const queuedSave = pendingReasoningEffortSavesRef.current.get(currentConfigId)
+					if (!queuedSave) {
+						return
+					}
+
+					pendingReasoningEffortSavesRef.current.delete(currentConfigId)
+					vscode.postMessage({
+						type: "saveApiConfigurationById",
+						text: currentConfigId,
+						apiConfiguration: queuedSave.apiConfiguration,
+					})
+				}, 150)
+
+				pendingReasoningEffortSavesRef.current.set(currentConfigId, {
+					apiConfiguration: updatedConfiguration,
+					timer,
+				})
+			},
+			[apiConfiguration, currentConfigId, setApiConfiguration],
+		)
+
 		return (
 			<div
 				className={cn(
@@ -1306,6 +1367,10 @@ export const ChatTextArea = forwardRef<HTMLTextAreaElement, ChatTextAreaProps>(
 							onChange={handleApiConfigChange}
 							triggerClassName="min-w-[28px] text-ellipsis overflow-hidden flex-shrink"
 							listApiConfigMeta={listApiConfigMeta || []}
+							apiConfiguration={apiConfiguration}
+							modelId={selectedModelId}
+							modelInfo={selectedModelInfo}
+							onReasoningEffortCommit={handleReasoningEffortCommit}
 							pinnedApiConfigs={pinnedApiConfigs}
 							togglePinnedApiConfig={togglePinnedApiConfig}
 							lockApiConfigAcrossModes={!!lockApiConfigAcrossModes}

@@ -14,11 +14,16 @@ vi.mock("@src/utils/vscode", () => ({
 // Mock i18n
 vi.mock("react-i18next", () => ({
 	useTranslation: () => ({
-		t: (key: string) => {
+		t: (key: string, options?: Record<string, string | number>) => {
+			if (key === "chat:externalToolResult.description") {
+				return `${options?.name} returned ${options?.byteSize}, over ${options?.threshold}`
+			}
 			const map: Record<string, string> = {
 				"chat:subtasks.wantsToCreate": "Roo wants to create a new subtask",
 				"chat:subtasks.resultContent": "Task result",
 				"chat:subtasks.goToSubtask": "Go to subtask",
+				"chat:externalToolResult.title": "Large external tool result",
+				"chat:externalToolResult.preview": "Preview",
 			}
 			return map[key] ?? key
 		},
@@ -69,6 +74,28 @@ function renderChatRow(message: any, currentTaskItem?: Partial<HistoryItem>, cli
 }
 
 describe("ChatRow - subtask links", () => {
+	it("renders metadata and a bounded preview for an oversized external result approval", () => {
+		const message = {
+			ts: Date.now(),
+			type: "ask" as const,
+			ask: "external_tool_result" as const,
+			text: JSON.stringify({
+				source: "mcp_tool",
+				name: "playwright/browser_snapshot",
+				byteSize: 20 * 1024,
+				thresholdBytes: 16 * 1024,
+				preview: "Page heading",
+				imageCount: 0,
+			}),
+		}
+
+		renderChatRow(message)
+
+		expect(screen.getByText("Large external tool result")).toBeInTheDocument()
+		expect(screen.getByText("playwright/browser_snapshot returned 20.0 KiB, over 16.0 KiB")).toBeInTheDocument()
+		expect(screen.getByText("Page heading")).toBeInTheDocument()
+	})
+
 	beforeEach(() => {
 		mockPostMessage.mockClear()
 	})

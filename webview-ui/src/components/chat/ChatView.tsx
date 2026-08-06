@@ -436,6 +436,13 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 							setPrimaryButtonText(t("chat:approve.title"))
 							setSecondaryButtonText(t("chat:reject.title"))
 							break
+						case "external_tool_result":
+							setSendingDisabled(isPartial)
+							setClineAsk("external_tool_result")
+							setEnableButtons(!isPartial)
+							setPrimaryButtonText(t("chat:externalToolResult.return.title"))
+							setSecondaryButtonText(t("chat:externalToolResult.reject.title"))
+							break
 						case "completion_result":
 							// Extension waiting for feedback, but we can just present a new task button.
 							// Kilo-style change inspection/restoration buttons are rendered inline on the completion row.
@@ -825,6 +832,7 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 				case "command":
 				case "tool":
 				case "use_mcp_server":
+				case "external_tool_result":
 				case "mistake_limit_reached":
 					// Only send text/images if they exist
 					if (trimmedInput || (images && images.length > 0)) {
@@ -889,6 +897,7 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 				case "command":
 				case "tool":
 				case "use_mcp_server":
+				case "external_tool_result":
 					// Only send text/images if they exist
 					if (trimmedInput || (images && images.length > 0)) {
 						vscode.postMessage({

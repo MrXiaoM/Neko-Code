@@ -109,6 +109,34 @@ describe("presentAssistantMessage - Custom Tool Recording", () => {
 			// Should record as "custom_tool", not "my_custom_tool"
 			expect(mockTask.recordToolUsage).toHaveBeenCalledWith("custom_tool")
 		})
+		it("does not return an oversized custom tool result after the user rejects it", async () => {
+			const toolCallId = "tool_call_large_custom_result"
+			const result = "sensitive-custom-result-" + "x".repeat(16 * 1024)
+			mockTask.assistantMessageContent = [
+				{
+					type: "tool_use",
+					id: toolCallId,
+					name: "my_custom_tool",
+					params: {},
+					partial: false,
+				},
+			]
+			mockTask.ask = vi.fn().mockResolvedValue({ response: "noButtonClicked" })
+			vi.mocked(customToolRegistry.has).mockReturnValue(true)
+			vi.mocked(customToolRegistry.get).mockReturnValue({
+				name: "my_custom_tool",
+				description: "A custom tool",
+				execute: vi.fn().mockResolvedValue(result),
+			})
+
+			await presentAssistantMessage(mockTask)
+
+			expect(mockTask.ask).toHaveBeenCalledWith("external_tool_result", expect.any(String))
+			expect(mockTask.userMessageContent).toContainEqual(
+				expect.objectContaining({ content: expect.stringContaining("user rejected it") }),
+			)
+			expect(mockTask.userMessageContent).not.toContainEqual(expect.objectContaining({ content: result }))
+		})
 	})
 
 	describe("Custom tool error recording", () => {

@@ -122,7 +122,12 @@
 		"noResults": "未找到结果",
 		"sortProfiles": "排序配置文件",
 		"pinnedConfigurations": "已置顶的配置",
-		"allConfigurations": "所有配置"
+		"allConfigurations": "所有配置",
+		"currentConfiguration": "当前配置",
+		"reasoningOff": "关闭推理",
+		"reasoningOn": "开启推理",
+		"reasoningUnavailable": "推理不可用",
+		"modelUnavailable": "模型不可用"
 	},
 	"lockApiConfigAcrossModes": "锁定此工作区所有模式的 API 配置",
 	"unlockApiConfigAcrossModes": "此工作区所有模式的 API 配置已锁定（点击解锁）",
@@ -281,6 +286,18 @@
 	"mcp": {
 		"wantsToUseTool": "{{agentName}} 想在 {{serverName}} MCP上使用工具",
 		"wantsToAccessResource": "{{agentName}} 想访问 {{serverName}} MCP服务上的资源"
+	},
+	"externalToolResult": {
+		"title": "外置工具结果过大",
+		"description": "{{name}} 返回的 {{source}} 结果大小为 {{byteSize}}，超过 {{threshold}} 回传限制。",
+		"images": "包含 {{count}} 张图片。",
+		"preview": "预览",
+		"return": {
+			"title": "回传结果"
+		},
+		"reject": {
+			"title": "拒绝回传"
+		}
 	},
 	"modes": {
 		"wantsToSwitch": "即将切换至{{mode}}模式",

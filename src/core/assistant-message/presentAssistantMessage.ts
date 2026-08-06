@@ -37,6 +37,7 @@ import { generateImageTool } from "../tools/GenerateImageTool"
 import { applyDiffTool as applyDiffToolClass } from "../tools/ApplyDiffTool"
 import { isValidToolName, validateToolUse } from "../tools/validateToolUse"
 import { codebaseSearchTool } from "../tools/CodebaseSearchTool"
+import { requestExternalToolResultApproval } from "../tools/ExternalToolResultApproval"
 
 import { formatResponse } from "../prompts/responses"
 import { sanitizeToolUseId } from "../../utils/tool-id"
@@ -898,12 +899,22 @@ export async function presentAssistantMessage(cline: Task) {
 								mode: mode ?? defaultModeSlug,
 								task: cline,
 							})
-
-							console.log(
-								`${customTool.name}.execute(): ${JSON.stringify(customToolArgs)} -> ${JSON.stringify(result)}`,
+							const serializedResult =
+								typeof result === "string" ? result : (JSON.stringify(result) ?? "null")
+							const resultApproval = await requestExternalToolResultApproval(
+								cline,
+								"custom_tool",
+								customTool.name,
+								{
+									text: serializedResult,
+								},
 							)
 
-							pushToolResult(result)
+							console.log(
+								`${customTool.name}.execute(): ${JSON.stringify(customToolArgs)} -> ${resultApproval.byteSize} bytes`,
+							)
+
+							pushToolResult(resultApproval.result.text)
 							cline.consecutiveMistakeCount = 0
 						} catch (executionError: any) {
 							cline.consecutiveMistakeCount++

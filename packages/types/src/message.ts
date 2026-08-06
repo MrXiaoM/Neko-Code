@@ -22,6 +22,7 @@ import { z } from "zod"
  * - `resume_completed_task`: Confirmation needed to resume a task that was already marked as completed
  * - `mistake_limit_reached`: Too many errors encountered, needs user guidance on how to proceed
  * - `use_mcp_server`: Permission to use Model Context Protocol (MCP) server functionality
+ * - `external_tool_result`: Permission to return an oversized external tool result to the model
  * - `auto_approval_max_req_reached`: Auto-approval limit has been reached, manual approval required
  */
 export const clineAsks = [
@@ -35,6 +36,7 @@ export const clineAsks = [
 	"resume_completed_task",
 	"mistake_limit_reached",
 	"use_mcp_server",
+	"external_tool_result",
 	"auto_approval_max_req_reached",
 ] as const
 
@@ -81,7 +83,13 @@ export function isResumableAsk(ask: ClineAsk): ask is ResumableAsk {
  * Asks that put the task into an "user interaction required" state.
  */
 
-export const interactiveAsks = ["followup", "command", "tool", "use_mcp_server"] as const satisfies readonly ClineAsk[]
+export const interactiveAsks = [
+	"followup",
+	"command",
+	"tool",
+	"use_mcp_server",
+	"external_tool_result",
+] as const satisfies readonly ClineAsk[]
 
 export type InteractiveAsk = (typeof interactiveAsks)[number]
 

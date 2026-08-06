@@ -929,6 +929,15 @@ export interface ClineAskUseMcpServer {
 	response?: string
 }
 
+export interface ClineAskExternalToolResult {
+	source: "mcp_tool" | "mcp_resource" | "custom_tool"
+	name: string
+	byteSize: number
+	thresholdBytes: number
+	preview: string
+	imageCount: number
+}
+
 export interface ClineApiReqInfo {
 	request?: string
 	tokensIn?: number

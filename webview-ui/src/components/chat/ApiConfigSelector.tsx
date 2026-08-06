@@ -1,5 +1,7 @@
-import { useState, useMemo, useCallback } from "react"
+import { useState, useMemo, useCallback, useEffect } from "react"
 import { Fzf } from "fzf"
+
+import { type ModelInfo, type ProviderSettings } from "@roo-code/types"
 
 import { cn } from "@/lib/utils"
 import { useRooPortal } from "@/components/ui/hooks/useRooPortal"
@@ -9,6 +11,7 @@ import { vscode } from "@/utils/vscode"
 import { Button } from "@/components/ui"
 
 import { IconButton } from "./IconButton"
+import { ReasoningEffortSlider } from "./ReasoningEffortSlider"
 
 interface ApiConfigSelectorProps {
 	value: string
@@ -18,6 +21,10 @@ interface ApiConfigSelectorProps {
 	onChange: (value: string) => void
 	triggerClassName?: string
 	listApiConfigMeta: Array<{ id: string; name: string; modelId?: string }>
+	apiConfiguration: ProviderSettings
+	modelId: string
+	modelInfo?: ModelInfo
+	onReasoningEffortCommit: (settings: Pick<ProviderSettings, "enableReasoningEffort" | "reasoningEffort">) => void
 	pinnedApiConfigs?: Record<string, boolean>
 	togglePinnedApiConfig: (id: string) => void
 	lockApiConfigAcrossModes: boolean
@@ -36,6 +43,10 @@ export const ApiConfigSelector = ({
 	onChange,
 	triggerClassName = "",
 	listApiConfigMeta,
+	apiConfiguration,
+	modelId,
+	modelInfo,
+	onReasoningEffortCommit,
 	pinnedApiConfigs,
 	togglePinnedApiConfig,
 	lockApiConfigAcrossModes,
@@ -81,11 +92,15 @@ export const ApiConfigSelector = ({
 
 	const configListMaxHeight = `min(${CONFIG_LIST_BASE_MAX_HEIGHT + pinnedConfigs.length * CONFIG_LIST_HEIGHT_PER_PINNED_CONFIG}px, ${CONFIG_LIST_VIEWPORT_MAX_HEIGHT})`
 
+	useEffect(() => {
+		if (!open) {
+			setSearchValue("")
+		}
+	}, [open])
+
 	const handleSelect = useCallback(
 		(configId: string) => {
 			onChange(configId)
-			setOpen(false)
-			setSearchValue("")
 		},
 		[onChange],
 	)
@@ -233,6 +248,14 @@ export const ApiConfigSelector = ({
 							)}
 						</div>
 					)}
+
+					<ReasoningEffortSlider
+						apiConfiguration={apiConfiguration}
+						configName={displayName}
+						modelId={modelId}
+						modelInfo={modelInfo}
+						onCommit={onReasoningEffortCommit}
+					/>
 
 					{/* Bottom bar with buttons on left and title on right */}
 					<div className="flex flex-row items-center justify-between px-2 py-2 border-t border-vscode-dropdown-border">

@@ -1394,7 +1394,8 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 		// Keep them intact during command/tool/mcp approval asks. Drain only for
 		// conversational asks (e.g. followup) so the task does not hang on an
 		// unanswered prompt.
-		const shouldDrainQueuedMessageForAsk = type !== "command" && type !== "tool" && type !== "use_mcp_server"
+		const shouldDrainQueuedMessageForAsk =
+			type !== "command" && type !== "tool" && type !== "use_mcp_server" && type !== "external_tool_result"
 		const isStatusMutable = !partial && isBlocking && !isMessageQueued && approval.decision === "ask"
 
 		if (isStatusMutable) {
@@ -1599,7 +1600,7 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 		// ask(); never overwrite those values when approveAsk/denyAsk is invoked
 		// from the auto path.
 		const isCommandLikeAsk = (ask: ClineAsk | undefined) =>
-			ask === "command" || ask === "tool" || ask === "use_mcp_server"
+			ask === "command" || ask === "tool" || ask === "use_mcp_server" || ask === "external_tool_result"
 
 		// Only annotate the ask that is currently awaiting a response. A resumed
 		// task may contain an unanswered historical command ask before the active
@@ -5162,7 +5163,7 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 	 * messageResponse is treated as reject for tool/command/mcp approvals.
 	 */
 	private isDangerousApprovalAsk(ask: ClineAsk | undefined): boolean {
-		return ask === "tool" || ask === "command" || ask === "use_mcp_server"
+		return ask === "tool" || ask === "command" || ask === "use_mcp_server" || ask === "external_tool_result"
 	}
 
 	/**

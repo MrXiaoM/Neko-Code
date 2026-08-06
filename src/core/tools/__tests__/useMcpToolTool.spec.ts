@@ -254,6 +254,50 @@ describe("useMcpToolTool", () => {
 			expect(mockPushToolResult).toHaveBeenCalledWith("Tool result: Tool executed successfully")
 		})
 
+		it("should require a separate result approval before returning an oversized MCP result", async () => {
+			const block: ToolUse = {
+				type: "tool_use",
+				name: "use_mcp_tool",
+				params: {
+					server_name: "test_server",
+					tool_name: "test_tool",
+					arguments: "{}",
+				},
+				nativeArgs: {
+					server_name: "test_server",
+					tool_name: "test_tool",
+					arguments: {},
+				},
+				partial: false,
+			}
+			mockAskApproval.mockResolvedValue(true)
+			mockTask.ask = vi.fn().mockResolvedValue({ response: "noButtonClicked" })
+			mockProviderRef.deref.mockReturnValue({
+				getMcpHub: () => ({
+					getAllServers: vi
+						.fn()
+						.mockReturnValue([
+							{ name: "test_server", tools: [{ name: "test_tool", description: "Test Tool" }] },
+						]),
+					callTool: vi.fn().mockResolvedValue({
+						content: [{ type: "text", text: "x".repeat(16 * 1024 + 1) }],
+						isError: false,
+					}),
+				}),
+				postMessageToWebview: vi.fn(),
+			})
+
+			await useMcpToolTool.handle(mockTask as Task, block as ToolUse<"use_mcp_tool">, {
+				askApproval: mockAskApproval,
+				handleError: mockHandleError,
+				pushToolResult: mockPushToolResult,
+			})
+
+			expect(mockTask.ask).toHaveBeenCalledWith("external_tool_result", expect.any(String))
+			expect(mockPushToolResult).toHaveBeenCalledWith(expect.stringContaining("user rejected it"))
+			expect(mockPushToolResult).not.toHaveBeenCalledWith(expect.stringContaining("x".repeat(100)))
+		})
+
 		it("should parse JSON-string arguments and pass parsed object to callTool", async () => {
 			const callToolMock = vi.fn().mockResolvedValue({
 				content: [{ type: "text", text: "Browser session started" }],

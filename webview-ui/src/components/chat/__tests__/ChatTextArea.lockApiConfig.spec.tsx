@@ -1,6 +1,6 @@
 import { defaultModeSlug } from "@roo/modes"
 
-import { render, fireEvent, screen } from "@src/utils/test-utils"
+import { act, render, fireEvent, screen } from "@src/utils/test-utils"
 import { useExtensionState } from "@src/context/ExtensionStateContext"
 import { vscode } from "@src/utils/vscode"
 
@@ -20,6 +20,21 @@ vi.mock("@src/utils/path-mentions", () => ({
 
 // Mock ExtensionStateContext
 vi.mock("@src/context/ExtensionStateContext")
+
+vi.mock("../ReasoningEffortSlider", () => ({
+	ReasoningEffortSlider: ({ onCommit }: any) => (
+		<>
+			<button
+				data-testid="commit-reasoning-effort"
+				onClick={() => onCommit({ enableReasoningEffort: true, reasoningEffort: undefined })}
+			/>
+			<button
+				data-testid="commit-high-reasoning-effort"
+				onClick={() => onCommit({ enableReasoningEffort: true, reasoningEffort: "high" })}
+			/>
+		</>
+	),
+}))
 
 const mockPostMessage = vscode.postMessage as ReturnType<typeof vi.fn>
 
@@ -51,6 +66,7 @@ describe("ChatTextArea - lockApiConfigAcrossModes toggle", () => {
 		currentApiConfigName: "Default",
 		pinnedApiConfigs: {},
 		togglePinnedApiConfig: vi.fn(),
+		setApiConfiguration: vi.fn(),
 	}
 
 	beforeEach(() => {
@@ -151,6 +167,89 @@ describe("ChatTextArea - lockApiConfigAcrossModes toggle", () => {
 				type: "lockApiConfigAcrossModes",
 				bool: false,
 			})
+		})
+	})
+
+	describe("reasoning effort persistence", () => {
+		it("updates the active configuration immediately and queues persistence after a committed slider change", () => {
+			vi.useFakeTimers()
+			const setApiConfiguration = vi.fn()
+			;(useExtensionState as ReturnType<typeof vi.fn>).mockReturnValue({
+				...defaultState,
+				apiConfiguration: {
+					apiProvider: "anthropic",
+					enableReasoningEffort: false,
+					reasoningEffort: "disable",
+				},
+				setApiConfiguration,
+			})
+
+			render(<ChatTextArea {...defaultProps} />)
+			fireEvent.click(screen.getByTestId("dropdown-trigger"))
+
+			fireEvent.click(screen.getByTestId("commit-reasoning-effort"))
+
+			expect(setApiConfiguration).toHaveBeenCalledWith({
+				enableReasoningEffort: true,
+				reasoningEffort: undefined,
+			})
+			expect(mockPostMessage).not.toHaveBeenCalledWith(
+				expect.objectContaining({ type: "saveApiConfigurationById" }),
+			)
+
+			act(() => vi.advanceTimersByTime(150))
+
+			expect(mockPostMessage).toHaveBeenCalledWith({
+				type: "saveApiConfigurationById",
+				text: "default",
+				apiConfiguration: {
+					apiProvider: "anthropic",
+					enableReasoningEffort: true,
+					reasoningEffort: undefined,
+				},
+			})
+			vi.useRealTimers()
+		})
+
+		it("keeps the latest committed effort when saves are queued together", () => {
+			vi.useFakeTimers()
+			const setApiConfiguration = vi.fn()
+			;(useExtensionState as ReturnType<typeof vi.fn>).mockReturnValue({
+				...defaultState,
+				apiConfiguration: {
+					apiProvider: "anthropic",
+					enableReasoningEffort: false,
+					reasoningEffort: "disable",
+				},
+				setApiConfiguration,
+			})
+
+			render(<ChatTextArea {...defaultProps} />)
+			fireEvent.click(screen.getByTestId("dropdown-trigger"))
+			fireEvent.click(screen.getByTestId("commit-reasoning-effort"))
+			fireEvent.click(screen.getByTestId("commit-high-reasoning-effort"))
+
+			expect(setApiConfiguration).toHaveBeenCalledTimes(2)
+			expect(mockPostMessage).not.toHaveBeenCalledWith(
+				expect.objectContaining({ type: "saveApiConfigurationById" }),
+			)
+
+			act(() => vi.advanceTimersByTime(150))
+
+			const saveMessages = mockPostMessage.mock.calls
+				.map(([message]) => message)
+				.filter((message) => message.type === "saveApiConfigurationById")
+			expect(saveMessages).toHaveLength(1)
+			expect(saveMessages[0]).toEqual({
+				type: "saveApiConfigurationById",
+				text: "default",
+				apiConfiguration: {
+					apiProvider: "anthropic",
+					enableReasoningEffort: true,
+					reasoningEffort: "high",
+				},
+			})
+			vi.useRealTimers()
 		})
 	})
 })

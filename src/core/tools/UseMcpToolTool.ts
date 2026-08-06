@@ -8,6 +8,7 @@ import { toolNamesMatch } from "../../utils/mcp-name"
 
 import { BaseTool, ToolCallbacks } from "./BaseTool"
 import { ensureMcpServerAllowed } from "./mcpServerRestriction"
+import { requestExternalToolResultApproval } from "./ExternalToolResultApproval"
 
 interface UseMcpToolParams {
 	server_name: string
@@ -344,24 +345,10 @@ export class UseMcpToolTool extends BaseTool<"use_mcp_tool"> {
 			images = extractedImages
 
 			if (outputText || images.length > 0) {
-				await this.sendExecutionStatus(task, {
-					executionId,
-					status: "output",
-					response: outputText || (images.length > 0 ? `[${images.length} 张图片]` : ""),
-				})
-
 				toolResultPretty =
 					(toolResult.isError ? "Error:\n" : "") +
 					(outputText || (images.length > 0 ? `[${images.length} 张图片已接收]` : ""))
 			}
-
-			// Send completion status
-			await this.sendExecutionStatus(task, {
-				executionId,
-				status: toolResult.isError ? "error" : "completed",
-				response: toolResultPretty,
-				error: toolResult.isError ? "执行 MCP 工具时出现错误" : undefined,
-			})
 		} else {
 			// Send error status if no result
 			await this.sendExecutionStatus(task, {
@@ -371,8 +358,32 @@ export class UseMcpToolTool extends BaseTool<"use_mcp_tool"> {
 			})
 		}
 
-		await task.say("mcp_server_response", toolResultPretty, images)
-		pushToolResult(formatResponse.toolResult(toolResultPretty, images))
+		const resultApproval = await requestExternalToolResultApproval(task, "mcp_tool", `${serverName}/${toolName}`, {
+			text: toolResultPretty,
+			images,
+		})
+
+		await this.sendExecutionStatus(task, {
+			executionId,
+			status: "output",
+			response: resultApproval.result.text,
+		})
+		if (toolResult?.isError) {
+			await this.sendExecutionStatus(task, {
+				executionId,
+				status: "error",
+				error: "执行 MCP 工具时出现错误",
+			})
+		} else {
+			await this.sendExecutionStatus(task, {
+				executionId,
+				status: "completed",
+				response: resultApproval.result.text,
+			})
+		}
+
+		await task.say("mcp_server_response", resultApproval.result.text, resultApproval.result.images)
+		pushToolResult(formatResponse.toolResult(resultApproval.result.text, resultApproval.result.images))
 	}
 }
 
