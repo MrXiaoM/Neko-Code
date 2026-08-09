@@ -14,6 +14,7 @@ const COUNTDOWN_INTERVAL_MS = 1000
 interface FollowUpSuggestProps {
 	suggestions?: SuggestionItem[]
 	onSuggestionClick?: (suggestion: SuggestionItem, event?: React.MouseEvent) => void
+	onSuggestionCopy?: (suggestion: SuggestionItem) => void
 	ts: number
 	onCancelAutoApproval?: () => void
 	isAnswered?: boolean
@@ -23,6 +24,7 @@ interface FollowUpSuggestProps {
 export const FollowUpSuggest = ({
 	suggestions = [],
 	onSuggestionClick,
+	onSuggestionCopy,
 	ts = 1,
 	onCancelAutoApproval,
 	isAnswered = false,
@@ -142,18 +144,18 @@ export const FollowUpSuggest = ({
 							</div>
 						)}
 						<StandardTooltip content={t("chat:followUpSuggest.copyToInput")}>
-							<div
+							<button
+								type="button"
+								aria-label={t("chat:followUpSuggest.copyToInput")}
 								className="absolute cursor-pointer top-1.5 right-1.5 opacity-0 group-hover:opacity-100 transition-opacity bg-vscode-input-background px-0.5 rounded"
-								onClick={(e) => {
-									e.stopPropagation()
-									// Cancel the auto-approve timer when edit button is clicked
+								onClick={(event) => {
+									event.stopPropagation()
 									setSuggestionSelected(true)
 									onCancelAutoApproval?.()
-									// Simulate shift-click by directly calling the handler with shiftKey=true.
-									onSuggestionClick?.(suggestion, { ...e, shiftKey: true })
+									onSuggestionCopy?.(suggestion)
 								}}>
 								<ClipboardCopy className="w-4" />
-							</div>
+							</button>
 						</StandardTooltip>
 					</div>
 				)

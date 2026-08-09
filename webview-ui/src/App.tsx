@@ -60,8 +60,10 @@ const App = () => {
 		telemetryKey,
 		machineId,
 		renderContext,
+		dedicatedIdeLayoutEnabled = false,
 		mdmCompliant,
 	} = useExtensionState()
+	const isComposer = renderContext === "composer"
 
 	// Create a persistent state manager
 	const marketplaceStateManager = useMemo(() => new MarketplaceViewStateManager(), [])
@@ -114,7 +116,7 @@ const App = () => {
 		(e: MessageEvent) => {
 			const message: ExtensionMessage = e.data
 
-			if (message.type === "action" && message.action) {
+			if (!isComposer && message.type === "action" && message.action) {
 				// Handle switchTab action with tab parameter
 				if (message.action === "switchTab" && message.tab) {
 					const targetTab = message.tab as Tab
@@ -137,7 +139,7 @@ const App = () => {
 				}
 			}
 
-			if (message.type === "showDeleteMessageDialog" && message.messageTs) {
+			if (!isComposer && message.type === "showDeleteMessageDialog" && message.messageTs) {
 				setDeleteMessageDialogState({
 					isOpen: true,
 					messageTs: message.messageTs,
@@ -145,7 +147,7 @@ const App = () => {
 				})
 			}
 
-			if (message.type === "showEditMessageDialog" && message.messageTs && message.text) {
+			if (!isComposer && message.type === "showEditMessageDialog" && message.messageTs && message.text) {
 				setEditMessageDialogState({
 					isOpen: true,
 					messageTs: message.messageTs,
@@ -159,17 +161,17 @@ const App = () => {
 				chatViewRef.current?.acceptInput()
 			}
 		},
-		[switchTab],
+		[isComposer, switchTab],
 	)
 
 	useEvent("message", onMessage)
 
 	useEffect(() => {
-		if (shouldShowAnnouncement && tab === "chat") {
+		if (!isComposer && shouldShowAnnouncement && tab === "chat") {
 			setShowAnnouncement(true)
 			vscode.postMessage({ type: "didShowAnnouncement" })
 		}
-	}, [shouldShowAnnouncement, tab])
+	}, [isComposer, shouldShowAnnouncement, tab])
 
 	useEffect(() => {
 		const isRecoverableTab = tab === "settings" || tab === "marketplace"
@@ -204,14 +206,14 @@ const App = () => {
 		console.debug("App initialized with source map support")
 	}, [])
 
-	// Focus the WebView when non-interactive content is clicked (only in editor/tab mode)
+	// The legacy focusPanel command targets the sidebar provider. Do not invoke it
+	// from the dedicated editor layout, or a regular click can reopen the auxiliary sidebar.
 	useAddNonInteractiveClickListener(
 		useCallback(() => {
-			// Only send focus request if we're in editor (tab) mode, not sidebar
-			if (renderContext === "editor") {
+			if (renderContext === "editor" && !dedicatedIdeLayoutEnabled) {
 				vscode.postMessage({ type: "focusPanelRequest" })
 			}
-		}, [renderContext]),
+		}, [dedicatedIdeLayoutEnabled, renderContext]),
 	)
 	// Track marketplace tab views
 	useEffect(() => {
@@ -249,65 +251,75 @@ const App = () => {
 				showAnnouncement={showAnnouncement}
 				hideAnnouncement={() => setShowAnnouncement(false)}
 			/>
-			{deleteMessageDialogState.hasCheckpoint ? (
-				<MemoizedCheckpointRestoreDialog
-					open={deleteMessageDialogState.isOpen}
-					type="delete"
-					hasCheckpoint={deleteMessageDialogState.hasCheckpoint}
-					onOpenChange={(open: boolean) => setDeleteMessageDialogState((prev) => ({ ...prev, isOpen: open }))}
-					onConfirm={(restoreCheckpoint: boolean) => {
-						vscode.postMessage({
-							type: "deleteMessageConfirm",
-							messageTs: deleteMessageDialogState.messageTs,
-							restoreCheckpoint,
-						})
-						setDeleteMessageDialogState((prev) => ({ ...prev, isOpen: false }))
-					}}
-				/>
-			) : (
-				<MemoizedDeleteMessageDialog
-					open={deleteMessageDialogState.isOpen}
-					onOpenChange={(open: boolean) => setDeleteMessageDialogState((prev) => ({ ...prev, isOpen: open }))}
-					onConfirm={() => {
-						vscode.postMessage({
-							type: "deleteMessageConfirm",
-							messageTs: deleteMessageDialogState.messageTs,
-						})
-						setDeleteMessageDialogState((prev) => ({ ...prev, isOpen: false }))
-					}}
-				/>
-			)}
-			{editMessageDialogState.hasCheckpoint ? (
-				<MemoizedCheckpointRestoreDialog
-					open={editMessageDialogState.isOpen}
-					type="edit"
-					hasCheckpoint={editMessageDialogState.hasCheckpoint}
-					onOpenChange={(open: boolean) => setEditMessageDialogState((prev) => ({ ...prev, isOpen: open }))}
-					onConfirm={(restoreCheckpoint: boolean) => {
-						vscode.postMessage({
-							type: "editMessageConfirm",
-							messageTs: editMessageDialogState.messageTs,
-							text: editMessageDialogState.text,
-							restoreCheckpoint,
-						})
-						setEditMessageDialogState((prev) => ({ ...prev, isOpen: false }))
-					}}
-				/>
-			) : (
-				<MemoizedEditMessageDialog
-					open={editMessageDialogState.isOpen}
-					onOpenChange={(open: boolean) => setEditMessageDialogState((prev) => ({ ...prev, isOpen: open }))}
-					onConfirm={() => {
-						vscode.postMessage({
-							type: "editMessageConfirm",
-							messageTs: editMessageDialogState.messageTs,
-							text: editMessageDialogState.text,
-							images: editMessageDialogState.images,
-						})
-						setEditMessageDialogState((prev) => ({ ...prev, isOpen: false }))
-					}}
-				/>
-			)}
+			{!isComposer &&
+				(deleteMessageDialogState.hasCheckpoint ? (
+					<MemoizedCheckpointRestoreDialog
+						open={deleteMessageDialogState.isOpen}
+						type="delete"
+						hasCheckpoint={deleteMessageDialogState.hasCheckpoint}
+						onOpenChange={(open: boolean) =>
+							setDeleteMessageDialogState((prev) => ({ ...prev, isOpen: open }))
+						}
+						onConfirm={(restoreCheckpoint: boolean) => {
+							vscode.postMessage({
+								type: "deleteMessageConfirm",
+								messageTs: deleteMessageDialogState.messageTs,
+								restoreCheckpoint,
+							})
+							setDeleteMessageDialogState((prev) => ({ ...prev, isOpen: false }))
+						}}
+					/>
+				) : (
+					<MemoizedDeleteMessageDialog
+						open={deleteMessageDialogState.isOpen}
+						onOpenChange={(open: boolean) =>
+							setDeleteMessageDialogState((prev) => ({ ...prev, isOpen: open }))
+						}
+						onConfirm={() => {
+							vscode.postMessage({
+								type: "deleteMessageConfirm",
+								messageTs: deleteMessageDialogState.messageTs,
+							})
+							setDeleteMessageDialogState((prev) => ({ ...prev, isOpen: false }))
+						}}
+					/>
+				))}
+			{!isComposer &&
+				(editMessageDialogState.hasCheckpoint ? (
+					<MemoizedCheckpointRestoreDialog
+						open={editMessageDialogState.isOpen}
+						type="edit"
+						hasCheckpoint={editMessageDialogState.hasCheckpoint}
+						onOpenChange={(open: boolean) =>
+							setEditMessageDialogState((prev) => ({ ...prev, isOpen: open }))
+						}
+						onConfirm={(restoreCheckpoint: boolean) => {
+							vscode.postMessage({
+								type: "editMessageConfirm",
+								messageTs: editMessageDialogState.messageTs,
+								text: editMessageDialogState.text,
+								restoreCheckpoint,
+							})
+							setEditMessageDialogState((prev) => ({ ...prev, isOpen: false }))
+						}}
+					/>
+				) : (
+					<MemoizedEditMessageDialog
+						open={editMessageDialogState.isOpen}
+						onOpenChange={(open: boolean) =>
+							setEditMessageDialogState((prev) => ({ ...prev, isOpen: open }))
+						}
+						onConfirm={() => {
+							vscode.postMessage({
+								type: "editMessageConfirm",
+								messageTs: editMessageDialogState.messageTs,
+								text: editMessageDialogState.text,
+								images: editMessageDialogState.images,
+							})
+							setEditMessageDialogState((prev) => ({ ...prev, isOpen: false }))
+						}}
+					/>
+				))}
 		</>
 	)
 }

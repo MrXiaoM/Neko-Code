@@ -820,14 +820,14 @@ describe("approvalNotification", () => {
 				expect(firstResponse.status).toBe(200)
 				await Promise.resolve()
 				await Promise.resolve()
-				expect(vscode.commands.executeCommand).toHaveBeenCalledWith(`${Package.name}.SidebarProvider.focus`)
 				expect(vscode.commands.executeCommand).toHaveBeenCalledWith(`${Package.name}.focusInput`)
+				expect(vscode.commands.executeCommand).not.toHaveBeenCalledWith(`${Package.name}.SidebarProvider.focus`)
 
 				const repeatedResponse = await fetch(callbackUrl, {
 					headers: { "X-Zoo-Code-Toast-Bridge": "1" },
 				})
 				expect(repeatedResponse.status).toBe(404)
-				expect(vscode.commands.executeCommand).toHaveBeenCalledTimes(2)
+				expect(vscode.commands.executeCommand).toHaveBeenCalledTimes(1)
 			} finally {
 				nock.disableNetConnect()
 			}
@@ -859,8 +859,8 @@ describe("approvalNotification", () => {
 				windowStateChangeHandlers.at(-1)?.({ focused: true })
 				await Promise.resolve()
 				await Promise.resolve()
-				expect(vscode.commands.executeCommand).toHaveBeenCalledWith(`${Package.name}.SidebarProvider.focus`)
 				expect(vscode.commands.executeCommand).toHaveBeenCalledWith(`${Package.name}.focusInput`)
+				expect(vscode.commands.executeCommand).not.toHaveBeenCalledWith(`${Package.name}.SidebarProvider.focus`)
 			} finally {
 				nock.disableNetConnect()
 			}
@@ -915,17 +915,16 @@ describe("approvalNotification", () => {
 	})
 
 	describe("focusZooCodeForApproval", () => {
-		it("focuses the sidebar and input", async () => {
+		it("uses the layout-aware input focus command without directly revealing the sidebar", async () => {
 			vi.mocked(vscode.commands.executeCommand).mockResolvedValue(undefined)
 			await focusZooCodeForApproval()
-			expect(vscode.commands.executeCommand).toHaveBeenCalledWith(`${Package.name}.SidebarProvider.focus`)
+
 			expect(vscode.commands.executeCommand).toHaveBeenCalledWith(`${Package.name}.focusInput`)
+			expect(vscode.commands.executeCommand).not.toHaveBeenCalledWith(`${Package.name}.SidebarProvider.focus`)
 		})
 
-		it("continues if sidebar focus fails", async () => {
-			vi.mocked(vscode.commands.executeCommand)
-				.mockRejectedValueOnce(new Error("no sidebar"))
-				.mockResolvedValueOnce(undefined)
+		it("handles input focus failures", async () => {
+			vi.mocked(vscode.commands.executeCommand).mockRejectedValueOnce(new Error("input unavailable"))
 			const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {})
 			await focusZooCodeForApproval()
 			expect(vscode.commands.executeCommand).toHaveBeenCalledWith(`${Package.name}.focusInput`)

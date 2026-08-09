@@ -1,6 +1,7 @@
 // pnpm --filter roo-cline test core/webview/__tests__/ClineProvider.spec.ts
 
 import * as path from "path"
+import fs from "fs/promises"
 import { TaskRegistry } from "../../task/TaskRegistry"
 
 import Anthropic from "@anthropic-ai/sdk"
@@ -50,6 +51,7 @@ vi.mock("fs/promises", async (importOriginal) => {
 		readFile: vi.fn().mockResolvedValue(""),
 		unlink: vi.fn().mockResolvedValue(undefined),
 		rmdir: vi.fn().mockResolvedValue(undefined),
+		appendFile: vi.fn().mockResolvedValue(undefined),
 	}
 
 	return {
@@ -113,9 +115,6 @@ vi.mock("@modelcontextprotocol/sdk/types.js", () => ({
 
 const mockAddCustomInstructions = vi.fn().mockResolvedValue("Combined instructions")
 
-;(vi.mocked(await import("../../prompts/sections/custom-instructions")) as any).addCustomInstructions =
-	mockAddCustomInstructions
-
 vi.mock("delay", () => {
 	const delayFn = (_ms: number) => Promise.resolve()
 	delayFn.createDelay = () => delayFn
@@ -165,10 +164,16 @@ vi.mock("vscode", () => ({
 		QuickFix: { value: "quickfix" },
 		RefactorRewrite: { value: "refactor.rewrite" },
 	},
+	authentication: {
+		getSession: vi.fn().mockResolvedValue(undefined),
+		onDidChangeSessions: vi.fn(() => ({ dispose: vi.fn() })),
+	},
 	commands: {
 		executeCommand: vi.fn().mockResolvedValue(undefined),
 	},
 	window: {
+		createTextEditorDecorationType: vi.fn().mockReturnValue({ dispose: vi.fn() }),
+		createWebviewPanel: vi.fn(),
 		showInformationMessage: vi.fn(),
 		showWarningMessage: vi.fn(),
 		showErrorMessage: vi.fn(),
@@ -202,6 +207,9 @@ vi.mock("vscode", () => ({
 		Production: 1,
 		Development: 2,
 		Test: 3,
+	},
+	ViewColumn: {
+		Active: -1,
 	},
 	version: "1.85.0",
 }))
@@ -429,6 +437,7 @@ describe("ClineProvider", () => {
 				setParentTask: vi.fn(),
 				setRootTask: vi.fn(),
 				taskId: options?.historyItem?.id || "test-task-id",
+				persistInitialUserMessage: vi.fn().mockResolvedValue(undefined),
 				emit: vi.fn(),
 			}
 
@@ -496,6 +505,9 @@ describe("ClineProvider", () => {
 			subscriptions: [],
 			extension: {
 				packageJSON: { version: "1.0.0" },
+			},
+			logUri: {
+				fsPath: "/test/log/path",
 			},
 			globalStorageUri: {
 				fsPath: "/test/storage/path",
@@ -660,6 +672,7 @@ describe("ClineProvider", () => {
 			await provider.resolveWebviewView(mockWebviewView)
 			;(mockOutputChannel.appendLine as ReturnType<typeof vi.fn>).mockClear()
 			mockPostMessage.mockClear()
+			vi.mocked(fs.appendFile).mockClear()
 		})
 
 		test("posts didBecomeVisible without reloading when the webview responds to health check", async () => {
@@ -702,6 +715,11 @@ describe("ClineProvider", () => {
 			expect(mockWebviewView.webview.html).toContain("<!DOCTYPE html>")
 			expect((mockWebviewView.webview.onDidReceiveMessage as any).mock.calls.length).toBeGreaterThan(
 				listenerCountBefore,
+			)
+			expect(fs.appendFile).toHaveBeenCalledWith(
+				expect.stringContaining("webview-crashes.ndjson"),
+				expect.stringContaining('"stage":"webview-unresponsive"'),
+				"utf8",
 			)
 		})
 		test("reloads webview html when a visible tab does not answer health check", async () => {
@@ -873,6 +891,215 @@ describe("ClineProvider", () => {
 		await provider.postMessageToWebview(message)
 
 		expect(mockPostMessage).toHaveBeenCalledWith(message)
+	})
+
+	test("postStateToWebview assigns the dedicated editor render context to the additional endpoint", async () => {
+		const editorPostMessage = vi.fn().mockResolvedValue(undefined)
+		Reflect.set(provider, "dedicatedEditorView", { webview: { postMessage: editorPostMessage } })
+		vi.spyOn(provider, "getStateToPostToWebview").mockImplementation(
+			async () => ({ version: "1.0.0" }) as ExtensionState,
+		)
+
+		await provider.postStateToWebview()
+
+		expect(editorPostMessage).toHaveBeenCalledWith(
+			expect.objectContaining({
+				type: "state",
+				state: expect.objectContaining({ renderContext: "editor" }),
+			}),
+		)
+	})
+
+	test("postStateToWebview assigns composer and editor render contexts to their dedicated endpoints", async () => {
+		const composerPostMessage = vi.fn().mockResolvedValue(undefined)
+		const editorPostMessage = vi.fn().mockResolvedValue(undefined)
+		Reflect.set(provider, "composerView", { webview: { postMessage: composerPostMessage } })
+		Reflect.set(provider, "dedicatedEditorView", { webview: { postMessage: editorPostMessage } })
+		vi.spyOn(provider, "getStateToPostToWebview").mockImplementation(
+			async () => ({ version: "1.0.0" }) as ExtensionState,
+		)
+
+		await provider.postStateToWebview()
+
+		expect(composerPostMessage).toHaveBeenCalledWith(
+			expect.objectContaining({
+				type: "state",
+				state: expect.objectContaining({ renderContext: "composer" }),
+			}),
+		)
+		expect(editorPostMessage).toHaveBeenCalledWith(
+			expect.objectContaining({
+				type: "state",
+				state: expect.objectContaining({ renderContext: "editor" }),
+			}),
+		)
+	})
+
+	test("does not create or focus the dedicated layout without an open workspace", async () => {
+		vi.mocked(vscode.workspace).workspaceFolders = undefined
+
+		await provider.openDedicatedIdeLayout()
+
+		expect(vscode.window.createWebviewPanel).not.toHaveBeenCalled()
+		expect(updateGlobalStateSpy).not.toHaveBeenCalledWith("dedicatedIdeLayoutEnabled", true)
+		expect(vscode.commands.executeCommand).not.toHaveBeenCalledWith("workbench.action.pinEditor")
+	})
+
+	test("pins the dedicated editor and enables its view context when opening the layout", async () => {
+		vi.mocked(vscode.workspace).workspaceFolders = [
+			{ uri: { fsPath: "/test/workspace" } },
+		] as vscode.WorkspaceFolder[]
+		const editorView = {
+			webview: {},
+			iconPath: undefined,
+			onDidDispose: vi.fn(),
+			reveal: vi.fn(),
+		}
+		vi.mocked(vscode.window.createWebviewPanel).mockReturnValue(editorView as unknown as vscode.WebviewPanel)
+		Reflect.set(provider, "initializeAdditionalWebview", vi.fn().mockResolvedValue(undefined))
+
+		await provider.openDedicatedIdeLayout({ focusComposer: false })
+
+		expect(vscode.window.createWebviewPanel).toHaveBeenCalledWith(
+			ClineProvider.tabPanelId,
+			"对话",
+			vscode.ViewColumn.Active,
+			expect.any(Object),
+		)
+		expect(vscode.window.createWebviewPanel).toHaveBeenCalledTimes(1)
+		expect(vscode.commands.executeCommand).toHaveBeenCalledWith(
+			"setContext",
+			ClineProvider.dedicatedIdeLayoutContextKey,
+			true,
+		)
+		expect(vscode.commands.executeCommand).toHaveBeenCalledWith("workbench.action.pinEditor")
+	})
+
+	test("disables the dedicated layout by closing its editor and restoring the sidebar", async () => {
+		const editorView = {
+			webview: {},
+			dispose: vi.fn(),
+		}
+		Reflect.set(provider, "dedicatedEditorView", editorView)
+		const postStateSpy = vi.spyOn(provider, "postStateToWebview").mockResolvedValue(undefined)
+
+		await provider.disableDedicatedIdeLayout()
+
+		expect(updateGlobalStateSpy).toHaveBeenCalledWith("dedicatedIdeLayoutEnabled", false)
+		expect(vscode.commands.executeCommand).toHaveBeenCalledWith(
+			"setContext",
+			ClineProvider.dedicatedIdeLayoutContextKey,
+			false,
+		)
+		expect(editorView.dispose).toHaveBeenCalledTimes(1)
+		expect(postStateSpy).toHaveBeenCalledTimes(1)
+		expect(vscode.commands.executeCommand).toHaveBeenCalledWith(`${ClineProvider.sideBarId}.focus`)
+	})
+
+	test("restores the sidebar when the user closes the dedicated editor", async () => {
+		vi.mocked(vscode.workspace).workspaceFolders = [
+			{ uri: { fsPath: "/test/workspace" } },
+		] as vscode.WorkspaceFolder[]
+		let onDidDispose: (() => void) | undefined
+		const editorView = {
+			webview: {},
+			iconPath: undefined,
+			onDidDispose: vi.fn((callback: () => void) => {
+				onDidDispose = callback
+				return { dispose: vi.fn() }
+			}),
+			reveal: vi.fn(),
+		}
+		vi.mocked(vscode.window.createWebviewPanel).mockReturnValue(editorView as unknown as vscode.WebviewPanel)
+		Reflect.set(provider, "initializeAdditionalWebview", vi.fn().mockResolvedValue(undefined))
+		const disableSpy = vi.spyOn(provider, "disableDedicatedIdeLayout").mockResolvedValue(undefined)
+
+		await provider.openDedicatedIdeLayout({ focusComposer: false })
+		onDidDispose?.()
+		await Promise.resolve()
+
+		expect(disableSpy).toHaveBeenCalledTimes(1)
+	})
+
+	test("accepts only a private, fixed avatar storage base name and image extension", () => {
+		const getUserAvatarFilePath = Reflect.get(provider, "getUserAvatarFilePath") as (
+			baseName: string,
+			extension: string,
+		) => string | undefined
+
+		expect(getUserAvatarFilePath.call(provider, "current", ".png")).toBe(
+			path.join("/test/storage/path", "user-avatar", "current.png"),
+		)
+		expect(getUserAvatarFilePath.call(provider, "pending", ".webp")).toBe(
+			path.join("/test/storage/path", "user-avatar", "pending.webp"),
+		)
+		expect(getUserAvatarFilePath.call(provider, "../current", ".png")).toBeUndefined()
+		expect(getUserAvatarFilePath.call(provider, "current", ".gif")).toBeUndefined()
+	})
+
+	test("requestComposer approval actions preserve the composer-draft marker when falling back to the sidebar", async () => {
+		const postMessageSpy = vi.spyOn(provider, "postMessageToWebview").mockResolvedValue(undefined)
+
+		await provider.requestComposerPrimaryButtonClick()
+		await provider.requestComposerSecondaryButtonClick()
+
+		expect(postMessageSpy).toHaveBeenCalledWith({
+			type: "invoke",
+			invoke: "primaryButtonClick",
+			values: { useComposerDraft: true },
+		})
+		expect(postMessageSpy).toHaveBeenCalledWith({
+			type: "invoke",
+			invoke: "secondaryButtonClick",
+			values: { useComposerDraft: true },
+		})
+	})
+
+	test("requestComposerDraftAppend sends a suggestion to the webviews", async () => {
+		const postMessageSpy = vi.spyOn(provider, "postMessageToWebview").mockResolvedValue(undefined)
+
+		await provider.requestComposerDraftAppend("Use the existing sidebar behavior")
+
+		expect(postMessageSpy).toHaveBeenCalledWith({
+			type: "invoke",
+			invoke: "setChatBoxMessage",
+			text: "Use the existing sidebar behavior",
+			images: [],
+		})
+	})
+
+	test("requestComposerDraftAppend targets the composer when it is available", async () => {
+		const composerPostMessage = vi.fn().mockResolvedValue(undefined)
+		const editorPostMessage = vi.fn().mockResolvedValue(undefined)
+		Reflect.set(provider, "composerView", { webview: { postMessage: composerPostMessage } })
+		Reflect.set(provider, "dedicatedEditorView", { webview: { postMessage: editorPostMessage } })
+
+		await provider.requestComposerDraftAppend("Use the composer draft")
+
+		expect(composerPostMessage).toHaveBeenCalledWith({
+			type: "invoke",
+			invoke: "setChatBoxMessage",
+			text: "Use the composer draft",
+			images: [],
+		})
+		expect(editorPostMessage).not.toHaveBeenCalled()
+	})
+
+	test("showTaskWithId keeps dedicated-layout history navigation in the editor endpoint", async () => {
+		const editorPostMessage = vi.fn().mockResolvedValue(undefined)
+		Reflect.set(provider, "dedicatedEditorView", { webview: { postMessage: editorPostMessage } })
+		vi.spyOn(provider, "getCurrentTask").mockReturnValue({ taskId: "task-1" } as Task)
+		vi.spyOn(provider, "getState").mockResolvedValue({
+			dedicatedIdeLayoutEnabled: true,
+		} as Awaited<ReturnType<ClineProvider["getState"]>>)
+		const openDedicatedLayoutSpy = vi.spyOn(provider, "openDedicatedIdeLayout").mockResolvedValue(undefined)
+		const broadcastSpy = vi.spyOn(provider, "postMessageToWebview").mockResolvedValue(undefined)
+
+		await provider.showTaskWithId("task-1")
+
+		expect(openDedicatedLayoutSpy).toHaveBeenCalledWith({ focusComposer: false })
+		expect(editorPostMessage).toHaveBeenCalledWith({ type: "action", action: "chatButtonClicked" })
+		expect(broadcastSpy).not.toHaveBeenCalledWith({ type: "action", action: "chatButtonClicked" })
 	})
 
 	test("postMessageToWebview does not throw when webview is disposed", async () => {

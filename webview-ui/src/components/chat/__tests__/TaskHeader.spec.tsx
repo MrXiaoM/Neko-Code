@@ -135,6 +135,36 @@ describe("TaskHeader", () => {
 		expect(screen.queryByText(/\$/)).not.toBeInTheDocument()
 	})
 
+	it("keeps a stable summary slot while usage details expand over the chat", () => {
+		renderTaskHeader()
+
+		const summarySlot = screen.getByTestId("task-summary-slot")
+		expect(summarySlot.className).toContain("min-h-[64px]")
+
+		fireEvent.click(screen.getByTestId("task-summary-panel"))
+
+		expect(summarySlot.className).toContain("min-h-[64px]")
+		expect(screen.getByTestId("task-summary-panel").className).toContain("absolute")
+	})
+
+	it("keeps usage and todo cards in separate Grid slots when usage expands", () => {
+		renderTaskHeader({
+			todos: [{ id: "todo-1", content: "Keep the todo visible", status: "in_progress" }],
+		})
+
+		const summaryPanel = screen.getByTestId("task-summary-panel")
+		fireEvent.click(summaryPanel)
+
+		const summarySlot = screen.getByTestId("task-summary-slot")
+		const todoSlot = screen.getByTestId("todo-list-slot")
+		expect(summarySlot.parentElement).toBe(todoSlot.parentElement)
+		expect(summarySlot).toContainElement(summaryPanel)
+		expect(todoSlot).toHaveTextContent("Keep the todo visible")
+		expect(summaryPanel.className).toContain("absolute")
+		expect(summarySlot.className).toContain("relative")
+		expect(todoSlot.className).toContain("relative")
+	})
+
 	it("should render the condense context button in the collapsed state", () => {
 		renderTaskHeader()
 		// Button is visible without expanding the task header

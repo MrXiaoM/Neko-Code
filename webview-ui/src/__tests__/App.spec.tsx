@@ -89,6 +89,15 @@ vi.mock("@src/components/marketplace/MarketplaceView", () => ({
 	},
 }))
 
+vi.mock("@src/components/chat/MessageModificationConfirmationDialog", () => ({
+	DeleteMessageDialog: () => <div data-testid="delete-message-dialog" />,
+	EditMessageDialog: () => <div data-testid="edit-message-dialog" />,
+}))
+
+vi.mock("@src/components/chat/CheckpointRestoreDialog", () => ({
+	CheckpointRestoreDialog: () => <div data-testid="checkpoint-restore-dialog" />,
+}))
+
 const mockUseExtensionState = vi.fn()
 
 // Mock i18next and react-i18next
@@ -233,6 +242,37 @@ describe("App", () => {
 
 		const chatView = screen.getByTestId("chat-view")
 		expect(chatView.getAttribute("data-hidden")).toBe("true")
+	})
+
+	it("ignores conversation navigation and message dialogs in the bottom composer", async () => {
+		mockUseExtensionState.mockReturnValue({
+			didHydrateState: true,
+			showWelcome: false,
+			shouldShowAnnouncement: false,
+			experiments: {},
+			language: "en",
+			telemetrySetting: "enabled",
+			renderContext: "composer",
+		})
+		render(<AppWithProviders />)
+
+		act(() => {
+			triggerMessage("settingsButtonClicked")
+			window.dispatchEvent(
+				new MessageEvent("message", {
+					data: { type: "showDeleteMessageDialog", messageTs: 1 },
+				}),
+			)
+			window.dispatchEvent(
+				new MessageEvent("message", {
+					data: { type: "showEditMessageDialog", messageTs: 2, text: "Edited" },
+				}),
+			)
+		})
+
+		expect(screen.queryByTestId("settings-view")).not.toBeInTheDocument()
+		expect(screen.queryByTestId("delete-message-dialog")).not.toBeInTheDocument()
+		expect(screen.queryByTestId("edit-message-dialog")).not.toBeInTheDocument()
 	})
 
 	it.each([

@@ -58,8 +58,10 @@ vi.mock("fs/promises", () => ({
 vi.mock("os", () => ({
 	default: {
 		homedir: vi.fn(() => "/mock/home"),
+		tmpdir: vi.fn(() => "/mock/tmp"),
 	},
 	homedir: vi.fn(() => "/mock/home"),
+	tmpdir: vi.fn(() => "/mock/tmp"),
 }))
 
 vi.mock("../../../utils/safeWriteJson")
@@ -1168,6 +1170,51 @@ describe("importExport", () => {
 				expect(importedGlobalSettings).toHaveProperty("imageGenerationProvider", undefined)
 				expect(importedGlobalSettings.openRouterImageGenerationSelectedModel).toBe("openrouter/model-1")
 				expect(importedGlobalSettings.customInstructions).toBe("Keep this setting")
+			})
+
+			it("should skip a legacy avatar setting because avatar files are no longer settings", async () => {
+				;(vscode.window.showOpenDialog as Mock).mockResolvedValue([{ fsPath: "/mock/path/settings.json" }])
+
+				const mockFileContent = JSON.stringify({
+					providerProfiles: {
+						currentApiConfigName: "valid-profile",
+						apiConfigs: {
+							"valid-profile": {
+								apiProvider: "openai" as ProviderName,
+								apiKey: "test-key",
+								id: "valid-id",
+							},
+						},
+					},
+					globalSettings: {
+						customInstructions: "Keep this setting",
+						userAvatarFileName: "avatar.png",
+					},
+				})
+
+				;(fs.readFile as Mock).mockResolvedValue(mockFileContent)
+				mockProviderSettingsManager.export.mockResolvedValue({
+					currentApiConfigName: "default",
+					apiConfigs: { default: { apiProvider: "anthropic" as ProviderName, id: "default-id" } },
+				})
+				mockProviderSettingsManager.listConfig.mockResolvedValue([
+					{ name: "valid-profile", id: "valid-id", apiProvider: "openai" as ProviderName },
+				])
+
+				const result = await importSettings({
+					providerSettingsManager: mockProviderSettingsManager,
+					contextProxy: mockContextProxy,
+					customModesManager: mockCustomModesManager,
+				})
+
+				expect(result.success).toBe(true)
+				expect((result as { warnings?: string[] }).warnings).toEqual(
+					expect.arrayContaining([
+						expect.stringContaining("globalSettings.userAvatarFileName"),
+						expect.stringContaining("Unknown setting"),
+					]),
+				)
+				expect(mockContextProxy.setValues).toHaveBeenCalledWith({ customInstructions: "Keep this setting" })
 			})
 
 			it("should partially import valid global settings when invalid top-level keys are present", async () => {

@@ -36,6 +36,7 @@ export const commandIds = [
 	"settingsButtonClicked",
 
 	"openInNewTab",
+	"openDedicatedIdeLayout",
 
 	"newTask",
 

@@ -1,5 +1,5 @@
 import React, { createContext, useContext } from "react"
-import { render, screen, act } from "@testing-library/react"
+import { render, screen, act, fireEvent } from "@testing-library/react"
 import { TooltipProvider } from "@radix-ui/react-tooltip"
 
 import { FollowUpSuggest } from "../FollowUpSuggest"
@@ -241,6 +241,44 @@ describe("FollowUpSuggest", () => {
 
 		// Component should not render anything
 		expect(container.firstChild).toBeNull()
+	})
+
+	it("uses the copy control to invoke the dedicated copy callback", () => {
+		const onSuggestionCopy = vi.fn()
+		renderWithTestProviders(
+			<FollowUpSuggest
+				suggestions={mockSuggestions}
+				onSuggestionClick={mockOnSuggestionClick}
+				onSuggestionCopy={onSuggestionCopy}
+				ts={123}
+				onCancelAutoApproval={mockOnCancelAutoApproval}
+			/>,
+			defaultTestState,
+		)
+
+		fireEvent.click(screen.getAllByRole("button", { name: "Copy to input" })[0])
+
+		expect(onSuggestionCopy).toHaveBeenCalledWith(mockSuggestions[0])
+		expect(mockOnSuggestionClick).not.toHaveBeenCalled()
+	})
+
+	it("passes a real shift-click event to the suggestion handler", () => {
+		renderWithTestProviders(
+			<FollowUpSuggest
+				suggestions={mockSuggestions}
+				onSuggestionClick={mockOnSuggestionClick}
+				ts={123}
+				onCancelAutoApproval={mockOnCancelAutoApproval}
+			/>,
+			defaultTestState,
+		)
+
+		fireEvent.click(screen.getByRole("button", { name: "First suggestion" }), { shiftKey: true })
+
+		expect(mockOnSuggestionClick).toHaveBeenCalledWith(
+			mockSuggestions[0],
+			expect.objectContaining({ shiftKey: true }),
+		)
 	})
 
 	it("should render malformed object mode values without crashing", () => {

@@ -5,9 +5,10 @@ import { vscode } from "@/utils/vscode"
 
 import { ApiConfigSelector } from "../ApiConfigSelector"
 
-const { popoverState, translate } = vi.hoisted(() => ({
+const { popoverState, translate, mockRenderContext } = vi.hoisted(() => ({
 	popoverState: { onOpenChange: undefined as ((open: boolean) => void) | undefined },
 	translate: vi.fn((key: string) => key),
+	mockRenderContext: { value: "sidebar" as "sidebar" | "editor" | "composer" },
 }))
 
 // Mock the dependencies
@@ -32,6 +33,7 @@ vi.mock("@/context/ExtensionStateContext", () => ({
 			apiProvider: "anthropic",
 			apiModelId: "claude-3-opus-20240229",
 		},
+		renderContext: mockRenderContext.value,
 	}),
 }))
 
@@ -95,6 +97,7 @@ describe("ApiConfigSelector", () => {
 
 	beforeEach(() => {
 		vi.clearAllMocks()
+		mockRenderContext.value = "sidebar"
 		translate.mockImplementation((key: string) => key)
 	})
 
@@ -128,6 +131,16 @@ describe("ApiConfigSelector", () => {
 
 		const trigger = screen.getByTestId("dropdown-trigger")
 		expect(trigger.className).toContain(customClass)
+	})
+
+	test("opens the full popover from the composer without a host QuickPick", () => {
+		mockRenderContext.value = "composer"
+		render(<ApiConfigSelector {...defaultProps} />)
+
+		fireEvent.click(screen.getByTestId("dropdown-trigger"))
+
+		expect(vscode.postMessage).not.toHaveBeenCalledWith({ type: "openApiConfigQuickPick" })
+		expect(screen.getByTestId("popover-content")).toBeInTheDocument()
 	})
 
 	test("opens popover when trigger is clicked", () => {

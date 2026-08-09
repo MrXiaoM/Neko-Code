@@ -75,6 +75,39 @@ describe("ChatTextArea", () => {
 		})
 	})
 
+	describe("composer layout", () => {
+		it("uses the available panel width instead of a fixed calculated width", () => {
+			const { container } = render(<ChatTextArea {...defaultProps} />)
+			const composer = container.firstElementChild
+
+			expect(composer).toHaveClass("w-full", "min-w-0")
+			expect(composer).not.toHaveClass("w-[calc(100%-16px)]")
+		})
+
+		it("does not stretch the sidebar textarea to the composer height", () => {
+			const { container } = render(<ChatTextArea {...defaultProps} />)
+			const textarea = container.querySelector("textarea")!
+
+			expect(textarea).not.toHaveClass("flex-1")
+			expect(textarea).not.toHaveClass("flex-grow")
+		})
+
+		it("keeps the textarea stretched in the dedicated composer", () => {
+			;(useExtensionState as ReturnType<typeof vi.fn>).mockReturnValue({
+				filePaths: [],
+				openedTabs: [],
+				apiConfiguration: { apiProvider: "anthropic" },
+				taskHistory: [],
+				cwd: "/test/workspace",
+				renderContext: "composer",
+			})
+			const { container } = render(<ChatTextArea {...defaultProps} />)
+			const textarea = container.querySelector("textarea")!
+
+			expect(textarea).toHaveClass("flex-1")
+		})
+	})
+
 	describe("enhance prompt button", () => {
 		it("should be enabled even when sendingDisabled is true (for message queueing)", () => {
 			;(useExtensionState as ReturnType<typeof vi.fn>).mockReturnValue({

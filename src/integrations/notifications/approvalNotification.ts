@@ -1163,14 +1163,9 @@ export async function notifyApprovalIfWindowUnfocused(options?: {
 
 export async function focusZooCodeForApproval(): Promise<void> {
 	try {
-		await vscode.commands.executeCommand(`${Package.name}.SidebarProvider.focus`)
-		appendToastLog("approval UI sidebar focus command complete")
-	} catch (error) {
-		console.error("[approvalNotification] Failed to focus SidebarProvider:", error)
-		appendToastLog(`approval UI sidebar focus command failed: ${String(error)}`)
-	}
-
-	try {
+		// The focusInput command routes to the bottom composer in the dedicated layout,
+		// and falls back to the sidebar only in the traditional layout. Calling the sidebar
+		// command first would reveal the auxiliary sidebar after a notification click.
 		await vscode.commands.executeCommand(`${Package.name}.focusInput`)
 		appendToastLog("approval UI input focus command complete")
 	} catch (error) {

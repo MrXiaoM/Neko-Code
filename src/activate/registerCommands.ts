@@ -113,6 +113,7 @@ const getCommandsMap = ({
 		return openClineInNewTab({ context, outputChannel })
 	},
 	openInNewTab: () => openClineInNewTab({ context, outputChannel }),
+	openDedicatedIdeLayout: () => provider.openDedicatedIdeLayout(),
 	settingsButtonClicked: () => {
 		const visibleProvider = getVisibleProviderOrLog(outputChannel)
 
@@ -175,6 +176,14 @@ const getCommandsMap = ({
 	},
 	focusInput: async () => {
 		try {
+			if (typeof provider.focusComposer === "function") {
+				const { dedicatedIdeLayoutEnabled } = await provider.getState()
+				if (dedicatedIdeLayoutEnabled) {
+					await provider.focusComposer()
+					return
+				}
+			}
+
 			await focusPanel(tabPanel, sidebarPanel)
 
 			// Send focus input message only for sidebar panels

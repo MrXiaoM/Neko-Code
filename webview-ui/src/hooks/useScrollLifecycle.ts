@@ -7,8 +7,10 @@
  * - We issue one immediate `scrollToIndex("LAST")` and one post-render retry
  * - During hydration, transient Virtuoso `atBottomStateChange(false)` signals
  *   are ignored so follow mode does not flicker off
- * - User escape intent (wheel / keyboard / pointer-upward drag / row expansion)
- *   moves to `USER_BROWSING_HISTORY` and prevents forced re-pinning
+ * - A user pointer drag moving the Virtuoso scroller upward, plus wheel /
+ *   keyboard intent and row expansion, moves to `USER_BROWSING_HISTORY` synchronously.
+ * - Once browsing history, only the explicit scroll-to-bottom action can
+ *   re-enable following; content measurement must never steal scroll control.
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
@@ -53,6 +55,7 @@ export interface UseScrollLifecycleOptions {
 	isStreaming: boolean
 	isHidden: boolean
 	hasTask: boolean
+	bottomTolerance: number
 }
 
 export interface UseScrollLifecycleReturn {
@@ -79,6 +82,7 @@ export function useScrollLifecycle({
 	isStreaming,
 	isHidden,
 	hasTask,
+	bottomTolerance,
 }: UseScrollLifecycleOptions): UseScrollLifecycleReturn {
 	// --- Mounted guard ---
 	const isMountedRef = useRef(true)
@@ -98,10 +102,9 @@ export function useScrollLifecycle({
 	const hydrationTimeoutRef = useRef<number | null>(null)
 	const hydrationRetryUsedRef = useRef(false)
 
-	// --- Pointer scroll tracking ---
-	const pointerScrollActiveRef = useRef(false)
-	const pointerScrollElementRef = useRef<HTMLElement | null>(null)
-	const pointerScrollLastTopRef = useRef<number | null>(null)
+	// --- Actual Virtuoso scroller tracking ---
+	const lastScrollerTopRef = useRef<number | null>(null)
+	const isPointerScrollingRef = useRef(false)
 
 	// --- Re-anchor frame ---
 	const reanchorAnimationFrameRef = useRef<number | null>(null)
@@ -235,6 +238,8 @@ export function useScrollLifecycle({
 	// Task switch: reset and begin a short hydration window
 	useEffect(() => {
 		isAtBottomRef.current = false
+		lastScrollerTopRef.current = null
+		isPointerScrollingRef.current = false
 		clearHydrationWindow()
 		cancelReanchorFrame()
 
@@ -266,8 +271,8 @@ export function useScrollLifecycle({
 				return
 			}
 
-			const shouldForcePinForAnchoredStreaming = scrollPhaseRef.current === "ANCHORED_FOLLOWING" && isStreaming
-			if (isAtBottomRef.current || shouldForcePinForAnchoredStreaming) {
+			const shouldForcePinForAnchoredContent = scrollPhaseRef.current === "ANCHORED_FOLLOWING"
+			if (isAtBottomRef.current || shouldForcePinForAnchoredContent) {
 				if (isTaller) {
 					scrollToBottomSmooth()
 				} else {
@@ -275,7 +280,7 @@ export function useScrollLifecycle({
 				}
 			}
 		},
-		[isStreaming, scrollToBottomSmooth, scrollToBottomAuto],
+		[scrollToBottomSmooth, scrollToBottomAuto],
 	)
 
 	// -----------------------------------------------------------------------
@@ -299,8 +304,11 @@ export function useScrollLifecycle({
 	// -----------------------------------------------------------------------
 
 	const followOutputCallback = useCallback((): "auto" | false => {
-		return scrollPhase === "USER_BROWSING_HISTORY" ? false : "auto"
-	}, [scrollPhase])
+		// Virtuoso can request this callback before React commits the state update
+		// caused by an upward user scroll. The ref changes synchronously and closes
+		// that window before a streaming update can pull the viewport back down.
+		return scrollPhaseRef.current === "USER_BROWSING_HISTORY" ? false : "auto"
+	}, [])
 
 	// -----------------------------------------------------------------------
 	// Virtuoso callback: atBottomStateChange
@@ -312,23 +320,32 @@ export function useScrollLifecycle({
 
 			const currentPhase = scrollPhaseRef.current
 
+			if (isAtBottom) {
+				const scroller = scrollContainerRef.current?.querySelector<HTMLElement>(".scrollable")
+				lastScrollerTopRef.current = scroller?.scrollTop ?? null
+				// The CTA represents a physical destination, not whether automatic
+				// following is enabled. Once Virtuoso reports that destination reached,
+				// it must disappear even if the user remains in history-browsing mode.
+				setShowScrollToBottom(false)
+			}
+
 			if (!isAtBottom && isHydratingRef.current && currentPhase !== "USER_BROWSING_HISTORY") {
 				setShowScrollToBottom(false)
 				return
 			}
 
-			if (isAtBottom) {
-				if (currentPhase === "USER_BROWSING_HISTORY" && isHydratingRef.current) {
+			if (currentPhase === "USER_BROWSING_HISTORY") {
+				// Being within Virtuoso's bottom threshold is not user intent to resume
+				// following. In particular, a small upward movement can still report true.
+				// But an actual bottom report always hides the CTA above.
+				if (!isAtBottom) {
 					setShowScrollToBottom(true)
-					return
 				}
-
-				enterAnchoredFollowing()
 				return
 			}
 
-			if (currentPhase === "ANCHORED_FOLLOWING" && !isAtBottom && pointerScrollActiveRef.current) {
-				enterUserBrowsingHistory("pointer-scroll-up")
+			if (isAtBottom) {
+				enterAnchoredFollowing()
 				return
 			}
 
@@ -338,9 +355,9 @@ export function useScrollLifecycle({
 				return
 			}
 
-			setShowScrollToBottom(currentPhase === "USER_BROWSING_HISTORY")
+			setShowScrollToBottom(false)
 		},
-		[enterAnchoredFollowing, enterUserBrowsingHistory, isStreaming, scrollToBottomAuto],
+		[enterAnchoredFollowing, isStreaming, scrollContainerRef, scrollToBottomAuto],
 	)
 
 	// -----------------------------------------------------------------------
@@ -359,78 +376,79 @@ export function useScrollLifecycle({
 	useEvent("wheel", handleWheel, window, { passive: true })
 
 	// -----------------------------------------------------------------------
-	// User intent: pointer drag
+	// Actual scroller movement
 	// -----------------------------------------------------------------------
 
-	const handlePointerDown = useCallback(
+	const captureScrollerBaseline = useCallback(
 		(event: Event) => {
-			const pointerEvent = event as PointerEvent
-			const pointerTarget = pointerEvent.target
-			if (!(pointerTarget instanceof HTMLElement)) {
-				pointerScrollActiveRef.current = false
-				pointerScrollElementRef.current = null
-				pointerScrollLastTopRef.current = null
+			const pointerTarget = event.target
+			if (!(pointerTarget instanceof HTMLElement) || !scrollContainerRef.current?.contains(pointerTarget)) {
 				return
 			}
 
-			if (!scrollContainerRef.current?.contains(pointerTarget)) {
-				pointerScrollActiveRef.current = false
-				pointerScrollElementRef.current = null
-				pointerScrollLastTopRef.current = null
-				return
+			const scroller = pointerTarget.closest<HTMLElement>(".scrollable")
+			if (scroller) {
+				isPointerScrollingRef.current = false
+				lastScrollerTopRef.current = scroller.scrollTop
 			}
-
-			const scroller =
-				(pointerTarget.closest(".scrollable") as HTMLElement | null) ??
-				(pointerTarget.scrollHeight > pointerTarget.clientHeight ? pointerTarget : null)
-
-			pointerScrollActiveRef.current = scroller !== null
-			pointerScrollElementRef.current = scroller
-			pointerScrollLastTopRef.current = scroller?.scrollTop ?? null
 		},
 		[scrollContainerRef],
 	)
 
-	const handlePointerEnd = useCallback(() => {
-		pointerScrollActiveRef.current = false
-		pointerScrollElementRef.current = null
-		pointerScrollLastTopRef.current = null
+	const markPointerScrolling = useCallback(
+		(event: Event) => {
+			const pointerTarget = event.target
+			if (!(pointerTarget instanceof HTMLElement) || !scrollContainerRef.current?.contains(pointerTarget)) {
+				return
+			}
+
+			if (pointerTarget.closest<HTMLElement>(".scrollable")) {
+				isPointerScrollingRef.current = true
+			}
+		},
+		[scrollContainerRef],
+	)
+
+	const clearPointerScrolling = useCallback(() => {
+		isPointerScrollingRef.current = false
 	}, [])
 
-	const handlePointerActiveScroll = useCallback(
+	const handleScrollerScroll = useCallback(
 		(event: Event) => {
-			if (!pointerScrollActiveRef.current) {
-				return
-			}
-
 			const scrollTarget = event.target
-			if (!(scrollTarget instanceof HTMLElement)) {
+			if (!(scrollTarget instanceof HTMLElement) || !scrollContainerRef.current?.contains(scrollTarget)) {
 				return
 			}
 
-			if (!scrollContainerRef.current?.contains(scrollTarget)) {
+			// Only observe Virtuoso's outer scroller. Nested code blocks and other
+			// inner scrollables must not disable chat follow mode.
+			const scroller = scrollTarget.closest(".scrollable")
+			if (scroller !== scrollTarget) {
 				return
 			}
 
-			if (pointerScrollElementRef.current !== scrollTarget) {
-				return
-			}
-
-			const previousTop = pointerScrollLastTopRef.current
+			const previousTop = lastScrollerTopRef.current
 			const currentTop = scrollTarget.scrollTop
-			pointerScrollLastTopRef.current = currentTop
+			lastScrollerTopRef.current = currentTop
 
-			if (previousTop !== null && currentTop < previousTop) {
+			const distanceFromBottom = scrollTarget.scrollHeight - scrollTarget.clientHeight - currentTop
+			if (
+				isPointerScrollingRef.current &&
+				previousTop !== null &&
+				currentTop < previousTop &&
+				distanceFromBottom > bottomTolerance
+			) {
 				enterUserBrowsingHistory("pointer-scroll-up")
 			}
 		},
-		[enterUserBrowsingHistory, scrollContainerRef],
+		[bottomTolerance, enterUserBrowsingHistory, scrollContainerRef],
 	)
 
-	useEvent("pointerdown", handlePointerDown, window, { passive: true })
-	useEvent("pointerup", handlePointerEnd, window, { passive: true })
-	useEvent("pointercancel", handlePointerEnd, window, { passive: true })
-	useEvent("scroll", handlePointerActiveScroll, window, { passive: true, capture: true })
+	useEvent("pointerdown", captureScrollerBaseline, window, { passive: true })
+	useEvent("pointermove", markPointerScrolling, window, { passive: true })
+	useEvent("pointerup", clearPointerScrolling, window, { passive: true })
+	useEvent("pointercancel", clearPointerScrolling, window, { passive: true })
+	useEvent("scroll", handleScrollerScroll, window, { passive: true, capture: true })
 
 	// -----------------------------------------------------------------------
 	// User intent: keyboard navigation

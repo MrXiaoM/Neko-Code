@@ -35,12 +35,19 @@ export class ExecaTerminalProcess extends BaseTerminalProcess {
 
 	public override async run(command: string) {
 		this.command = command
+		const execaShellPath = BaseTerminal.getExecaShellPath()
+		// cmd.exe uses the active Windows code page for redirected output. Switch
+		// the default shell to UTF-8 before running the user command so execa's
+		// UTF-8 stream decoder does not turn Chinese output into mojibake. Custom
+		// shells retain their own encoding contract and are left untouched.
+		const commandForExecution =
+			process.platform === "win32" && !execaShellPath ? `chcp 65001 >nul && ${command}` : command
 
 		try {
 			this.isHot = true
 
 			this.subprocess = execa({
-				shell: BaseTerminal.getExecaShellPath() || true,
+				shell: execaShellPath || true,
 				cwd: this.terminal.getCurrentWorkingDirectory(),
 				all: true,
 				// Ignore stdin to ensure non-interactive mode and prevent hanging
@@ -51,7 +58,7 @@ export class ExecaTerminalProcess extends BaseTerminalProcess {
 					LANG: "en_US.UTF-8",
 					LC_ALL: "en_US.UTF-8",
 				},
-			})`${command}`
+			})`${commandForExecution}`
 
 			this.pid = this.subprocess.pid
 

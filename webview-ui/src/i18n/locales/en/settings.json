@@ -243,6 +243,24 @@
 			"label": "Auto-close newly created files",
 			"description": "When enabled, tabs for files that Zoo created (rather than modified) will also be closed automatically after the edit is accepted."
 		},
+		"dedicatedIdeLayout": {
+			"label": "Use dedicated AI IDE layout",
+			"description": "Show Zoo Code conversations in an editor tab and move the full chat composer to the bottom-panel Chat view. The sidebar remains available."
+		},
+		"userAvatar": {
+			"label": "User avatar",
+			"description": "Choose a local image to show beside your messages in the dedicated AI IDE conversation. The image is stored privately by Zoo Code and does not use a network profile.",
+			"choose": "Choose image",
+			"change": "Change image",
+			"clear": "Remove image",
+			"selecting": "Selecting image...",
+			"pendingSave": "Image selected. Click Save to apply it.",
+			"removalPending": "Avatar will be removed when you click Save.",
+			"selectionCancelled": "Image selection was cancelled. No changes were made.",
+			"selectionFailed": "The selected image could not be prepared.",
+			"saved": "Avatar saved.",
+			"removed": "Avatar removed."
+		},
 		"backgroundImage": {
 			"sectionTitle": "Background Image",
 			"enabled": {

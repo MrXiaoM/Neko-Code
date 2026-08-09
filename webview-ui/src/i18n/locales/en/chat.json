@@ -121,7 +121,9 @@
 	},
 	"enqueueMessage": "Add message to queue (will be sent after current task completes)",
 	"editMessage": {
-		"placeholder": "Edit your message..."
+		"placeholder": "Edit your message...",
+		"edit": "Edit message",
+		"delete": "Delete message"
 	},
 	"scrollToBottom": "Scroll to bottom of chat",
 	"scrollToLatestCheckpoint": "Scroll to previous checkpoint",
@@ -314,7 +316,12 @@
 		"workingDirectory": "Working directory: {{cwd}}",
 		"terminalProfile": "Profile: {{profile}}",
 		"terminalId": "Terminal: #{{id}}",
-		"focusTerminal": "Jump"
+		"focusTerminal": "Jump",
+		"hiddenLines": "{{count}} earlier lines hidden",
+		"viewFullOutput": "View full output",
+		"fullOutputTitle": "Full command output",
+		"loadingFullOutput": "Loading full output…",
+		"fullOutputUnavailable": "The complete output is unavailable; showing the available preview."
 	},
 	"response": "Response",
 	"arguments": "Arguments",

@@ -25,7 +25,6 @@ interface AutoApproveDropdownProps {
 
 export const AutoApproveDropdown = ({ disabled = false, triggerClassName = "" }: AutoApproveDropdownProps) => {
 	const [open, setOpen] = React.useState(false)
-	const portalContainer = useRooPortal("roo-portal")
 	const { t } = useAppTranslation()
 
 	const {
@@ -39,6 +38,7 @@ export const AutoApproveDropdown = ({ disabled = false, triggerClassName = "" }:
 		setAlwaysAllowSubtasks,
 		setAlwaysAllowFollowupQuestions,
 	} = useExtensionState()
+	const portalContainer = useRooPortal("roo-portal")
 
 	const toggles = useAutoApprovalToggles()
 
@@ -144,8 +144,12 @@ export const AutoApproveDropdown = ({ disabled = false, triggerClassName = "" }:
 						.join(", "),
 				})
 
+	const handleOpenChange = (isOpen: boolean) => {
+		setOpen(isOpen)
+	}
+
 	return (
-		<Popover open={open} onOpenChange={setOpen} data-testid="auto-approve-dropdown-root">
+		<Popover open={open} onOpenChange={handleOpenChange} data-testid="auto-approve-dropdown-root">
 			<StandardTooltip content={tooltipText}>
 				<PopoverTrigger
 					disabled={disabled}
@@ -184,9 +188,11 @@ export const AutoApproveDropdown = ({ disabled = false, triggerClassName = "" }:
 			</StandardTooltip>
 			<PopoverContent
 				align="start"
-				sideOffset={4}
+				side="top"
+				sideOffset={8}
+				collisionPadding={8}
 				container={portalContainer}
-				className="p-0 overflow-hidden w-[min(440px,calc(100vw-2rem))]"
+				className="p-0 overflow-hidden w-[min(440px,calc(100vw-1rem))] max-h-[calc(100dvh-1rem)]"
 				onOpenAutoFocus={(e) => e.preventDefault()}>
 				<div className="flex flex-col w-full">
 					{/* Header with description */}

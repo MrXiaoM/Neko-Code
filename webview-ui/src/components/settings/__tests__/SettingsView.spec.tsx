@@ -898,6 +898,74 @@ describe("SettingsView - Duplicate Commands", () => {
 	})
 })
 
+describe("SettingsView - user avatar draft", () => {
+	beforeEach(() => {
+		vi.clearAllMocks()
+	})
+
+	it("stages a selected avatar locally and commits it only when settings are saved", async () => {
+		const { getSettingsContent } = renderSettingsView({ dedicatedIdeLayoutEnabled: false })
+		fireEvent.click(screen.getByTestId("tab-ui"))
+
+		const content = getSettingsContent()
+		fireEvent.click(within(content).getByTestId("dedicated-ide-layout-checkbox"))
+		fireEvent.click(within(content).getByTestId("select-user-avatar-button"))
+		expect(vscode.postMessage).toHaveBeenCalledWith({ type: "selectUserAvatar" })
+
+		act(() => {
+			window.postMessage(
+				{
+					type: "userAvatarSelection",
+					userAvatarSelectionStatus: "ready",
+					userAvatarUrl: "vscode-webview://pending.png",
+				},
+				"*",
+			)
+		})
+
+		expect(vscode.postMessage).not.toHaveBeenCalledWith({ type: "commitUserAvatar", bool: false })
+		await waitFor(() =>
+			expect(within(content).getByTestId("user-avatar-selection-status")).toHaveTextContent(
+				"settings:ui.userAvatar.pendingSave",
+			),
+		)
+
+		fireEvent.click(screen.getByTestId("save-button"))
+		expect(vscode.postMessage).toHaveBeenCalledWith({ type: "commitUserAvatar", bool: false })
+	})
+
+	it("discards a staged avatar when the user discards unsaved settings", async () => {
+		const { getSettingsContent } = renderSettingsView({ dedicatedIdeLayoutEnabled: false })
+		fireEvent.click(screen.getByTestId("tab-ui"))
+
+		const content = getSettingsContent()
+		fireEvent.click(within(content).getByTestId("dedicated-ide-layout-checkbox"))
+		fireEvent.click(within(content).getByTestId("select-user-avatar-button"))
+		act(() => {
+			window.postMessage(
+				{
+					type: "userAvatarSelection",
+					userAvatarSelectionStatus: "ready",
+					userAvatarUrl: "vscode-webview://pending.png",
+				},
+				"*",
+			)
+		})
+
+		await waitFor(() =>
+			expect(within(content).getByTestId("user-avatar-selection-status")).toHaveTextContent(
+				"settings:ui.userAvatar.pendingSave",
+			),
+		)
+
+		fireEvent.click(screen.getByText("settings:common.done"))
+		fireEvent.click(screen.getByTestId("alert-dialog-action"))
+
+		expect(vscode.postMessage).toHaveBeenCalledWith({ type: "discardUserAvatar" })
+		expect(vscode.postMessage).not.toHaveBeenCalledWith({ type: "commitUserAvatar", bool: false })
+	})
+})
+
 describe("SettingsView - prompt identity settings", () => {
 	beforeEach(() => {
 		vi.clearAllMocks()

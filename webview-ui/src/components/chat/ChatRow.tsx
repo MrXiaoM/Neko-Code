@@ -82,6 +82,46 @@ import { MiddleTruncatedPath } from "../ui/MiddleTruncatedPath"
 import { OpenMarkdownPreviewButton } from "./OpenMarkdownPreviewButton"
 import { SeeNewChangesButtons } from "./SeeNewChangesButtons"
 
+function AgentAvatar({ agentName }: { agentName?: string }) {
+	return (
+		<div
+			data-testid="agent-avatar"
+			className="sticky top-2 flex size-8 shrink-0 self-start items-center justify-center rounded-full bg-vscode-textLink-foreground text-vscode-editor-background shadow-md shadow-vscode-textLink-foreground/30"
+			aria-label={agentName}>
+			<MessageCircle className="size-4" aria-hidden="true" />
+		</div>
+	)
+}
+
+function UserAvatar({ avatarUrl }: { avatarUrl?: string | null }) {
+	const [imageError, setImageError] = useState(false)
+
+	useEffect(() => {
+		setImageError(false)
+	}, [avatarUrl])
+
+	if (avatarUrl && !imageError) {
+		return (
+			<img
+				data-testid="user-avatar"
+				src={avatarUrl}
+				alt=""
+				className="sticky top-2 size-8 shrink-0 self-start rounded-full object-cover shadow-md"
+				onError={() => setImageError(true)}
+			/>
+		)
+	}
+
+	return (
+		<div
+			data-testid="user-avatar"
+			className="sticky top-2 flex size-8 shrink-0 self-start items-center justify-center rounded-full bg-vscode-editorWidget-border text-vscode-foreground shadow-md"
+			aria-label="User">
+			<User className="size-4" aria-hidden="true" />
+		</div>
+	)
+}
+
 function formatByteSize(bytes: number): string {
 	if (bytes < 1024) {
 		return `${bytes} B`
@@ -132,6 +172,7 @@ interface ChatRowProps {
 	onToggleExpand: (ts: number) => void
 	onHeightChange: (isTaller: boolean) => void
 	onSuggestionClick?: (suggestion: SuggestionItem, event?: React.MouseEvent) => void
+	onSuggestionCopy?: (suggestion: SuggestionItem) => void
 	onBatchFileResponse?: (response: { [key: string]: boolean }) => void
 	onFollowUpUnmount?: () => void
 	isFollowUpAnswered?: boolean
@@ -153,9 +194,11 @@ const ChatRow = memo(
 		const prevHeightRef = useRef(0)
 
 		const timestampTitle = useMemo(() => formatFullTimestamp(message.ts), [message.ts])
+		const needsTimestampClearance =
+			message.type === "say" && (message.say === "api_req_started" || message.say === "user_feedback")
 
 		const [chatrow, { height }] = useSize(
-			<div className="px-[15px] py-[10px] pr-[6px] group relative">
+			<div className={cn("px-[15px] py-[10px] pr-[6px] group relative", needsTimestampClearance && "pt-7")}>
 				<ChatRowContent {...props} />
 				<div className="absolute top-1 right-3 opacity-0 group-hover:opacity-100 transition-opacity text-xs text-vscode-descriptionForeground pointer-events-none select-none">
 					{timestampTitle}
@@ -194,6 +237,7 @@ export const ChatRowContent = ({
 	isStreaming,
 	onToggleExpand,
 	onSuggestionClick,
+	onSuggestionCopy,
 	onFollowUpUnmount,
 	onBatchFileResponse,
 	isFollowUpAnswered,
@@ -212,7 +256,11 @@ export const ChatRowContent = ({
 		clineMessages,
 		currentTaskItem,
 		enableCheckpoints,
+		renderContext,
+		agentName,
+		userAvatarUrl,
 	} = useExtensionState()
+	const isEditorConversation = renderContext === "editor"
 	const { info: model } = useSelectedModel(apiConfiguration)
 	const [isEditing, setIsEditing] = useState(false)
 	const [editedContent, setEditedContent] = useState("")
@@ -1331,98 +1379,142 @@ export const ChatRowContent = ({
 					return null // we should never see this message type
 				case "text":
 					return (
-						<div className="group">
-							<div style={headerStyle}>
-								<MessageCircle className="w-4 shrink-0" aria-label="Speech bubble icon" />
-								<span style={{ fontWeight: "bold" }}>{t("chat:text.rooSaid")}</span>
-								<div style={{ flexGrow: 1 }} />
-								<OpenMarkdownPreviewButton markdown={message.text} />
-							</div>
-							<div className="pl-6">
-								<Markdown markdown={message.text} partial={message.partial} />
-								{message.images && message.images.length > 0 && (
-									<div style={{ marginTop: "10px" }}>
-										{message.images.map((image, index) => (
-											<ImageBlock key={index} imageData={image} />
-										))}
+						<div
+							data-testid="agent-message"
+							className={cn("group", isEditorConversation && "flex items-end justify-start gap-2")}>
+							{isEditorConversation && <AgentAvatar agentName={agentName} />}
+							<div
+								className={cn(
+									isEditorConversation && "w-fit max-w-[82%] min-[760px]:max-w-[70%] min-w-0",
+								)}>
+								<div
+									className={cn(
+										isEditorConversation &&
+											"rounded-2xl rounded-bl-sm border border-vscode-textLink-foreground/45 bg-vscode-textLink-foreground/15 px-4 py-3 shadow-sm shadow-vscode-textLink-foreground/20",
+									)}>
+									<div
+										style={headerStyle}
+										className={cn(isEditorConversation && "text-vscode-textLink-foreground")}>
+										{!isEditorConversation && (
+											<MessageCircle className="w-4 shrink-0" aria-label="Speech bubble icon" />
+										)}
+										<span style={{ fontWeight: "bold" }}>{t("chat:text.rooSaid")}</span>
+										<div style={{ flexGrow: 1 }} />
+										<OpenMarkdownPreviewButton markdown={message.text} />
 									</div>
-								)}
+									<div className={cn(!isEditorConversation && "pl-6")}>
+										<Markdown markdown={message.text} partial={message.partial} />
+										{message.images && message.images.length > 0 && (
+											<div style={{ marginTop: "10px" }}>
+												{message.images.map((image, index) => (
+													<ImageBlock key={index} imageData={image} />
+												))}
+											</div>
+										)}
+									</div>
+								</div>
 							</div>
 						</div>
 					)
 				case "user_feedback":
 					return (
-						<div className="group">
-							<div style={headerStyle}>
-								<User className="w-4 shrink-0" aria-label="User icon" />
-								<span style={{ fontWeight: "bold" }}>{t("chat:feedback.youSaid")}</span>
-							</div>
+						<div
+							data-testid="user-message"
+							className={cn("group", isEditorConversation && "flex items-end justify-end gap-2")}>
 							<div
 								className={cn(
-									"ml-6 border rounded-sm overflow-hidden whitespace-pre-wrap",
-									isEditing
-										? "bg-vscode-editor-background text-vscode-editor-foreground"
-										: "cursor-text p-1 bg-vscode-editor-foreground/70 text-vscode-editor-background",
+									isEditorConversation && "w-fit max-w-[82%] min-[760px]:max-w-[70%] min-w-0",
 								)}>
-								{isEditing ? (
-									<div className="flex flex-col gap-2">
-										<ChatTextArea
-											inputValue={editedContent}
-											setInputValue={setEditedContent}
-											sendingDisabled={false}
-											selectApiConfigDisabled={true}
-											placeholderText={t("chat:editMessage.placeholder")}
-											selectedImages={editImages}
-											setSelectedImages={setEditImages}
-											onSend={handleSaveEdit}
-											onSelectImages={handleSelectImages}
-											shouldDisableImages={!model?.supportsImages}
-											mode={editMode}
-											setMode={setEditMode}
-											modeShortcutText=""
-											isEditMode={true}
-											onCancel={handleCancelEdit}
-										/>
-									</div>
-								) : (
-									<div className="flex justify-between">
-										<div
-											className="flex-grow px-2 py-1 wrap-anywhere rounded-lg transition-colors"
-											onClick={(e) => {
-												e.stopPropagation()
-												if (!isStreaming) {
-													handleEditClick()
-												}
-											}}
-											title={t("chat:queuedMessages.clickToEdit")}>
-											<Mention text={message.text} withShadow />
+								<div
+									className={cn(
+										isEditorConversation &&
+											"rounded-2xl rounded-br-sm border border-vscode-button-background/60 bg-vscode-button-background text-vscode-button-foreground",
+									)}>
+									{!isEditorConversation && (
+										<div style={headerStyle}>
+											<User className="w-4 shrink-0" aria-label="User icon" />
+											<span style={{ fontWeight: "bold" }}>{t("chat:feedback.youSaid")}</span>
 										</div>
-										<div className="flex gap-2 pr-1">
-											<div
-												className="cursor-pointer shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
-												style={{ visibility: isStreaming ? "hidden" : "visible" }}
-												onClick={(e) => {
-													e.stopPropagation()
-													handleEditClick()
-												}}>
-												<Edit className="w-4 shrink-0" aria-label="Edit message icon" />
+									)}
+									<div
+										className={cn(
+											"border rounded-sm overflow-hidden whitespace-pre-wrap",
+											isEditorConversation ? "border-0" : "ml-6",
+											isEditing
+												? "bg-vscode-editor-background text-vscode-editor-foreground"
+												: isEditorConversation
+													? "cursor-text px-2.5 py-1.5 leading-snug text-vscode-button-foreground"
+													: "cursor-text p-1 bg-vscode-editor-foreground/70 text-vscode-editor-background",
+										)}>
+										{isEditing ? (
+											<div className="flex flex-col gap-2">
+												<ChatTextArea
+													inputValue={editedContent}
+													setInputValue={setEditedContent}
+													sendingDisabled={false}
+													selectApiConfigDisabled={true}
+													placeholderText={t("chat:editMessage.placeholder")}
+													selectedImages={editImages}
+													setSelectedImages={setEditImages}
+													onSend={handleSaveEdit}
+													onSelectImages={handleSelectImages}
+													shouldDisableImages={!model?.supportsImages}
+													mode={editMode}
+													setMode={setEditMode}
+													modeShortcutText=""
+													isEditMode={true}
+													onCancel={handleCancelEdit}
+												/>
 											</div>
-											<div
-												className="cursor-pointer shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
-												style={{ visibility: isStreaming ? "hidden" : "visible" }}
-												onClick={(e) => {
-													e.stopPropagation()
-													vscode.postMessage({ type: "deleteMessage", value: message.ts })
-												}}>
-												<Trash2 className="w-4 shrink-0" aria-label="Delete message icon" />
+										) : (
+											<div className="flex justify-between">
+												<div
+													className="flex-grow px-1.5 py-0.5 wrap-anywhere rounded-lg transition-colors"
+													onClick={(e) => {
+														e.stopPropagation()
+														if (!isStreaming) {
+															handleEditClick()
+														}
+													}}
+													title={t("chat:queuedMessages.clickToEdit")}>
+													<Mention text={message.text} withShadow />
+												</div>
+												<div className="flex shrink-0 gap-1 pl-1">
+													<button
+														type="button"
+														aria-label={t("chat:editMessage.edit")}
+														className="flex size-6 items-center justify-center rounded text-vscode-button-foreground/85 hover:bg-vscode-button-hoverBackground hover:text-vscode-button-foreground disabled:opacity-40"
+														disabled={isStreaming}
+														onClick={(e) => {
+															e.stopPropagation()
+															handleEditClick()
+														}}>
+														<Edit className="w-3.5 shrink-0" aria-hidden="true" />
+													</button>
+													<button
+														type="button"
+														aria-label={t("chat:editMessage.delete")}
+														className="flex size-6 items-center justify-center rounded text-vscode-button-foreground/85 hover:bg-vscode-button-hoverBackground hover:text-vscode-button-foreground disabled:opacity-40"
+														disabled={isStreaming}
+														onClick={(e) => {
+															e.stopPropagation()
+															vscode.postMessage({
+																type: "deleteMessage",
+																value: message.ts,
+															})
+														}}>
+														<Trash2 className="w-3.5 shrink-0" aria-hidden="true" />
+													</button>
+												</div>
 											</div>
-										</div>
+										)}
+										{!isEditing && message.images && message.images.length > 0 && (
+											<Thumbnails images={message.images} style={{ marginTop: "8px" }} />
+										)}
 									</div>
-								)}
-								{!isEditing && message.images && message.images.length > 0 && (
-									<Thumbnails images={message.images} style={{ marginTop: "8px" }} />
-								)}
+								</div>
 							</div>
+							{isEditorConversation && <UserAvatar avatarUrl={userAvatarUrl} />}
 						</div>
 					)
 				case "user_feedback_diff":
@@ -1879,7 +1971,34 @@ export const ChatRowContent = ({
 						return null // Don't render anything when we get a completion_result ask without text
 					}
 				case "followup":
-					return (
+					return isEditorConversation ? (
+						<div data-testid="agent-question" className="flex items-end justify-start gap-2">
+							<AgentAvatar agentName={agentName} />
+							<div className="w-full max-w-[82%] min-[760px]:max-w-[70%] min-w-0">
+								<div className="rounded-2xl rounded-bl-sm border border-vscode-textLink-foreground/45 bg-vscode-textLink-foreground/15 px-4 py-3 shadow-sm shadow-vscode-textLink-foreground/20">
+									{title && (
+										<div style={headerStyle} className="text-vscode-textLink-foreground">
+											{title}
+										</div>
+									)}
+									<Markdown
+										markdown={message.partial === true ? message?.text : followUpData?.question}
+									/>
+								</div>
+								<div className="mt-2">
+									<FollowUpSuggest
+										suggestions={followUpData?.suggest}
+										onSuggestionClick={onSuggestionClick}
+										onSuggestionCopy={onSuggestionCopy}
+										ts={message?.ts}
+										onCancelAutoApproval={onFollowUpUnmount}
+										isAnswered={isFollowUpAnswered}
+										isFollowUpAutoApprovalPaused={isFollowUpAutoApprovalPaused}
+									/>
+								</div>
+							</div>
+						</div>
+					) : (
 						<>
 							{title && (
 								<div style={headerStyle}>
@@ -1894,6 +2013,7 @@ export const ChatRowContent = ({
 								<FollowUpSuggest
 									suggestions={followUpData?.suggest}
 									onSuggestionClick={onSuggestionClick}
+									onSuggestionCopy={onSuggestionCopy}
 									ts={message?.ts}
 									onCancelAutoApproval={onFollowUpUnmount}
 									isAnswered={isFollowUpAnswered}

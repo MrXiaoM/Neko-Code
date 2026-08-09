@@ -53,6 +53,25 @@ describe("OutputInterceptor", () => {
 	})
 
 	describe("Buffering behavior", () => {
+		it("persists a complete small output on finalize without marking its preview truncated", async () => {
+			const interceptor = new OutputInterceptor({
+				executionId: "12345",
+				taskId: "task-1",
+				command: "echo test",
+				storageDir,
+				previewSize: "small",
+			})
+			const smallOutput = "Hello World\n"
+
+			interceptor.write(smallOutput)
+			const result = await interceptor.finalize()
+
+			expect(interceptor.hasSpilledToDisk()).toBe(true)
+			expect(mockWriteStream.write).toHaveBeenCalledWith(smallOutput)
+			expect(result.truncated).toBe(false)
+			expect(result.artifactPath).toBe(path.join(storageDir, "cmd-12345.txt"))
+		})
+
 		it("should keep small output in memory without spilling to disk", async () => {
 			const interceptor = new OutputInterceptor({
 				executionId: "12345",
@@ -71,7 +90,7 @@ describe("OutputInterceptor", () => {
 			const result = await interceptor.finalize()
 			expect(result.preview).toBe(smallOutput)
 			expect(result.truncated).toBe(false)
-			expect(result.artifactPath).toBe(null)
+			expect(result.artifactPath).toBe(path.join(storageDir, "cmd-12345.txt"))
 			expect(result.totalBytes).toBe(Buffer.byteLength(smallOutput, "utf8"))
 		})
 
@@ -288,7 +307,7 @@ describe("OutputInterceptor", () => {
 
 			expect(result.preview).toBe(output)
 			expect(result.totalBytes).toBe(Buffer.byteLength(output, "utf8"))
-			expect(result.artifactPath).toBe(null)
+			expect(result.artifactPath).toBe(path.join(storageDir, "cmd-12345.txt"))
 			expect(result.truncated).toBe(false)
 		})
 

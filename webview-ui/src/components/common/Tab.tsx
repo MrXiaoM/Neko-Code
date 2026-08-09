@@ -1,6 +1,5 @@
-import React, { HTMLAttributes, useCallback, forwardRef } from "react"
+import React, { HTMLAttributes, forwardRef } from "react"
 
-import { useExtensionState } from "@/context/ExtensionStateContext"
 import { cn } from "@/lib/utils"
 
 type TabProps = HTMLAttributes<HTMLDivElement>
@@ -17,34 +16,11 @@ export const TabHeader = ({ className, children, ...props }: TabProps) => (
 	</div>
 )
 
-export const TabContent = forwardRef<HTMLDivElement, TabProps>(({ className, children, ...props }, ref) => {
-	const { renderContext } = useExtensionState()
-
-	const onWheel = useCallback(
-		(e: React.WheelEvent<HTMLDivElement>) => {
-			if (renderContext !== "editor") {
-				return
-			}
-
-			const target = e.target as HTMLElement
-
-			// Prevent scrolling if the target is a listbox or option
-			// (e.g. selects, dropdowns, etc).
-			if (target.role === "listbox" || target.role === "option") {
-				return
-			}
-
-			e.currentTarget.scrollTop += e.deltaY
-		},
-		[renderContext],
-	)
-
-	return (
-		<div ref={ref} className={cn("flex-1 overflow-auto p-5", className)} onWheel={onWheel} {...props}>
-			{children}
-		</div>
-	)
-})
+export const TabContent = forwardRef<HTMLDivElement, TabProps>(({ className, children, ...props }, ref) => (
+	<div ref={ref} className={cn("flex-1 overflow-auto p-5", className)} {...props}>
+		{children}
+	</div>
+))
 TabContent.displayName = "TabContent"
 
 export const TabList = forwardRef<

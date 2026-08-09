@@ -264,6 +264,12 @@ export const globalSettingsSchema = z.object({
 	 * @default "send"
 	 */
 	enterBehavior: z.enum(["send", "newline"]).optional(),
+	/**
+	 * Whether Zoo Code uses the dedicated IDE layout: conversation in an editor tab
+	 * and the full chat composer in the bottom panel.
+	 * @default false
+	 */
+	dedicatedIdeLayoutEnabled: z.boolean().optional(),
 	profileThresholds: z.record(z.string(), z.number()).optional(),
 	hasOpenedModeSelector: z.boolean().optional(),
 	lastModeExportPath: z.string().optional(),

@@ -56,8 +56,8 @@ export const ModeSelector = ({
 	const selectedItemRef = React.useRef<HTMLDivElement>(null)
 	const scrollContainerRef = React.useRef<HTMLDivElement>(null)
 	const lastNotifiedInvalidModeRef = React.useRef<string | null>(null)
-	const portalContainer = useRooPortal("roo-portal")
 	const { hasOpenedModeSelector, setHasOpenedModeSelector } = useExtensionState()
+	const portalContainer = useRooPortal("roo-portal")
 	const { t } = useAppTranslation()
 
 	const trackModeSelectorOpened = React.useCallback(() => {
@@ -255,7 +255,9 @@ export const ModeSelector = ({
 			</StandardTooltip>
 			<PopoverContent
 				align="start"
-				sideOffset={4}
+				side="top"
+				sideOffset={8}
+				collisionPadding={8}
 				container={portalContainer}
 				className="p-0 overflow-hidden min-w-80 max-w-9/10">
 				<div className="flex flex-col w-full">

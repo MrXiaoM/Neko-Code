@@ -1,18 +1,22 @@
 // npx vitest run integrations/terminal/__tests__/ExecaTerminalProcess.spec.ts
 
 const mockPid = 12345
+const { runCommand } = vitest.hoisted(() => ({ runCommand: vitest.fn() }))
 
 vitest.mock("execa", () => {
 	const mockKill = vitest.fn()
 	const execa = vitest.fn(function (options: any) {
-		return (_template: TemplateStringsArray, ...args: any[]) => ({
-			pid: mockPid,
-			iterable: (_opts: any) =>
-				(async function* () {
-					yield "test output\n"
-				})(),
-			kill: mockKill,
-		})
+		return (template: TemplateStringsArray, ...args: any[]) => {
+			runCommand(template, ...args)
+			return {
+				pid: mockPid,
+				iterable: (_opts: any) =>
+					(async function* () {
+						yield "test output\n"
+					})(),
+				kill: mockKill,
+			}
+		}
 	})
 	return { execa, ExecaError: class extends Error {} }
 })
@@ -116,6 +120,31 @@ describe("ExecaTerminalProcess", () => {
 					shell: true,
 				}),
 			)
+		})
+
+		it("prefixes the default Windows shell command with a UTF-8 code-page switch", async () => {
+			const platformSpy = vitest.spyOn(process, "platform", "get").mockReturnValue("win32")
+
+			try {
+				await terminalProcess.run("echo 中文")
+				const [template, command] = vitest.mocked(runCommand).mock.calls[0]
+				expect(String.raw(template, command)).toContain("chcp 65001 >nul && echo 中文")
+			} finally {
+				platformSpy.mockRestore()
+			}
+		})
+
+		it("does not alter custom shell commands on Windows", async () => {
+			const platformSpy = vitest.spyOn(process, "platform", "get").mockReturnValue("win32")
+			BaseTerminal.setExecaShellPath("C:\\Program Files\\Git\\bin\\bash.exe")
+
+			try {
+				await terminalProcess.run("echo 中文")
+				const [template, command] = vitest.mocked(runCommand).mock.calls[0]
+				expect(String.raw(template, command)).toBe("echo 中文")
+			} finally {
+				platformSpy.mockRestore()
+			}
 		})
 	})
 

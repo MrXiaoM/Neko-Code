@@ -294,8 +294,8 @@ export class OutputInterceptor {
 	 * Returns a summary object containing:
 	 * - A preview of the output (head + [omitted indicator] + tail)
 	 * - The total byte count of all output
-	 * - The path to the full output file (if truncated)
-	 * - A flag indicating whether the output was truncated
+	 * - The path to the full output file when output exists
+	 * - A flag indicating whether the preview was truncated
 	 *
 	 * @returns The persisted command output summary
 	 *
@@ -310,6 +310,13 @@ export class OutputInterceptor {
 	 * ```
 	 */
 	async finalize(): Promise<PersistedCommandOutput> {
+		// Persist every non-empty output before finalizing. The chat UI can then
+		// retrieve the original, lossless stream for its full-output dialog even
+		// when the bounded preview itself was not truncated.
+		if (!this.spilledToDisk && this.totalBytes > 0) {
+			this.spillToDisk()
+		}
+
 		// Close write stream if open and wait for it to fully flush.
 		// This ensures the artifact is completely written before we advertise the artifact_id.
 		if (this.writeStream) {
@@ -333,7 +340,7 @@ export class OutputInterceptor {
 			preview,
 			totalBytes: this.totalBytes,
 			artifactPath: this.spilledToDisk ? this.artifactPath : null,
-			truncated: this.spilledToDisk,
+			truncated: this.omittedBytes > 0,
 		}
 	}
 

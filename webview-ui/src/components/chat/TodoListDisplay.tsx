@@ -18,7 +18,13 @@ function getTodoIcon(status: TodoStatus | null) {
 	}
 }
 
-export function TodoListDisplay({ todos }: { todos: any[] }) {
+type TodoListDisplayProps = {
+	todos: any[]
+	variant?: "embedded" | "card"
+	onExpansionChange?: (isExpanded: boolean) => void
+}
+
+export function TodoListDisplay({ todos, variant = "embedded", onExpansionChange }: TodoListDisplayProps) {
 	const [isCollapsed, setIsCollapsed] = useState(true)
 	const ulRef = useRef<HTMLUListElement>(null)
 	const itemRefs = useRef<(HTMLLIElement | null)[]>([])
@@ -56,15 +62,31 @@ export function TodoListDisplay({ todos }: { todos: any[] }) {
 	const allCompleted = completedCount === totalCount && totalCount > 0
 
 	return (
-		<div data-todo-list className="mt-1 -mx-2.5 border-t border-vscode-sideBar-background overflow-hidden">
+		<div
+			data-todo-list
+			className={cn(
+				"border-vscode-sideBar-background overflow-hidden",
+				variant === "embedded"
+					? "mt-1 -mx-2.5 border-t"
+					: cn(
+							"self-start rounded-xl border bg-vscode-input-background px-2.5 py-1 shadow-lg shadow-vscode-sideBar-background/50",
+							!isCollapsed && "absolute inset-x-0 top-0 z-20 max-h-[min(70dvh,36rem)] overflow-y-auto",
+						),
+			)}>
 			<div
 				className={cn(
-					"flex items-center gap-2 pt-2 px-2.5 cursor-pointer select-none",
+					"flex items-center gap-2 px-2.5 pt-2 pb-2 cursor-pointer select-none",
 					mostImportantTodo?.status === "in_progress" && isCollapsed
 						? "text-vscode-charts-yellow"
 						: "text-vscode-foreground",
 				)}
-				onClick={() => setIsCollapsed((v) => !v)}>
+				onClick={() =>
+					setIsCollapsed((isCurrentlyCollapsed) => {
+						const isExpanded = isCurrentlyCollapsed
+						onExpansionChange?.(isExpanded)
+						return !isCurrentlyCollapsed
+					})
+				}>
 				<ListChecks className="size-3 shrink-0" />
 				<span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
 					{isCollapsed

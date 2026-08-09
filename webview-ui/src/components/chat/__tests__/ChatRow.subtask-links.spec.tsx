@@ -24,6 +24,9 @@ vi.mock("react-i18next", () => ({
 				"chat:subtasks.goToSubtask": "Go to subtask",
 				"chat:externalToolResult.title": "Large external tool result",
 				"chat:externalToolResult.preview": "Preview",
+				"chat:editMessage.edit": "Edit message",
+				"chat:editMessage.delete": "Delete message",
+				"chat:editMessage.placeholder": "Edit your message...",
 			}
 			return map[key] ?? key
 		},
@@ -36,6 +39,8 @@ vi.mock("react-i18next", () => ({
 // Mock extension state context
 let mockCurrentTaskItem: Partial<HistoryItem> | undefined = undefined
 let mockClineMessages: ClineMessage[] = []
+let mockRenderContext: "sidebar" | "editor" | "composer" = "sidebar"
+let mockUserAvatarUrl: string | undefined
 
 vi.mock("@src/context/ExtensionStateContext", () => ({
 	useExtensionState: () => ({
@@ -44,8 +49,15 @@ vi.mock("@src/context/ExtensionStateContext", () => ({
 		currentCheckpoint: null,
 		mode: "code",
 		apiConfiguration: {},
+		commands: [],
+		openedTabs: [],
+		filePaths: [],
+		gitCommits: [],
 		clineMessages: mockClineMessages,
 		currentTaskItem: mockCurrentTaskItem,
+		renderContext: mockRenderContext,
+		agentName: "Zoo Code",
+		userAvatarUrl: mockUserAvatarUrl,
 	}),
 }))
 
@@ -54,9 +66,20 @@ vi.mock("@src/components/ui/hooks/useSelectedModel", () => ({
 	useSelectedModel: () => ({ info: { supportsImages: true } }),
 }))
 
-function renderChatRow(message: any, currentTaskItem?: Partial<HistoryItem>, clineMessages?: ClineMessage[]) {
+vi.mock("../ChatTextArea", () => ({
+	ChatTextArea: ({ placeholderText }: { placeholderText: string }) => <input placeholder={placeholderText} />,
+}))
+
+function renderChatRow(
+	message: any,
+	currentTaskItem?: Partial<HistoryItem>,
+	clineMessages?: ClineMessage[],
+	renderContext: "sidebar" | "editor" | "composer" = "sidebar",
+) {
 	mockCurrentTaskItem = currentTaskItem
 	mockClineMessages = clineMessages || [message]
+	mockRenderContext = renderContext
+	mockUserAvatarUrl = undefined
 
 	return render(
 		<ChatRowContent
@@ -72,6 +95,142 @@ function renderChatRow(message: any, currentTaskItem?: Partial<HistoryItem>, cli
 		/>,
 	)
 }
+
+describe("ChatRow - conversational editor layout", () => {
+	it("renders Agent text as a left-aligned bubble with an avatar", () => {
+		const message = {
+			ts: Date.now(),
+			type: "say" as const,
+			say: "text" as const,
+			text: "Hello from Zoo Code",
+		}
+		renderChatRow(message, undefined, [message], "editor")
+
+		const bubble = screen.getByTestId("agent-message")
+		expect(bubble).toHaveClass("justify-start")
+		expect(bubble).toHaveClass("items-end")
+		const messageContent = bubble.children.item(1)
+		expect(messageContent).toHaveClass("w-fit")
+		expect(messageContent).not.toHaveClass("w-full")
+		expect(messageContent).toHaveClass("max-w-[82%]")
+		expect(messageContent).toHaveClass("min-[760px]:max-w-[70%]")
+		expect(screen.getByTestId("agent-avatar")).toBeInTheDocument()
+	})
+
+	it("renders user feedback as a right-aligned bubble with an avatar", () => {
+		const message = {
+			ts: Date.now(),
+			type: "say" as const,
+			say: "user_feedback" as const,
+			text: "Hello from user",
+		}
+		renderChatRow(message, undefined, [message], "editor")
+
+		const bubble = screen.getByTestId("user-message")
+		expect(bubble).toHaveClass("justify-end")
+		expect(bubble).toHaveClass("items-end")
+		const messageContent = bubble.firstElementChild
+		expect(messageContent).toHaveClass("w-fit")
+		expect(messageContent).not.toHaveClass("w-full")
+		expect(messageContent).toHaveClass("max-w-[82%]")
+		expect(messageContent).toHaveClass("min-[760px]:max-w-[70%]")
+		expect(screen.getByTestId("user-avatar")).toBeInTheDocument()
+	})
+
+	it("renders the selected local avatar URL for user feedback", () => {
+		const message = {
+			ts: Date.now(),
+			type: "say" as const,
+			say: "user_feedback" as const,
+			text: "Hello from user",
+		}
+		mockUserAvatarUrl = "vscode-webview://user-avatar/avatar.png"
+		mockCurrentTaskItem = undefined
+		mockClineMessages = [message]
+		mockRenderContext = "editor"
+
+		render(
+			<ChatRowContent
+				message={message}
+				isExpanded={false}
+				isLast={false}
+				isStreaming={false}
+				onToggleExpand={() => {}}
+				onSuggestionClick={() => {}}
+				onBatchFileResponse={() => {}}
+				onFollowUpUnmount={() => {}}
+				isFollowUpAnswered={false}
+			/>,
+		)
+
+		expect(screen.getByTestId("user-avatar")).toHaveAttribute("src", "vscode-webview://user-avatar/avatar.png")
+	})
+
+	it("lets users delete an editor-layout message", () => {
+		const message = {
+			ts: 123,
+			type: "say" as const,
+			say: "user_feedback" as const,
+			text: "Hello from user",
+		}
+		renderChatRow(message, undefined, [message], "editor")
+
+		fireEvent.click(screen.getByRole("button", { name: "Delete message" }))
+		expect(mockPostMessage).toHaveBeenCalledWith({ type: "deleteMessage", value: 123 })
+	})
+
+	it("lets users edit an editor-layout message", () => {
+		const message = {
+			ts: 123,
+			type: "say" as const,
+			say: "user_feedback" as const,
+			text: "Hello from user",
+		}
+		renderChatRow(message, undefined, [message], "editor")
+
+		fireEvent.click(screen.getByRole("button", { name: "Edit message" }))
+		expect(screen.getByPlaceholderText("Edit your message...")).toBeInTheDocument()
+	})
+
+	it("keeps follow-up options outside the editor question bubble", () => {
+		const message = {
+			ts: Date.now(),
+			type: "ask" as const,
+			ask: "followup" as const,
+			text: JSON.stringify({
+				question: "Which approach should I use?",
+				suggest: [{ answer: "Use the existing sidebar behavior" }],
+			}),
+		}
+		const { getByTestId, getByText } = renderChatRow(message, undefined, [message], "editor")
+
+		const question = getByTestId("agent-question")
+		const questionContent = question.children.item(1)!
+		const bubble = questionContent.children.item(0)!
+		const suggestions = questionContent.children.item(1)!
+
+		expect(questionContent).toHaveClass("w-full")
+		expect(questionContent).not.toHaveClass("w-fit")
+		expect(bubble).toContainElement(getByText("Which approach should I use?"))
+		expect(bubble).not.toContainElement(getByText("Use the existing sidebar behavior"))
+		expect(suggestions).toHaveClass("mt-2")
+		expect(suggestions).toContainElement(getByText("Use the existing sidebar behavior"))
+	})
+
+	it("keeps API request status outside the editor chat bubble layout", () => {
+		const message = {
+			ts: Date.now(),
+			type: "say" as const,
+			say: "api_req_started" as const,
+			text: JSON.stringify({ request: "test" }),
+		}
+		renderChatRow(message, undefined, [message], "editor")
+
+		expect(screen.queryByTestId("agent-message")).not.toBeInTheDocument()
+		expect(screen.queryByTestId("user-message")).not.toBeInTheDocument()
+		expect(screen.queryByTestId("agent-avatar")).not.toBeInTheDocument()
+	})
+})
 
 describe("ChatRow - subtask links", () => {
 	it("renders metadata and a bounded preview for an oversized external result approval", () => {

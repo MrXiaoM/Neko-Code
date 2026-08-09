@@ -166,8 +166,12 @@ export const ApiConfigSelector = ({
 		[value, handleSelect, t, togglePinnedApiConfig],
 	)
 
+	const handleOpenChange = (isOpen: boolean) => {
+		setOpen(isOpen)
+	}
+
 	return (
-		<Popover open={open} onOpenChange={setOpen} data-testid="api-config-selector-root">
+		<Popover open={open} onOpenChange={handleOpenChange} data-testid="api-config-selector-root">
 			<StandardTooltip content={title}>
 				<PopoverTrigger
 					disabled={disabled}
@@ -186,9 +190,11 @@ export const ApiConfigSelector = ({
 			</StandardTooltip>
 			<PopoverContent
 				align="start"
-				sideOffset={4}
+				side="top"
+				sideOffset={8}
+				collisionPadding={8}
 				container={portalContainer}
-				className="p-0 overflow-hidden w-[300px]">
+				className="p-0 overflow-hidden w-[min(300px,calc(100vw-1rem))] max-h-[calc(100vh-1rem)]">
 				<div className="flex flex-col w-full">
 					{/* Search input or info blurb */}
 					{listApiConfigMeta.length > 6 ? (

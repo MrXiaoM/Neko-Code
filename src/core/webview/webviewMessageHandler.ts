@@ -87,6 +87,7 @@ import { getCommand } from "../../utils/commands"
 import { getLMStudioModels } from "../../api/providers/fetchers/lmstudio"
 
 const ALLOWED_VSCODE_SETTINGS = new Set(["terminal.integrated.inheritEnv"])
+const WEBVIEW_CRASH_LOG_FILE_NAME = "webview-crashes.ndjson"
 
 import { MarketplaceManager, MarketplaceItemType } from "../../services/marketplace"
 import { setPendingTodoList } from "../tools/UpdateTodoListTool"
@@ -107,6 +108,7 @@ export const webviewMessageHandler = async (
 	provider: ClineProvider,
 	message: WebviewMessage,
 	marketplaceManager?: MarketplaceManager,
+	sourceWebview?: vscode.Webview,
 ) => {
 	// Utility functions provided for concise get/update of global state via contextProxy API.
 	const getGlobalState = <K extends keyof GlobalState>(key: K) => provider.contextProxy.getValue(key)
@@ -268,12 +270,18 @@ export const webviewMessageHandler = async (
 			hasCheckpoint = checkpoints.length > 0
 		}
 
-		// Send message to webview to show delete confirmation dialog
-		await provider.postMessageToWebview({
-			type: "showDeleteMessageDialog",
+		// Only the Webview that initiated the request should display its confirmation.
+		// Broadcasting here leaves a latent dialog in the sidebar after it was handled in the editor.
+		const dialogMessage = {
+			type: "showDeleteMessageDialog" as const,
 			messageTs,
 			hasCheckpoint,
-		})
+		}
+		if (sourceWebview) {
+			await provider.postMessageToSpecificWebview(sourceWebview, dialogMessage)
+		} else {
+			await provider.postMessageToWebview(dialogMessage)
+		}
 	}
 
 	/**
@@ -390,14 +398,19 @@ export const webviewMessageHandler = async (
 			console.log("[webviewMessageHandler] Edit - No currentCline available!")
 		}
 
-		// Send message to webview to show edit confirmation dialog
-		await provider.postMessageToWebview({
-			type: "showEditMessageDialog",
+		// Only the Webview that initiated the request should display its confirmation.
+		const dialogMessage = {
+			type: "showEditMessageDialog" as const,
 			messageTs,
 			text: editedContent,
 			hasCheckpoint,
 			images,
-		})
+		}
+		if (sourceWebview) {
+			await provider.postMessageToSpecificWebview(sourceWebview, dialogMessage)
+		} else {
+			await provider.postMessageToWebview(dialogMessage)
+		}
 	}
 
 	/**
@@ -559,6 +572,34 @@ export const webviewMessageHandler = async (
 	}
 
 	switch (message.type) {
+		case "webviewCrash": {
+			if (!message.webviewCrash) {
+				provider.log("Ignored malformed automatic webview crash report")
+				break
+			}
+
+			const logPath = path.join(provider.context.logUri.fsPath, WEBVIEW_CRASH_LOG_FILE_NAME)
+			const currentTask = provider.getCurrentTask()
+			const logEntry = {
+				timestamp: new Date().toISOString(),
+				extensionId: provider.context.extension.id,
+				taskId: currentTask?.taskId,
+				...message.webviewCrash,
+			}
+
+			try {
+				await fs.mkdir(path.dirname(logPath), { recursive: true })
+				await fs.appendFile(logPath, `${JSON.stringify(logEntry)}\n`, "utf8")
+				provider.log(`Automatically saved webview crash diagnostics to ${logPath}`)
+			} catch (error) {
+				provider.log(
+					`Failed to automatically save webview crash diagnostics: ${
+						error instanceof Error ? error.message : String(error)
+					}`,
+				)
+			}
+			break
+		}
 		case "webviewHealthCheckAck":
 			provider.markWebviewHealthy()
 			break
@@ -686,6 +727,7 @@ export const webviewMessageHandler = async (
 
 		case "updateSettings":
 			if (message.updatedSettings) {
+				const dedicatedIdeLayoutEnabled = message.updatedSettings.dedicatedIdeLayoutEnabled
 				if (message.updatedSettings.destructiveCommandGuardEnabled === true) {
 					try {
 						const { ensureDcgInstalled } = await import("../../services/destructive-command-guard")
@@ -816,11 +858,29 @@ export const webviewMessageHandler = async (
 					}
 				}
 
-				await provider.postStateToWebview()
+				if (dedicatedIdeLayoutEnabled === true) {
+					await provider.openDedicatedIdeLayout()
+				} else if (dedicatedIdeLayoutEnabled === false) {
+					await provider.disableDedicatedIdeLayout()
+				} else {
+					await provider.postStateToWebview()
+				}
 			}
 
 			break
 
+		case "openSettingsInMainView":
+			await provider.openSettingsInDedicatedEditor(message.values?.section as string | undefined)
+			break
+		case "requestComposerPrimaryButtonClick":
+			await provider.requestComposerPrimaryButtonClick()
+			break
+		case "requestComposerSecondaryButtonClick":
+			await provider.requestComposerSecondaryButtonClick()
+			break
+		case "requestComposerDraftAppend":
+			await provider.requestComposerDraftAppend(message.text ?? "")
+			break
 		case "terminalOperation":
 			if (message.terminalOperation) {
 				await provider.getCurrentTask()?.handleTerminalOperation(message.terminalOperation, message.terminalId)
@@ -845,6 +905,15 @@ export const webviewMessageHandler = async (
 				context: message.context,
 				messageTs: message.messageTs,
 			})
+			break
+		case "selectUserAvatar":
+			await provider.selectUserAvatar(sourceWebview)
+			break
+		case "commitUserAvatar":
+			await provider.commitUserAvatar(sourceWebview, message.bool === true)
+			break
+		case "discardUserAvatar":
+			await provider.discardUserAvatar()
 			break
 		case "exportCurrentTask":
 			const currentTaskId = provider.getCurrentTask()?.taskId
@@ -1479,6 +1548,43 @@ export const webviewMessageHandler = async (
 					type: "fileContent",
 					fileContent: { path: relPath, content: null, error: errorMsg },
 				})
+			}
+			break
+		}
+		case "readCommandOutputContent": {
+			const executionId = message.text ?? ""
+			const respond = async (content: string | null, error?: string) => {
+				const response = {
+					type: "commandOutputContent" as const,
+					commandOutputContent: { executionId, content, error },
+				}
+				if (sourceWebview) {
+					await provider.postMessageToSpecificWebview(sourceWebview, response)
+				} else {
+					await provider.postMessageToWebview(response)
+				}
+			}
+
+			if (!/^\d+$/.test(executionId)) {
+				await respond(null, "Invalid command execution ID")
+				break
+			}
+
+			const currentTask = provider.getCurrentTask()
+			const globalStoragePath = provider.context?.globalStorageUri?.fsPath
+			if (!currentTask || !globalStoragePath) {
+				await respond(null, "Command output storage is unavailable")
+				break
+			}
+
+			try {
+				const { getTaskDirectoryPath } = await import("../../utils/storage")
+				const taskDirectory = await getTaskDirectoryPath(globalStoragePath, currentTask.taskId)
+				const outputPath = path.join(taskDirectory, "command-output", `cmd-${executionId}.txt`)
+				const content = await fs.readFile(outputPath, "utf8")
+				await respond(content)
+			} catch (error) {
+				await respond(null, error instanceof Error ? error.message : String(error))
 			}
 			break
 		}

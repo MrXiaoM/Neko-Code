@@ -139,6 +139,18 @@ describe("FileChangesPanel", () => {
 		expect(screen.getByTestId("path-display")).toHaveTextContent("src/foo.ts")
 	})
 
+	it("keeps a fixed-height summary while expanded details overlay upward with bounded scrolling", () => {
+		const messages = [createFileEditMessage("src/foo.ts", "@@ -1 +1 @@\n+line")]
+		renderPanel(messages)
+
+		const panel = screen.getByTestId("file-changes-panel")
+		expect(panel).toHaveClass("h-full")
+
+		fireEvent.click(screen.getByText("1 file(s) changed in this conversation").closest("button")!)
+		const details = screen.getByTestId("file-changes-detail-overlay")
+		expect(details).toHaveClass("absolute", "bottom-full", "max-h-[min(50dvh,28rem)]", "overflow-y-auto")
+	})
+
 	it("renders one row per unique path when multiple files edited", () => {
 		const messages = [createFileEditMessage("src/a.ts", "diff a"), createFileEditMessage("src/b.ts", "diff b")]
 		renderPanel(messages)

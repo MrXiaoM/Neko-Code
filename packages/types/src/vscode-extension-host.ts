@@ -83,6 +83,7 @@ export interface ExtensionMessage {
 		| "showEditMessageDialog"
 		| "commands"
 		| "insertTextIntoTextarea"
+		| "userAvatarSelection"
 		| "dismissedUpsells"
 		| "organizationSwitchResult"
 		| "interactionRequired"
@@ -104,6 +105,7 @@ export interface ExtensionMessage {
 		| "skills"
 		| "rules"
 		| "fileContent"
+		| "commandOutputContent"
 		| "rooHistoryImportProgress"
 		| "apiConfigForEdit"
 		| "webviewHealthCheck"
@@ -114,6 +116,8 @@ export interface ExtensionMessage {
 	active?: boolean
 	/** For fileContent: { path, content, error? } */
 	fileContent?: { path: string; content: string | null; error?: string }
+	/** For commandOutputContent: { executionId, content, error? } */
+	commandOutputContent?: { executionId: string; content: string | null; error?: string }
 	payload?: any // eslint-disable-line @typescript-eslint/no-explicit-any
 	checkpointWarning?: {
 		type: "WAIT_TIMEOUT" | "INIT_TIMEOUT"
@@ -134,6 +138,10 @@ export interface ExtensionMessage {
 	 * The webview is responsible for merging.
 	 */
 	state?: Partial<ExtensionState>
+	/** Result of staging a local avatar, sent only to the initiating settings webview. */
+	userAvatarSelectionStatus?: "ready" | "cancelled" | "saved" | "cleared" | "error"
+	userAvatarUrl?: string
+	userAvatarError?: string
 	images?: string[]
 	filePaths?: string[]
 	openedTabs?: Array<{
@@ -329,6 +337,7 @@ export type ExtensionState = Pick<
 	| "reasoningBlockCollapsed"
 	| "chatFontSize"
 	| "enterBehavior"
+	| "dedicatedIdeLayoutEnabled"
 	| "includeCurrentTime"
 	| "includeCurrentCost"
 	| "maxGitStatusFiles"
@@ -382,7 +391,9 @@ export type ExtensionState = Pick<
 	telemetryKey?: string
 	machineId?: string
 
-	renderContext: "sidebar" | "editor"
+	renderContext: "sidebar" | "editor" | "composer"
+	/** Webview-safe URL for the user-selected local avatar, or `null` when unset. */
+	userAvatarUrl?: string | null
 	settingsImportedAt?: number
 	historyPreviewCollapsed?: boolean
 
@@ -481,12 +492,16 @@ export interface WebviewMessage {
 		| "customInstructions"
 		| "webviewDidLaunch"
 		| "webviewHealthCheckAck"
+		| "webviewCrash"
 		| "newTask"
 		| "askResponse"
 		| "terminalOperation"
 		| "clearTask"
 		| "didShowAnnouncement"
 		| "selectImages"
+		| "selectUserAvatar"
+		| "commitUserAvatar"
+		| "discardUserAvatar"
 		| "exportCurrentTask"
 		| "shareCurrentTask"
 		| "showTaskWithId"
@@ -507,6 +522,7 @@ export interface WebviewMessage {
 		| "saveImage"
 		| "openFile"
 		| "readFileContent"
+		| "readCommandOutputContent"
 		| "openMention"
 		| "cancelTask"
 		| "cancelAutoApproval"
@@ -583,6 +599,10 @@ export interface WebviewMessage {
 		| "toggleWorkspaceIndexing"
 		| "setAutoEnableDefault"
 		| "focusPanelRequest"
+		| "openSettingsInMainView"
+		| "requestComposerPrimaryButtonClick"
+		| "requestComposerSecondaryButtonClick"
+		| "requestComposerDraftAppend"
 		| "openExternal"
 		| "filterMarketplaceItems"
 		| "marketplaceButtonClicked"
@@ -696,6 +716,13 @@ export interface WebviewMessage {
 	modeConfig?: ModeConfig
 	timeout?: number
 	payload?: WebViewMessagePayload
+	webviewCrash?: {
+		stage: "global-error" | "unhandled-rejection" | "error-boundary"
+		name?: string
+		message?: string
+		stack?: string
+		componentStack?: string
+	}
 	source?: "global" | "project"
 	skillName?: string // For skill operations (createSkill, deleteSkill, moveSkill, openSkillFile)
 	/** @deprecated Use skillModeSlugs instead */

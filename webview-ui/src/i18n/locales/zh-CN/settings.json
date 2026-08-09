@@ -1139,6 +1139,24 @@
 			"label": "自动关闭新建的文件",
 			"description": "启用后，Zoo 新建（而非修改）的文件标签页在接受更改后也会自动关闭。"
 		},
+		"dedicatedIdeLayout": {
+			"label": "使用专用 AI IDE 布局",
+			"description": "在编辑器标签页显示 Zoo Code 对话，并将完整聊天输入区移至底部面板的“聊天”视图。侧边栏仍然可用。"
+		},
+		"userAvatar": {
+			"label": "用户头像",
+			"description": "选择一张本地图片，在专用 AI IDE 对话中显示在您的消息旁。图片由 Zoo Code 私有保存，不会使用网络头像。",
+			"choose": "选择图片",
+			"change": "更换图片",
+			"clear": "移除图片",
+			"selecting": "正在选择图片…",
+			"pendingSave": "图片已选择，点击“保存”后生效。",
+			"removalPending": "点击“保存”后将移除头像。",
+			"selectionCancelled": "已取消选择图片，未更改头像。",
+			"selectionFailed": "无法准备所选图片。",
+			"saved": "头像已保存。",
+			"removed": "头像已移除。"
+		},
 		"backgroundImage": {
 			"sectionTitle": "背景图",
 			"enabled": {

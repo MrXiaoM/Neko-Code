@@ -20,7 +20,7 @@ import { extractPatternsFromCommand } from "@src/utils/command-parser"
 import { useExtensionState } from "@src/context/ExtensionStateContext"
 import { cn } from "@src/lib/utils"
 
-import { Button, StandardTooltip } from "@src/components/ui"
+import { Button, Dialog, DialogContent, DialogHeader, DialogTitle, StandardTooltip } from "@src/components/ui"
 import CodeBlock from "@src/components/common/CodeBlock"
 
 import { CommandPatternSelector } from "./CommandPatternSelector"
@@ -71,8 +71,12 @@ export const CommandExecution = ({
 	} = useMemo(() => parseCommandAndOutput(text), [text])
 
 	// If we aren't opening the VSCode terminal for this command then we default
-	// to expanding the command execution output.
+	// to showing its bounded output preview.
 	const [isExpanded, setIsExpanded] = useState(terminalShellIntegrationDisabled)
+	const [isOutputDialogOpen, setIsOutputDialogOpen] = useState(false)
+	const [fullOutput, setFullOutput] = useState<string | null>(null)
+	const [fullOutputError, setFullOutputError] = useState<string | null>(null)
+	const [isLoadingFullOutput, setIsLoadingFullOutput] = useState(false)
 	const [streamingOutput, setStreamingOutput] = useState("")
 	// Initialize from the module-level cache so that components mounting after
 	// the "started" event was delivered still show the running indicator.
@@ -82,6 +86,7 @@ export const CommandExecution = ({
 	// task message (this is the case for completed commands) or from the
 	// streaming output (this is the case for running commands).
 	const output = streamingOutput || parsedOutput
+	const { preview: outputPreview, hiddenLineCount, ansiContext } = useMemo(() => getOutputPreview(output), [output])
 	const terminalInfo =
 		status?.status === "started" && status.terminalInfo ? status.terminalInfo : approvalTerminalInfo
 
@@ -147,6 +152,13 @@ export const CommandExecution = ({
 		(event: MessageEvent) => {
 			const message: ExtensionMessage = event.data
 
+			if (message.type === "commandOutputContent" && message.commandOutputContent?.executionId === executionId) {
+				setIsLoadingFullOutput(false)
+				setFullOutput(message.commandOutputContent.content)
+				setFullOutputError(message.commandOutputContent.error ?? null)
+				return
+			}
+
 			if (message.type === "commandExecutionStatus") {
 				const result = commandExecutionStatusSchema.safeParse(safeJsonParse(message.text, {}))
 
@@ -196,6 +208,14 @@ export const CommandExecution = ({
 	)
 
 	useEvent("message", onMessage)
+
+	const handleViewFullOutput = useCallback(() => {
+		setIsOutputDialogOpen(true)
+		setFullOutput(null)
+		setFullOutputError(null)
+		setIsLoadingFullOutput(true)
+		vscode.postMessage({ type: "readCommandOutputContent", text: executionId })
+	}, [executionId])
 
 	const approvalLabelKey =
 		approvalState === "approved"
@@ -310,7 +330,13 @@ export const CommandExecution = ({
 				<div className="p-2">
 					{terminalInfo && <TerminalInfo terminalInfo={terminalInfo} />}
 					<CodeBlock source={command} language="shell" />
-					<OutputContainer isExpanded={isExpanded} output={output} />
+					<OutputContainer
+						isExpanded={isExpanded}
+						output={outputPreview}
+						ansiContext={ansiContext}
+						hiddenLineCount={hiddenLineCount}
+						onViewFullOutput={handleViewFullOutput}
+					/>
 				</div>
 				{command && command.trim() && !destructiveCommandGuardEnabled && !isDenied && (
 					<CommandPatternSelector
@@ -322,6 +348,32 @@ export const CommandExecution = ({
 					/>
 				)}
 			</div>
+
+			<Dialog open={isOutputDialogOpen} onOpenChange={setIsOutputDialogOpen}>
+				<DialogContent className="flex max-h-[calc(100%-2rem)] w-[calc(100%-2rem)] max-w-4xl flex-col overflow-hidden p-4 sm:max-w-4xl">
+					<DialogHeader>
+						<DialogTitle>{t("chat:commandExecution.fullOutputTitle")}</DialogTitle>
+					</DialogHeader>
+					<div className="min-h-0 overflow-auto rounded-xs border border-vscode-border">
+						{isLoadingFullOutput ? (
+							<div className="p-3 text-sm text-vscode-descriptionForeground">
+								{t("chat:commandExecution.loadingFullOutput")}
+							</div>
+						) : fullOutput !== null ? (
+							<TerminalOutput content={fullOutput} />
+						) : (
+							<>
+								{fullOutputError && (
+									<div className="px-3 pt-3 text-sm text-vscode-errorForeground">
+										{t("chat:commandExecution.fullOutputUnavailable")}
+									</div>
+								)}
+								<TerminalOutput content={output} />
+							</>
+						)}
+					</div>
+				</DialogContent>
+			</Dialog>
 		</>
 	)
 }
@@ -372,15 +424,74 @@ const TerminalInfo = ({ terminalInfo }: { terminalInfo: CommandTerminalInfo }) =
 	)
 }
 
-const OutputContainerInternal = ({ isExpanded, output }: { isExpanded: boolean; output: string }) => (
-	<div
-		className={cn("overflow-hidden", {
-			"max-h-0": !isExpanded,
-			"max-h-[100%] mt-1 pt-1 border-t border-border/25": isExpanded,
-		})}>
-		{output.length > 0 && <TerminalOutput content={output} />}
-	</div>
-)
+const OUTPUT_PREVIEW_LINE_LIMIT = 10
+
+export const getOutputPreview = (output: string): { preview: string; ansiContext: string; hiddenLineCount: number } => {
+	const lineSeparator = output.includes("\r\n") ? "\r\n" : "\n"
+	const lines = output.split(/\r?\n/)
+
+	if (lines.at(-1) === "") {
+		lines.pop()
+	}
+
+	if (lines.length <= OUTPUT_PREVIEW_LINE_LIMIT) {
+		return { preview: output, ansiContext: "", hiddenLineCount: 0 }
+	}
+
+	const hiddenLines = lines.slice(0, -OUTPUT_PREVIEW_LINE_LIMIT)
+
+	return {
+		preview: lines.slice(-OUTPUT_PREVIEW_LINE_LIMIT).join(lineSeparator),
+		// The hidden prefix is not rendered, but TerminalOutput consumes it with
+		// its local converter to preserve ANSI state at the preview boundary.
+		ansiContext: `${hiddenLines.join(lineSeparator)}${lineSeparator}`,
+		hiddenLineCount: hiddenLines.length,
+	}
+}
+
+const OutputContainerInternal = ({
+	isExpanded,
+	output,
+	ansiContext,
+	hiddenLineCount,
+	onViewFullOutput,
+}: {
+	isExpanded: boolean
+	output: string
+	ansiContext: string
+	hiddenLineCount: number
+	onViewFullOutput: () => void
+}) => {
+	const { t } = useTranslation()
+
+	return (
+		<div
+			className={cn("overflow-hidden", {
+				"max-h-0": !isExpanded,
+				"max-h-[100%] mt-1 pt-1 border-t border-border/25": isExpanded,
+			})}>
+			{output.length > 0 && (
+				<div className="relative" data-testid="command-output-preview">
+					{hiddenLineCount > 0 && (
+						<div
+							aria-hidden="true"
+							className="pointer-events-none absolute inset-x-0 top-0 z-10 h-8 bg-gradient-to-b from-vscode-editor-background via-vscode-editor-background/80 to-transparent"
+						/>
+					)}
+					<TerminalOutput content={output} ansiContext={ansiContext} />
+				</div>
+			)}
+			{hiddenLineCount > 0 && (
+				<div className="flex items-center justify-between gap-2 px-3 pb-2 text-xs text-vscode-descriptionForeground">
+					<span>{t("chat:commandExecution.hiddenLines", { count: hiddenLineCount })}</span>
+					<Button variant="ghost" size="sm" className="h-6 px-1 text-xs" onClick={onViewFullOutput}>
+						{t("chat:commandExecution.viewFullOutput")}
+					</Button>
+				</div>
+			)}
+		</div>
+	)
+}
 
 const OutputContainer = memo(OutputContainerInternal)
 

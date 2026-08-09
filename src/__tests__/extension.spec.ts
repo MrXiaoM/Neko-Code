@@ -8,11 +8,12 @@ const { initializeWindowsApprovalNotificationCallback, configureNekoNotifier, di
 	}),
 )
 
-import type * as vscode from "vscode"
+import * as vscode from "vscode"
 import type { AuthState } from "@roo-code/types"
 
 vi.mock("vscode", () => ({
 	window: {
+		createTextEditorDecorationType: vi.fn().mockReturnValue({ dispose: vi.fn() }),
 		createOutputChannel: vi.fn().mockReturnValue({
 			appendLine: vi.fn(),
 		}),
@@ -24,6 +25,7 @@ vi.mock("vscode", () => ({
 		onDidChangeActiveTextEditor: vi.fn(),
 	},
 	workspace: {
+		workspaceFolders: [{ uri: { fsPath: "/test/workspace" } }],
 		registerTextDocumentContentProvider: vi.fn(),
 		getConfiguration: vi.fn().mockReturnValue({
 			get: vi.fn().mockReturnValue([]),
@@ -44,6 +46,10 @@ vi.mock("vscode", () => ({
 	},
 	env: {
 		language: "en",
+	},
+	CodeActionKind: {
+		QuickFix: { value: "quickfix" },
+		RefactorRewrite: { value: "refactor.rewrite" },
 	},
 	ExtensionMode: {
 		Production: 1,
@@ -209,6 +215,7 @@ vi.mock("../core/webview/ClineProvider", async () => {
 		postStateToWebview: vi.fn(),
 		postStateToWebviewWithoutClineMessages: vi.fn(),
 		getState: vi.fn().mockResolvedValue({}),
+		openDedicatedIdeLayout: vi.fn().mockResolvedValue(undefined),
 		initializeCloudProfileSyncWhenReady: vi.fn().mockResolvedValue(undefined),
 		providerSettingsManager: {},
 		contextProxy: { getGlobalState: vi.fn() },
@@ -221,9 +228,11 @@ vi.mock("../core/webview/ClineProvider", async () => {
 				return mockInstance
 			}),
 			{
-				// Static method used by extension.ts
+				// Static members used by extension.ts.
 				getVisibleInstance: vi.fn().mockReturnValue(mockInstance),
 				sideBarId: "zoo-code.SidebarProvider",
+				composerId: "test-extension.DedicatedComposerProvider",
+				dedicatedIdeLayoutContextKey: "zoo-code.dedicatedIdeLayoutEnabled",
 			},
 		),
 	}
@@ -256,6 +265,11 @@ describe("extension.ts", () => {
 		} as unknown as vscode.ExtensionContext
 
 		authStateChangedHandler = undefined
+		vi.mocked(vscode.workspace).workspaceFolders = [
+			{
+				uri: { fsPath: "/test/workspace" },
+			},
+		] as vscode.WorkspaceFolder[]
 	})
 
 	test("does not call dotenv.config when optional .env does not exist", async () => {
@@ -286,6 +300,27 @@ describe("extension.ts", () => {
 		await activate(mockContext)
 
 		expect(dotenv.config).toHaveBeenCalledTimes(1)
+	})
+
+	test("registers the dedicated composer but does not restore the dedicated editor without an open workspace", async () => {
+		vi.resetModules()
+		vi.mocked(vscode.workspace).workspaceFolders = undefined
+		const { ClineProvider } = await import("../core/webview/ClineProvider")
+		const { activate } = await import("../extension")
+
+		await activate(mockContext)
+
+		expect(vscode.window.registerWebviewViewProvider).toHaveBeenCalledWith(
+			"zoo-code.SidebarProvider",
+			expect.anything(),
+			{ webviewOptions: { retainContextWhenHidden: true } },
+		)
+		expect(vscode.window.registerWebviewViewProvider).toHaveBeenCalledWith(
+			ClineProvider.composerId,
+			expect.objectContaining({ resolveWebviewView: expect.any(Function) }),
+			{ webviewOptions: { retainContextWhenHidden: true } },
+		)
+		expect(vi.mocked(ClineProvider).mock.results[0]?.value.openDedicatedIdeLayout).not.toHaveBeenCalled()
 	})
 
 	test("uses mocked notification infrastructure during activation", async () => {

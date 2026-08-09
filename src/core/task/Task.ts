@@ -1099,6 +1099,36 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 	}
 
 	/**
+	 * Persists a new task's initial user prompt before its asynchronous task loop
+	 * begins. This closes the restart window where a task was visible in history
+	 * but had no saved prompt or messages.
+	 */
+	public async persistInitialUserMessage(): Promise<void> {
+		if (this._isHistoryTask || this.clineMessages.length > 0) {
+			return
+		}
+
+		const { task, images } = this.metadata
+		if (!task && !images?.length) {
+			return
+		}
+
+		const message: ClineMessage = {
+			ts: Date.now(),
+			type: "say",
+			say: "text",
+			text: task,
+			images,
+		}
+		this.clineMessages.push(message)
+
+		if (!(await this.saveClineMessages())) {
+			this.clineMessages.pop()
+			throw new Error(`Failed to persist initial user message for task ${this.taskId}`)
+		}
+	}
+
+	/**
 	 * Public durable flush of the chat timeline to disk.
 	 * Call after completion / manual stop / before process exit so reopening
 	 * without returning to the home screen still shows the full history.
@@ -2058,12 +2088,11 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 	private async startTask(task?: string, images?: string[]): Promise<void> {
 		try {
 			// `conversationHistory` (for API) and `clineMessages` (for webview)
-			// need to be in sync.
-			// If the extension process were killed, then on restart the
-			// `clineMessages` might not be empty, so we need to set it to [] when
-			// we create a new Cline client (otherwise webview would show stale
-			// messages from previous session).
-			this.clineMessages = []
+			// need to be in sync. The initial user message may already be durably
+			// saved before scheduling to survive a process restart, so retain it.
+			if (!this.clineMessages.length) {
+				this.clineMessages = []
+			}
 			this.apiConversationHistory = []
 
 			// The todo list is already set in the constructor if initialTodos were provided
@@ -2071,7 +2100,9 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 
 			await this.providerRef.deref()?.postStateToWebviewWithoutTaskHistory()
 
-			await this.say("text", task, images)
+			if (this.clineMessages.length === 0) {
+				await this.say("text", task, images)
+			}
 
 			// Check for too many MCP tools and warn the user
 			const { enabledToolCount, enabledServerCount } = await this.getEnabledMcpToolsCount()

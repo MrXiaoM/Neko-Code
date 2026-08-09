@@ -35,10 +35,14 @@ interface MockVirtuosoHandle {
 interface MockVirtuosoProps {
 	data: ClineMessage[]
 	itemContent: (index: number, item: ClineMessage) => React.ReactNode
+	computeItemKey?: (index: number, item: ClineMessage) => React.Key
 	atBottomStateChange?: (isAtBottom: boolean) => void
 	followOutput?: FollowOutput
 	className?: string
 	initialTopMostItemIndex?: number
+	components?: {
+		Footer?: React.ComponentType
+	}
 }
 
 interface VirtuosoHarnessState {
@@ -53,6 +57,7 @@ interface VirtuosoHarnessState {
 	emitFalseOnDataChange: boolean
 	delayedGrowthMs: number | null
 	initialTopMostItemIndex: number | undefined
+	computeItemKey: MockVirtuosoProps["computeItemKey"]
 	followOutput: FollowOutput | undefined
 	emitAtBottom: (isAtBottom: boolean) => void
 }
@@ -65,6 +70,7 @@ const harness = vi.hoisted<VirtuosoHarnessState>(() => ({
 	emitFalseOnDataChange: true,
 	delayedGrowthMs: null,
 	initialTopMostItemIndex: undefined,
+	computeItemKey: undefined,
 	followOutput: undefined,
 	emitAtBottom: () => {},
 }))
@@ -92,6 +98,20 @@ vi.mock("./WorktreeSelector", () => ({ WorktreeSelector: () => null }))
 
 vi.mock("@vscode/webview-ui-toolkit/react", () => ({
 	VSCodeLink: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+	VSCodeCheckbox: ({
+		children,
+		checked,
+		onChange,
+	}: {
+		children: React.ReactNode
+		checked?: boolean
+		onChange?: () => void
+	}) => (
+		<label>
+			<input type="checkbox" checked={checked} onChange={onChange} />
+			{children}
+		</label>
+	),
 }))
 
 vi.mock("@/components/ui", async (importOriginal) => {
@@ -136,7 +156,16 @@ vi.mock("../ChatRow", () => ({
 
 vi.mock("react-virtuoso", () => {
 	const MockVirtuoso = React.forwardRef<MockVirtuosoHandle, MockVirtuosoProps>(function MockVirtuoso(
-		{ data, itemContent, atBottomStateChange, followOutput, className, initialTopMostItemIndex },
+		{
+			data,
+			itemContent,
+			computeItemKey,
+			atBottomStateChange,
+			followOutput,
+			className,
+			initialTopMostItemIndex,
+			components,
+		},
 		ref,
 	) {
 		const atBottomRef = useRef(atBottomStateChange)
@@ -144,6 +173,7 @@ vi.mock("react-virtuoso", () => {
 
 		harness.followOutput = followOutput
 		harness.initialTopMostItemIndex = initialTopMostItemIndex
+		harness.computeItemKey = computeItemKey
 		harness.emitAtBottom = (isAtBottom: boolean) => {
 			atBottomRef.current?.(isAtBottom)
 		}
@@ -185,6 +215,8 @@ vi.mock("react-virtuoso", () => {
 			[],
 		)
 
+		const Footer = components?.Footer
+
 		return (
 			<div data-testid="virtuoso-item-list" className={className} data-count={data.length}>
 				{data.map((item, index) => (
@@ -192,6 +224,7 @@ vi.mock("react-virtuoso", () => {
 						{itemContent(index, item)}
 					</div>
 				))}
+				{Footer && <Footer />}
 			</div>
 		)
 	})
@@ -374,6 +407,7 @@ describe("ChatView scroll behavior regression coverage", () => {
 		harness.emitFalseOnDataChange = true
 		harness.delayedGrowthMs = null
 		harness.initialTopMostItemIndex = undefined
+		harness.computeItemKey = undefined
 		harness.followOutput = undefined
 		harness.emitAtBottom = () => {}
 	})
@@ -386,6 +420,15 @@ describe("ChatView scroll behavior regression coverage", () => {
 	it("existing-task entry does not set a top-most initial anchor", async () => {
 		await hydrate(2)
 		expect(harness.initialTopMostItemIndex).toBeUndefined()
+	})
+
+	it("does not reserve bottom overlay space when neither files nor actions are visible", async () => {
+		await hydrate(2)
+
+		expect(document.querySelector("[data-testid='chat-task-bottom-overlay']")).toBeNull()
+		expect(document.querySelector("[data-testid='chat-file-changes-slot']")).toBeNull()
+		expect(document.querySelector("[data-testid='chat-task-action-slot']")).toBeNull()
+		expect(document.querySelector("[data-testid='chat-bottom-spacer']")).toBeNull()
 	})
 
 	it("rehydration uses bounded bottom pinning", async () => {
@@ -444,9 +487,10 @@ describe("ChatView scroll behavior regression coverage", () => {
 			harness.emitAtBottom(true)
 		})
 
+		// Reaching the physical bottom hides the CTA, while the explicit user
+		// choice to browse history still keeps automatic streaming follow disabled.
 		expect(resolveFollowOutput(false)).toBe(false)
-
-		await expectChevronVisible()
+		await expectChevronHidden()
 	})
 
 	it("non-wheel upward intent disengages sticky follow", async () => {
@@ -456,16 +500,42 @@ describe("ChatView scroll behavior regression coverage", () => {
 		expect(resolveFollowOutput(false)).toBe("auto")
 
 		const scrollable = getScrollable()
+		Object.defineProperties(scrollable, {
+			clientHeight: { configurable: true, value: 100 },
+			scrollHeight: { configurable: true, value: 400 },
+		})
 		scrollable.scrollTop = 240
 
 		await act(async () => {
 			fireEvent.pointerDown(scrollable)
+			fireEvent.pointerMove(scrollable)
 			scrollable.scrollTop = 120
 			fireEvent.scroll(scrollable)
 			fireEvent.pointerUp(window)
 		})
 
 		expect(resolveFollowOutput(false)).toBe(false)
+	})
+
+	it("keeps sticky follow within the bottom overlay tolerance", async () => {
+		await hydrate(2)
+		await waitForCalls(2)
+		await waitForCallsSettled()
+
+		const scrollable = getScrollable()
+		Object.defineProperties(scrollable, {
+			clientHeight: { configurable: true, value: 100 },
+			scrollHeight: { configurable: true, value: 400 },
+		})
+		scrollable.scrollTop = 300
+		await act(async () => {
+			harness.emitAtBottom(true)
+			scrollable.scrollTop = 270
+			fireEvent.scroll(scrollable)
+		})
+
+		expect(resolveFollowOutput(false)).toBe("auto")
+		expect(document.querySelector(".codicon-chevron-down")).toBeNull()
 	})
 
 	it("nested scroller scroll events do not falsely disengage sticky follow", async () => {
@@ -491,6 +561,106 @@ describe("ChatView scroll behavior regression coverage", () => {
 
 		expect(resolveFollowOutput(false)).toBe("auto")
 		expect(document.querySelector(".codicon-chevron-down")).toBeNull()
+	})
+
+	it("actual small upward scroller movement immediately disables follow and prevents streaming repins", async () => {
+		await hydrate(2)
+		await waitForCalls(2)
+		await waitForCallsSettled()
+		expect(resolveFollowOutput(false)).toBe("auto")
+
+		const scrollable = getScrollable()
+		Object.defineProperties(scrollable, {
+			clientHeight: { configurable: true, value: 100 },
+			scrollHeight: { configurable: true, value: 400 },
+		})
+		scrollable.scrollTop = 300
+		await act(async () => {
+			harness.emitAtBottom(true)
+			fireEvent.pointerDown(scrollable)
+			fireEvent.pointerMove(scrollable)
+			scrollable.scrollTop = 239
+			fireEvent.scroll(scrollable)
+			fireEvent.pointerUp(window)
+		})
+
+		expect(resolveFollowOutput(false)).toBe(false)
+		await expectChevronVisible()
+
+		const callsAfterUpwardMovement = harness.scrollCalls
+		await act(async () => {
+			harness.emitAtBottom(false)
+			harness.emitAtBottom(true)
+			harness.emitAtBottom(false)
+		})
+
+		expect(harness.scrollCalls).toBe(callsAfterUpwardMovement)
+		expect(resolveFollowOutput(false)).toBe(false)
+	})
+
+	it("does not mistake a click followed by internal measurement for a drag", async () => {
+		await hydrate(2)
+		await waitForCalls(2)
+		await waitForCallsSettled()
+
+		const scrollable = getScrollable()
+		Object.defineProperties(scrollable, {
+			clientHeight: { configurable: true, value: 100 },
+			scrollHeight: { configurable: true, value: 500 },
+		})
+		scrollable.scrollTop = 400
+
+		await act(async () => {
+			harness.emitAtBottom(true)
+			fireEvent.pointerDown(scrollable)
+			scrollable.scrollTop = 200
+			fireEvent.scroll(scrollable)
+			fireEvent.pointerUp(window)
+		})
+
+		expect(resolveFollowOutput(false)).toBe("auto")
+		expect(document.querySelector(".codicon-chevron-down")).toBeNull()
+	})
+
+	it("keeps following when Virtuoso measurement moves the scroller upward without user input", async () => {
+		const initialMessages = buildMessages(Date.now() - 3_000)
+		await hydrate(2, initialMessages)
+		await waitForCalls(2)
+		await waitForCallsSettled()
+		expect(resolveFollowOutput(false)).toBe("auto")
+
+		const scrollable = getScrollable()
+		Object.defineProperties(scrollable, {
+			clientHeight: { configurable: true, value: 100 },
+			scrollHeight: { configurable: true, value: 500 },
+		})
+		scrollable.scrollTop = 400
+
+		await act(async () => {
+			harness.emitAtBottom(true)
+			// Simulate Virtuoso compensating for a row-height measurement. There is
+			// no pointer interaction, so this must not be treated as user history browsing.
+			scrollable.scrollTop = 200
+			fireEvent.scroll(scrollable)
+			postState([
+				...initialMessages,
+				{ type: "say", say: "text", ts: initialMessages.at(-1)!.ts + 1, text: "streamed update" },
+			])
+		})
+		await flushEffects()
+
+		expect(resolveFollowOutput(false)).toBe("auto")
+		expect(document.querySelector(".codicon-chevron-down")).toBeNull()
+	})
+
+	it("uses a stable item key when a message moves after grouping changes above it", async () => {
+		await hydrate(2)
+
+		const computeItemKey = harness.computeItemKey
+		expect(computeItemKey).toBeDefined()
+
+		const message = buildMessages(1_000)[1]
+		expect(computeItemKey!(0, message)).toBe(computeItemKey!(5, message))
 	})
 
 	it("wheel-up intent disengages sticky follow", async () => {

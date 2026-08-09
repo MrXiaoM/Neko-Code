@@ -2,6 +2,7 @@ import React, { Component } from "react"
 import { telemetryClient } from "@src/utils/TelemetryClient"
 import { withTranslation, WithTranslation } from "react-i18next"
 import { enhanceErrorWithSourceMaps } from "@src/utils/sourceMapUtils"
+import { reportWebviewDiagnostic } from "@src/utils/webviewDiagnostics"
 import { EXTERNAL_LINKS } from "@src/constants/externalLinks"
 
 type ErrorProps = {
@@ -37,19 +38,31 @@ class ErrorBoundary extends Component<ErrorProps, ErrorState> {
 
 	async componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
 		const componentStack = errorInfo.componentStack || ""
+
+		// Persist the crash before source-map enhancement so a secondary enhancement failure
+		// cannot hide the original Webview failure from automatic local diagnostics.
+		reportWebviewDiagnostic("error-boundary", {
+			name: error.name,
+			message: error.message,
+			stack: error.stack,
+			componentStack,
+		})
+
 		const enhancedError = await enhanceErrorWithSourceMaps(error, componentStack)
+		const stack = enhancedError.sourceMappedStack || enhancedError.stack
+		const sourceMappedComponentStack = enhancedError.sourceMappedComponentStack || componentStack
 
 		telemetryClient.capture("error_boundary_caught_error", {
 			error: enhancedError.message,
-			stack: enhancedError.sourceMappedStack || enhancedError.stack,
-			componentStack: enhancedError.sourceMappedComponentStack || componentStack,
+			stack,
+			componentStack: sourceMappedComponentStack,
 			timestamp: Date.now(),
 			errorType: enhancedError.name,
 		})
 
 		this.setState({
-			error: enhancedError.sourceMappedStack || enhancedError.stack,
-			componentStack: enhancedError.sourceMappedComponentStack || componentStack,
+			error: stack,
+			componentStack: sourceMappedComponentStack,
 		})
 	}
 

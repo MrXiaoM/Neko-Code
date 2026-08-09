@@ -7,56 +7,70 @@ import { CommandExecution } from "../CommandExecution"
 import { TooltipProvider } from "../../../components/ui/tooltip"
 import { ExtensionStateContext } from "../../../context/ExtensionStateContext"
 
-// Mock dependencies
-const tMock = (key: string, options?: Record<string, unknown>) => {
-	if (key === "chat:commandExecution.terminalType") {
-		return `Type: ${options?.type}`
-	}
-	if (key === "chat:commandExecution.workingDirectory") {
-		return `Working directory: ${options?.cwd}`
-	}
-	if (key === "chat:commandExecution.terminalProfile") {
-		return `Profile: ${options?.profile}`
-	}
-	if (key === "chat:commandExecution.terminalId") {
-		return `Terminal: #${options?.id}`
-	}
-	return key
-}
+// Mock dependencies. The translation factories are hoisted by Vitest, so the
+// translator itself must be hoisted as well.
+const { tMock } = vi.hoisted(() => ({
+	tMock: (key: string, options?: Record<string, unknown>) => {
+		if (key === "chat:commandExecution.terminalType") {
+			return `Type: ${options?.type}`
+		}
+		if (key === "chat:commandExecution.workingDirectory") {
+			return `Working directory: ${options?.cwd}`
+		}
+		if (key === "chat:commandExecution.terminalProfile") {
+			return `Profile: ${options?.profile}`
+		}
+		if (key === "chat:commandExecution.terminalId") {
+			return `Terminal: #${options?.id}`
+		}
+		return key
+	},
+}))
 
 vi.mock("react-i18next", () => ({
 	useTranslation: () => ({
 		t: tMock,
 	}),
+	initReactI18next: {},
 }))
 
-vi.mock("i18next", () => ({
-	t: tMock,
-}))
+vi.mock("i18next", () => {
+	const instance = {
+		t: tMock,
+		use: () => instance,
+		init: vi.fn(),
+		addResourceBundle: vi.fn(),
+	}
+
+	return {
+		default: instance,
+		t: tMock,
+	}
+})
 
 vi.mock("react-use", () => ({
 	useEvent: vi.fn(),
 }))
 
 import { useEvent } from "react-use"
-import { vscode } from "../../../utils/vscode"
+import { vscode } from "@src/utils/vscode"
 
-vi.mock("../../../utils/vscode", () => ({
+vi.mock("@src/utils/vscode", () => ({
 	vscode: {
 		postMessage: vi.fn(),
 	},
 }))
 
-vi.mock("../../common/CodeBlock", () => ({
+vi.mock("@src/components/common/CodeBlock", () => ({
 	default: ({ source }: { source: string }) => <div data-testid="code-block">{source}</div>,
 }))
 
 // Mock TerminalOutput
-vi.mock("../TerminalOutput", () => ({
+vi.mock("@src/components/chat/TerminalOutput", () => ({
 	TerminalOutput: ({ content }: { content: string }) => <div data-testid="terminal-output">{content}</div>,
 }))
 
-vi.mock("../CommandPatternSelector", () => ({
+vi.mock("@src/components/chat/CommandPatternSelector", () => ({
 	CommandPatternSelector: ({ patterns, onAllowPatternChange, onDenyPatternChange }: any) => (
 		<div data-testid="command-pattern-selector">
 			{patterns.map((pattern: any, index: number) => (
@@ -78,8 +92,14 @@ const mockExtensionState = {
 	setDeniedCommands: vi.fn(),
 }
 
-const ExtensionStateWrapper = ({ children }: { children: React.ReactNode }) => (
-	<ExtensionStateContext.Provider value={mockExtensionState as any}>
+const ExtensionStateWrapper = ({
+	children,
+	state = mockExtensionState,
+}: {
+	children: React.ReactNode
+	state?: Record<string, unknown>
+}) => (
+	<ExtensionStateContext.Provider value={state as any}>
 		<TooltipProvider>{children}</TooltipProvider>
 	</ExtensionStateContext.Provider>
 )
@@ -111,6 +131,43 @@ describe("CommandExecution", () => {
 
 		const terminalOutput = screen.getByTestId("terminal-output")
 		expect(terminalOutput).toHaveTextContent("Installing packages...")
+	})
+
+	it("shows only the tail of a long output with a visual truncation cue and opens the complete output", () => {
+		const output = Array.from({ length: 12 }, (_value, index) => `line ${index + 1}`).join("\n")
+		const disabledState = {
+			...mockExtensionState,
+			terminalShellIntegrationDisabled: true,
+		}
+
+		render(
+			<ExtensionStateWrapper state={disabledState}>
+				<CommandExecution executionId="test-long-output" text={`npm test\nOutput:\n${output}`} />
+			</ExtensionStateWrapper>,
+		)
+
+		const preview = screen.getByTestId("command-output-preview")
+		expect(preview).toHaveTextContent("line 3")
+		expect(preview).toHaveTextContent("line 12")
+		expect(preview).not.toHaveTextContent(/line 1(?:\n|$)/)
+		expect(preview.querySelector('[aria-hidden="true"]')).toBeTruthy()
+		expect(screen.getByText("chat:commandExecution.hiddenLines")).toBeInTheDocument()
+
+		fireEvent.click(screen.getByText("chat:commandExecution.viewFullOutput"))
+		expect(vscode.postMessage).toHaveBeenCalledWith({ type: "readCommandOutputContent", text: "test-long-output" })
+
+		window.dispatchEvent(
+			new MessageEvent("message", {
+				data: {
+					type: "commandOutputContent",
+					commandOutputContent: { executionId: "test-long-output", content: output },
+				},
+			}),
+		)
+
+		const outputs = screen.getAllByTestId("terminal-output")
+		expect(outputs.at(-1)).toHaveTextContent("line 1")
+		expect(outputs.at(-1)).toHaveTextContent("line 12")
 	})
 
 	it("should parse JSON approval payload and render terminal info", () => {
@@ -292,9 +349,9 @@ describe("CommandExecution", () => {
 		}
 
 		render(
-			<ExtensionStateContext.Provider value={state as any}>
+			<ExtensionStateWrapper state={state}>
 				<CommandExecution executionId="test-1" text="npm install express" />
-			</ExtensionStateContext.Provider>,
+			</ExtensionStateWrapper>,
 		)
 
 		expect(screen.getByTestId("code-block")).toHaveTextContent("npm install express")
@@ -363,9 +420,9 @@ describe("CommandExecution", () => {
 		}
 
 		render(
-			<ExtensionStateContext.Provider value={stateWithNpmTest as any}>
+			<ExtensionStateWrapper state={stateWithNpmTest}>
 				<CommandExecution executionId="test-1" text="npm test" />
-			</ExtensionStateContext.Provider>,
+			</ExtensionStateWrapper>,
 		)
 
 		const allowButton = screen.getByText("Allow")
@@ -392,9 +449,9 @@ describe("CommandExecution", () => {
 		}
 
 		render(
-			<ExtensionStateContext.Provider value={stateWithRmRf as any}>
+			<ExtensionStateWrapper state={stateWithRmRf}>
 				<CommandExecution executionId="test-1" text="rm -rf" />
-			</ExtensionStateContext.Provider>,
+			</ExtensionStateWrapper>,
 		)
 
 		const denyButton = screen.getByText("Deny")
@@ -498,9 +555,9 @@ Output:
 Output here`
 
 		render(
-			<ExtensionStateContext.Provider value={disabledState as any}>
+			<ExtensionStateWrapper state={disabledState}>
 				<CommandExecution executionId="test-1" text={commandText} />
-			</ExtensionStateContext.Provider>,
+			</ExtensionStateWrapper>,
 		)
 
 		// Output should be visible when shell integration is disabled
@@ -519,9 +576,9 @@ Output here`
 		}
 
 		render(
-			<ExtensionStateContext.Provider value={stateWithUndefined as any}>
+			<ExtensionStateWrapper state={stateWithUndefined}>
 				<CommandExecution executionId="test-1" text="npm install" />
-			</ExtensionStateContext.Provider>,
+			</ExtensionStateWrapper>,
 		)
 
 		// Should show pattern selector when patterns are available
@@ -537,9 +594,9 @@ Output here`
 		}
 
 		render(
-			<ExtensionStateContext.Provider value={stateWithRmInDenied as any}>
+			<ExtensionStateWrapper state={stateWithRmInDenied}>
 				<CommandExecution executionId="test-1" text="rm file.txt" />
-			</ExtensionStateContext.Provider>,
+			</ExtensionStateWrapper>,
 		)
 
 		const allowButton = screen.getByText("Allow")
@@ -665,9 +722,9 @@ Running tests...
 			}
 
 			render(
-				<ExtensionStateContext.Provider value={conflictState as any}>
+				<ExtensionStateWrapper state={conflictState}>
 					<CommandExecution executionId="test-11" text="git push origin main" />
-				</ExtensionStateContext.Provider>,
+				</ExtensionStateWrapper>,
 			)
 
 			// Click to allow "git push origin main"

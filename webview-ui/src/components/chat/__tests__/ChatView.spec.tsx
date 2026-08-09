@@ -59,9 +59,11 @@ vi.mock("../ChatRow", () => ({
 	default: function MockChatRow({
 		message,
 		onSuggestionClick,
+		onSuggestionCopy,
 	}: {
 		message: ClineMessage
 		onSuggestionClick?: (suggestion: SuggestionItem, event?: React.MouseEvent) => void
+		onSuggestionCopy?: (suggestion: SuggestionItem) => void
 	}) {
 		if (message.type === "ask" && message.ask === "followup" && message.text) {
 			try {
@@ -69,12 +71,17 @@ vi.mock("../ChatRow", () => ({
 				return (
 					<div data-testid="chat-row">
 						{followUp.suggest?.map((suggestion) => (
-							<button
-								key={suggestion.answer}
-								type="button"
-								onClick={(event) => onSuggestionClick?.(suggestion, event)}>
-								{suggestion.answer}
-							</button>
+							<React.Fragment key={suggestion.answer}>
+								<button type="button" onClick={(event) => onSuggestionClick?.(suggestion, event)}>
+									{suggestion.answer}
+								</button>
+								<button
+									type="button"
+									aria-label="chat:followUpSuggest.copyToInput"
+									onClick={() => onSuggestionCopy?.(suggestion)}>
+									Copy to input
+								</button>
+							</React.Fragment>
 						))}
 					</div>
 				)
@@ -126,13 +133,15 @@ vi.mock("react-virtuoso", () => ({
 	},
 }))
 
-// Mock VersionIndicator - returns null by default to prevent rendering in tests
-vi.mock("../../common/VersionIndicator", () => ({
-	default: vi.fn(() => null),
+// Mock VersionIndicator - returns null by default to prevent rendering in tests.
+// Use vi.hoisted so the mock reference is created before hoisted vi.mock factories run.
+const { mockVersionIndicator } = vi.hoisted(() => ({
+	mockVersionIndicator: vi.fn(),
 }))
 
-// Get the mock function after the module is mocked
-const mockVersionIndicator = vi.mocked((await import("../../common/VersionIndicator")).default)
+vi.mock("../../common/VersionIndicator", () => ({
+	default: mockVersionIndicator,
+}))
 
 vi.mock("../Announcement", () => ({
 	default: function MockAnnouncement({ hideAnnouncement }: { hideAnnouncement: () => void }) {
@@ -217,6 +226,7 @@ vi.mock("react-i18next", () => ({
 
 interface ChatTextAreaProps {
 	onSend: () => void
+	controlsOnly?: boolean
 	onStop?: () => void
 	canStopTask?: boolean
 	inputValue?: string
@@ -227,7 +237,7 @@ interface ChatTextAreaProps {
 	shouldDisableImages?: boolean
 }
 
-const mockInputRef = React.createRef<HTMLInputElement>()
+const mockInputRef = React.createRef<HTMLTextAreaElement>()
 const mockFocus = vi.fn()
 
 vi.mock("../ChatTextArea", () => {
@@ -244,26 +254,27 @@ vi.mock("../ChatTextArea", () => {
 		}))
 
 		return (
-			<div data-testid="chat-textarea">
-				<input
-					ref={mockInputRef}
-					type="text"
-					value={props.inputValue || ""}
-					onChange={(e) => {
-						// Use parent's setInputValue if available
-						if (props.setInputValue) {
-							props.setInputValue(e.target.value)
-						}
-					}}
-					onKeyDown={(e) => {
-						// Only call onSend when Enter is pressed (simulating real behavior)
-						if (e.key === "Enter" && !e.shiftKey) {
-							e.preventDefault()
-							props.onSend()
-						}
-					}}
-					data-sending-disabled={props.sendingDisabled}
-				/>
+			<div data-testid={props.controlsOnly ? "chat-input-controls" : "chat-textarea"}>
+				{!props.controlsOnly && (
+					<textarea
+						ref={mockInputRef}
+						value={props.inputValue || ""}
+						onChange={(e) => {
+							// Use parent's setInputValue if available
+							if (props.setInputValue) {
+								props.setInputValue(e.target.value)
+							}
+						}}
+						onKeyDown={(e) => {
+							// Only call onSend when Enter is pressed (simulating real behavior)
+							if (e.key === "Enter" && !e.shiftKey) {
+								e.preventDefault()
+								props.onSend()
+							}
+						}}
+						data-sending-disabled={props.sendingDisabled}
+					/>
+				)}
 				{props.canStopTask && (
 					<button type="button" aria-label="Stop task" onClick={props.onStop}>
 						Stop task
@@ -376,6 +387,114 @@ const renderChatView = (props: Partial<ChatViewProps> = {}) => {
 		</ExtensionStateContextProvider>,
 	)
 }
+
+describe("ChatView - dedicated IDE layout", () => {
+	beforeEach(() => vi.clearAllMocks())
+
+	it("renders the input bar and hides the message list in the bottom composer while the layout is enabled", async () => {
+		renderChatView()
+		mockPostMessage({
+			renderContext: "composer",
+			dedicatedIdeLayoutEnabled: true,
+			clineMessages: [{ type: "say", say: "task", ts: 1, text: "Task" }],
+		})
+
+		await waitFor(() => {
+			expect(document.querySelector('[data-testid="chat-textarea"] textarea')).toBeTruthy()
+			expect(document.querySelector('[data-testid="chat-input-controls"]')).toBeNull()
+			expect(document.querySelector('[data-testid="virtuoso-item-list"]')).toBeNull()
+			expect(document.querySelector('[data-testid="chat-background-image"]')).toBeNull()
+		})
+	})
+
+	it("keeps the input bar in the bottom composer and moves only its controls to the dedicated editor", async () => {
+		renderChatView()
+		mockPostMessage({
+			renderContext: "editor",
+			dedicatedIdeLayoutEnabled: true,
+			clineMessages: [{ type: "say", say: "task", ts: 1, text: "Task" }],
+		})
+
+		await waitFor(() => {
+			expect(document.querySelector('[data-testid="chat-textarea"] textarea')).toBeNull()
+			expect(document.querySelector('[data-testid="chat-input-controls"]')).toBeTruthy()
+			expect(document.querySelector('[data-testid="virtuoso-item-list"]')).toBeTruthy()
+		})
+	})
+
+	it("renders the input bar together with the message list when the dedicated layout is disabled", async () => {
+		renderChatView()
+		mockPostMessage({
+			renderContext: "editor",
+			dedicatedIdeLayoutEnabled: false,
+			clineMessages: [{ type: "say", say: "task", ts: 1, text: "Task" }],
+		})
+
+		await waitFor(() => {
+			expect(document.querySelector('[data-testid="chat-textarea"] textarea')).toBeTruthy()
+			expect(document.querySelector('[data-testid="chat-input-controls"]')).toBeNull()
+			expect(document.querySelector('[data-testid="virtuoso-item-list"]')).toBeTruthy()
+		})
+	})
+
+	it("delegates editor approval clicks to the composer instead of using an editor-local draft", async () => {
+		const { getByRole } = renderChatView()
+		mockPostMessage({
+			renderContext: "editor",
+			dedicatedIdeLayoutEnabled: true,
+			clineMessages: [
+				{ type: "say", say: "task", ts: 1, text: "Task" },
+				{ type: "ask", ask: "command", ts: 2, text: "echo hello" },
+			],
+		})
+
+		const runButton = await waitFor(() => getByRole("button", { name: "chat:runCommand.title" }))
+		vi.mocked(vscode.postMessage).mockClear()
+		fireEvent.click(runButton)
+		fireEvent.click(runButton)
+
+		expect(runButton).toBeDisabled()
+		expect(vscode.postMessage).toHaveBeenCalledTimes(1)
+		expect(vscode.postMessage).toHaveBeenCalledWith({ type: "requestComposerPrimaryButtonClick" })
+		expect(vscode.postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: "askResponse" }))
+	})
+
+	it("uses the composer draft when a dedicated editor requests approval", async () => {
+		const { getByTestId } = renderChatView()
+		mockPostMessage({
+			renderContext: "composer",
+			dedicatedIdeLayoutEnabled: true,
+			clineMessages: [
+				{ type: "say", say: "task", ts: 1, text: "Task" },
+				{ type: "ask", ask: "command", ts: 2, text: "echo hello" },
+			],
+		})
+
+		const input = (await waitFor(() => getByTestId("chat-textarea"))).querySelector("textarea, input")
+		expect(input).toBeTruthy()
+		fireEvent.change(input!, { target: { value: "Run it with the composer draft" } })
+		vi.mocked(vscode.postMessage).mockClear()
+
+		await act(async () => {
+			window.dispatchEvent(
+				new MessageEvent("message", {
+					data: {
+						type: "invoke",
+						invoke: "primaryButtonClick",
+						values: { useComposerDraft: true },
+					},
+				}),
+			)
+		})
+
+		expect(vscode.postMessage).toHaveBeenCalledWith({
+			type: "askResponse",
+			askResponse: "yesButtonClicked",
+			text: "Run it with the composer draft",
+			images: [],
+		})
+	})
+})
 
 describe("ChatView - Tool Batching Tests", () => {
 	beforeEach(() => vi.clearAllMocks())
@@ -613,7 +732,7 @@ describe("ChatView - Virtualization Configuration", () => {
 
 		expect(mockVirtuosoState.lastConfig?.defaultItemHeight).toBe(180)
 		expect(mockVirtuosoState.lastConfig?.increaseViewportBy).toEqual({ top: 600, bottom: 800 })
-		expect(mockVirtuosoState.lastConfig?.computeItemKey?.(1, { type: "say", ts: rowTs })).toBe(`${rowTs}-1`)
+		expect(mockVirtuosoState.lastConfig?.computeItemKey?.(1, { type: "say", ts: rowTs })).toBe(String(rowTs))
 	})
 })
 
@@ -949,7 +1068,7 @@ describe("ChatView - Message Queueing Tests", () => {
 		// Wait for state to be updated and check that sending is disabled
 		await waitFor(() => {
 			const chatTextArea = getByTestId("chat-textarea")
-			const input = chatTextArea.querySelector("input")!
+			const input = chatTextArea.querySelector("textarea, input")!
 			expect(input.getAttribute("data-sending-disabled")).toBe("true")
 		})
 	})
@@ -977,7 +1096,7 @@ describe("ChatView - Message Queueing Tests", () => {
 
 		// Check that sending is enabled
 		const chatTextArea = getByTestId("chat-textarea")
-		const input = chatTextArea.querySelector("input")!
+		const input = chatTextArea.querySelector("textarea, input")!
 		expect(input.getAttribute("data-sending-disabled")).toBe("false")
 	})
 
@@ -1027,7 +1146,7 @@ describe("ChatView - Message Queueing Tests", () => {
 
 		// Simulate user typing and sending a message during the spinner
 		const chatTextArea = getByTestId("chat-textarea")
-		const input = chatTextArea.querySelector("input")! as HTMLInputElement
+		const input = chatTextArea.querySelector("textarea, input")! as HTMLTextAreaElement | HTMLInputElement
 
 		// Trigger message send by simulating typing and Enter key press
 		await act(async () => {
@@ -1098,7 +1217,7 @@ describe("ChatView - Message Queueing Tests", () => {
 
 		// Simulate user sending a message when API is done
 		const chatTextArea = getByTestId("chat-textarea")
-		const input = chatTextArea.querySelector("input")! as HTMLInputElement
+		const input = chatTextArea.querySelector("textarea, input")! as HTMLTextAreaElement | HTMLInputElement
 
 		await act(async () => {
 			// Use fireEvent to properly trigger React's onChange handler
@@ -1161,7 +1280,7 @@ describe("ChatView - Message Queueing Tests", () => {
 
 		// Simulate user sending a new message while queue has items
 		const chatTextArea = getByTestId("chat-textarea")
-		const input = chatTextArea.querySelector("input")! as HTMLInputElement
+		const input = chatTextArea.querySelector("textarea, input")! as HTMLTextAreaElement | HTMLInputElement
 
 		await act(async () => {
 			fireEvent.change(input, { target: { value: "message during queue drain" } })
@@ -1211,7 +1330,7 @@ describe("ChatView - Resume Task", () => {
 			],
 		})
 
-		const input = (await waitFor(() => getByTestId("chat-textarea"))).querySelector("input")!
+		const input = (await waitFor(() => getByTestId("chat-textarea"))).querySelector("textarea, input")!
 		fireEvent.change(input, { target: { value: "Continue with the current draft" } })
 		vi.mocked(vscode.postMessage).mockClear()
 
@@ -1359,6 +1478,89 @@ describe("ChatView - Follow-up Suggestions", () => {
 			})
 		})
 		expect(vscode.postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: "mode" }))
+	})
+	it("routes a copied dedicated editor suggestion to the composer draft and switches its mode", async () => {
+		const { getByRole } = renderChatView()
+		mockPostMessage({
+			renderContext: "editor",
+			dedicatedIdeLayoutEnabled: true,
+			mode: "ask",
+			customModes: [],
+			clineMessages: [
+				{ type: "say", say: "task", ts: Date.now() - 1000, text: "Initial task" },
+				{
+					type: "ask",
+					ask: "followup",
+					ts: Date.now(),
+					text: JSON.stringify({
+						question: "Switch mode?",
+						suggest: [{ answer: "Use code mode", mode: { mode_slug: "code" } }],
+					}),
+				},
+			],
+		})
+
+		const copyButton = await waitFor(() => getByRole("button", { name: "chat:followUpSuggest.copyToInput" }))
+		vi.mocked(vscode.postMessage).mockClear()
+
+		fireEvent.click(copyButton)
+
+		expect(vscode.postMessage).toHaveBeenCalledWith({ type: "mode", text: "code" })
+		expect(vscode.postMessage).toHaveBeenCalledWith({ type: "requestComposerDraftAppend", text: "Use code mode" })
+		expect(vscode.postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: "askResponse" }))
+	})
+
+	it("routes a Shift-clicked dedicated editor suggestion to the composer draft and switches its mode", async () => {
+		const { getByRole } = renderChatView()
+		mockPostMessage({
+			renderContext: "editor",
+			dedicatedIdeLayoutEnabled: true,
+			mode: "ask",
+			customModes: [],
+			clineMessages: [
+				{ type: "say", say: "task", ts: Date.now() - 1000, text: "Initial task" },
+				{
+					type: "ask",
+					ask: "followup",
+					ts: Date.now(),
+					text: JSON.stringify({
+						question: "Switch mode?",
+						suggest: [{ answer: "Use code mode", mode: { mode_slug: "code" } }],
+					}),
+				},
+			],
+		})
+
+		const suggestion = await waitFor(() => getByRole("button", { name: "Use code mode" }))
+		vi.mocked(vscode.postMessage).mockClear()
+
+		fireEvent.click(suggestion, { shiftKey: true })
+
+		expect(vscode.postMessage).toHaveBeenCalledWith({ type: "mode", text: "code" })
+		expect(vscode.postMessage).toHaveBeenCalledWith({ type: "requestComposerDraftAppend", text: "Use code mode" })
+		expect(vscode.postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: "askResponse" }))
+	})
+
+	it("appends a composer draft message without replacing its existing input", async () => {
+		const { getByTestId } = renderChatView()
+		mockPostMessage({
+			renderContext: "composer",
+			dedicatedIdeLayoutEnabled: true,
+			clineMessages: [{ type: "say", say: "task", ts: Date.now(), text: "Initial task" }],
+		})
+
+		const input = (await waitFor(() => getByTestId("chat-textarea"))).querySelector("textarea, input")!
+		fireEvent.change(input, { target: { value: "Existing draft" } })
+
+		await act(async () => {
+			window.dispatchEvent(
+				new MessageEvent("message", {
+					data: { type: "invoke", invoke: "setChatBoxMessage", text: "Use code mode", images: [] },
+				}),
+			)
+		})
+
+		expect(input).toHaveValue("Existing draft Use code mode")
 	})
 })
 

@@ -45,6 +45,9 @@ vi.mock("../core/task/Task", () => {
 			this.apiConfiguration = opts.apiConfiguration ?? { apiProvider: "anthropic" }
 			opts.onCreated?.(this)
 		}
+		persistInitialUserMessage() {
+			return Promise.resolve()
+		}
 		start() {}
 		run() {
 			return Promise.resolve()

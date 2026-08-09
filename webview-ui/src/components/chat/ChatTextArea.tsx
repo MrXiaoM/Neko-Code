@@ -59,6 +59,7 @@ interface ChatTextAreaProps {
 	canStopTask?: boolean
 	onStop?: () => void
 	onEnqueueMessage?: () => void
+	controlsOnly?: boolean
 }
 
 export const ChatTextArea = forwardRef<HTMLTextAreaElement, ChatTextAreaProps>(
@@ -83,6 +84,7 @@ export const ChatTextArea = forwardRef<HTMLTextAreaElement, ChatTextAreaProps>(
 			canStopTask = isStreaming,
 			onStop,
 			onEnqueueMessage,
+			controlsOnly = false,
 		},
 		ref,
 	) => {
@@ -103,10 +105,13 @@ export const ChatTextArea = forwardRef<HTMLTextAreaElement, ChatTextAreaProps>(
 			commands,
 			enterBehavior,
 			lockApiConfigAcrossModes,
+			renderContext,
+			dedicatedIdeLayoutEnabled = false,
 			apiConfiguration,
 			setApiConfiguration,
 		} = useExtensionState()
 
+		const isComposer = renderContext === "composer"
 		const { id: selectedModelId, info: selectedModelInfo } = useSelectedModel(apiConfiguration)
 
 		// Find the ID and display text for the currently selected API configuration.
@@ -998,419 +1003,444 @@ export const ChatTextArea = forwardRef<HTMLTextAreaElement, ChatTextAreaProps>(
 
 		return (
 			<div
+				data-testid={controlsOnly ? "chat-input-controls" : "chat-textarea"}
 				className={cn(
-					"flex flex-col gap-1 bg-editor-background outline-none border border-none box-border",
-					isEditMode ? "p-2 w-full" : "relative px-1.5 pb-1 w-[calc(100%-16px)] ml-auto mr-auto",
+					"flex flex-col gap-1 bg-editor-background outline-none border border-none box-border min-w-0",
+					isEditMode
+						? "p-2 w-full"
+						: isComposer
+							? "relative flex min-h-0 flex-1 w-full px-1.5 pt-1 pb-1"
+							: "relative min-h-0 w-full px-1.5 pt-1 pb-1",
 				)}>
-				<div className={cn(!isEditMode && "relative")}>
-					<div
-						className={cn("chat-text-area", !isEditMode && "relative", "flex", "flex-col", "outline-none")}
-						onDrop={handleDrop}
-						onDragOver={(e) => {
-							// Only allowed to drop images/files on shift key pressed.
-							if (!e.shiftKey) {
-								setIsDraggingOver(false)
-								return
-							}
-
-							e.preventDefault()
-							setIsDraggingOver(true)
-							e.dataTransfer.dropEffect = "copy"
-						}}
-						onDragLeave={(e) => {
-							e.preventDefault()
-							const rect = e.currentTarget.getBoundingClientRect()
-
-							if (
-								e.clientX <= rect.left ||
-								e.clientX >= rect.right ||
-								e.clientY <= rect.top ||
-								e.clientY >= rect.bottom
-							) {
-								setIsDraggingOver(false)
-							}
-						}}>
-						{showContextMenu && (
-							<div
-								ref={contextMenuContainerRef}
-								className={cn(
-									"absolute",
-									"bottom-full",
-									isEditMode ? "left-6" : "left-0",
-									"right-0",
-									"z-[1000]",
-									isEditMode ? "-mb-3" : "mb-2",
-									"filter",
-									"drop-shadow-md",
-								)}>
-								<ContextMenu
-									onSelect={handleMentionSelect}
-									searchQuery={searchQuery}
-									inputValue={inputValue}
-									onMouseDown={handleMenuMouseDown}
-									selectedIndex={selectedMenuIndex}
-									setSelectedIndex={setSelectedMenuIndex}
-									selectedType={selectedType}
-									queryItems={queryItems}
-									modes={allModes}
-									loading={searchLoading}
-									dynamicSearchResults={fileSearchResults}
-									commands={commands}
-								/>
-							</div>
-						)}
-
+				{!controlsOnly && (
+					<>
 						<div
 							className={cn(
-								"relative",
-								"flex-1",
-								"flex",
-								"flex-col-reverse",
-								"min-h-0",
-								"overflow-hidden",
-								"rounded-lg",
+								!isEditMode && (isComposer ? "relative flex min-h-0 flex-1 flex-col" : "relative"),
 							)}>
 							<div
-								ref={highlightLayerRef}
-								data-testid="highlight-layer"
 								className={cn(
-									"absolute",
-									"inset-0",
-									"pointer-events-none",
-									"whitespace-pre-wrap",
-									"break-words",
-									"text-transparent",
-									"overflow-hidden",
-									"font-vscode-font-family",
-									"text-vscode-editor-font-size",
-									"leading-vscode-editor-line-height",
-									isFocused
-										? "border border-vscode-focusBorder outline outline-vscode-focusBorder"
-										: isDraggingOver
-											? "border-2 border-dashed border-vscode-focusBorder"
-											: "border border-transparent",
-									"pl-2",
-									"py-2",
-									isEditMode ? "pr-20" : "pr-9",
-									"z-10",
-									"forced-color-adjust-none",
-									"rounded-lg",
+									"chat-text-area flex flex-col outline-none",
+									!isEditMode && (isComposer ? "relative min-h-0 flex-1" : "relative"),
 								)}
-								style={{
-									color: "transparent",
-								}}
-							/>
-							<DynamicTextArea
-								ref={(el) => {
-									if (typeof ref === "function") {
-										ref(el)
-									} else if (ref) {
-										ref.current = el
-									}
-									textAreaRef.current = el
-								}}
-								value={inputValue}
-								onChange={(e) => {
-									handleInputChange(e)
-									updateHighlights()
-								}}
-								onFocus={() => setIsFocused(true)}
-								onKeyDown={(e) => {
-									// Handle ESC to cancel in edit mode
-									if (isEditMode && e.key === "Escape" && !e.nativeEvent?.isComposing) {
-										e.preventDefault()
-										onCancel?.()
+								onDrop={handleDrop}
+								onDragOver={(e) => {
+									// Only allowed to drop images/files on shift key pressed.
+									if (!e.shiftKey) {
+										setIsDraggingOver(false)
 										return
 									}
-									handleKeyDown(e)
+
+									e.preventDefault()
+									setIsDraggingOver(true)
+									e.dataTransfer.dropEffect = "copy"
 								}}
-								onKeyUp={handleKeyUp}
-								onBlur={handleBlur}
-								onPaste={handlePaste}
-								onSelect={updateCursorPosition}
-								onMouseUp={updateCursorPosition}
-								onHeightChange={(height) => {
-									if (textAreaBaseHeight === undefined || height < textAreaBaseHeight) {
-										setTextAreaBaseHeight(height)
+								onDragLeave={(e) => {
+									e.preventDefault()
+									const rect = e.currentTarget.getBoundingClientRect()
+
+									if (
+										e.clientX <= rect.left ||
+										e.clientX >= rect.right ||
+										e.clientY <= rect.top ||
+										e.clientY >= rect.bottom
+									) {
+										setIsDraggingOver(false)
 									}
-
-									onHeightChange?.(height)
-								}}
-								placeholder={placeholderText}
-								minRows={3}
-								maxRows={15}
-								autoFocus={true}
-								className={cn(
-									"w-full",
-									"text-vscode-input-foreground",
-									"font-vscode-font-family",
-									"text-vscode-editor-font-size",
-									"leading-vscode-editor-line-height",
-									"cursor-text",
-									"py-2 pl-2",
-									isFocused
-										? "border border-vscode-focusBorder outline outline-vscode-focusBorder"
-										: isDraggingOver
-											? "border-2 border-dashed border-vscode-focusBorder"
-											: "border border-transparent",
-									isDraggingOver
-										? "bg-[color-mix(in_srgb,var(--vscode-input-background)_95%,var(--vscode-focusBorder))]"
-										: "bg-vscode-input-background",
-									"transition-background-color duration-150 ease-in-out",
-									"will-change-background-color",
-									"min-h-[94px]",
-									"box-border",
-									"rounded",
-									"resize-none",
-									"overflow-x-hidden",
-									"overflow-y-auto",
-									isEditMode ? "pr-20" : "pr-9",
-									"flex-none flex-grow",
-									"z-[2]",
-									"scrollbar-none",
-									"scrollbar-hide",
+								}}>
+								{showContextMenu && (
+									<div
+										ref={contextMenuContainerRef}
+										className={cn(
+											"absolute",
+											"bottom-full",
+											isEditMode ? "left-6" : "left-0",
+											"right-0",
+											"z-[1000]",
+											isEditMode ? "-mb-3" : "mb-2",
+											"filter",
+											"drop-shadow-md",
+										)}>
+										<ContextMenu
+											onSelect={handleMentionSelect}
+											searchQuery={searchQuery}
+											inputValue={inputValue}
+											onMouseDown={handleMenuMouseDown}
+											selectedIndex={selectedMenuIndex}
+											setSelectedIndex={setSelectedMenuIndex}
+											selectedType={selectedType}
+											queryItems={queryItems}
+											modes={allModes}
+											loading={searchLoading}
+											dynamicSearchResults={fileSearchResults}
+											commands={commands}
+										/>
+									</div>
 								)}
-								onScroll={() => updateHighlights()}
-							/>
 
-							<div className="absolute bottom-2 right-1 z-30 flex flex-col items-center gap-0">
-								<StandardTooltip content={t("chat:addImages")}>
+								<div
+									className={cn(
+										"relative",
+										"flex-1",
+										"flex",
+										"flex-col-reverse",
+										"min-h-0",
+										"overflow-hidden",
+										"rounded-lg",
+									)}>
+									<div
+										ref={highlightLayerRef}
+										data-testid="highlight-layer"
+										className={cn(
+											"absolute",
+											"inset-0",
+											"pointer-events-none",
+											"whitespace-pre-wrap",
+											"break-words",
+											"text-transparent",
+											"overflow-hidden",
+											"font-vscode-font-family",
+											"text-vscode-editor-font-size",
+											"leading-vscode-editor-line-height",
+											isFocused
+												? "border border-vscode-focusBorder outline outline-vscode-focusBorder"
+												: isDraggingOver
+													? "border-2 border-dashed border-vscode-focusBorder"
+													: "border border-transparent",
+											"pl-2",
+											"py-2",
+											isEditMode ? "pr-20" : "pr-9",
+											"z-10",
+											"forced-color-adjust-none",
+											"rounded-lg",
+										)}
+										style={{
+											color: "transparent",
+										}}
+									/>
+									<DynamicTextArea
+										ref={(el) => {
+											if (typeof ref === "function") {
+												ref(el)
+											} else if (ref) {
+												ref.current = el
+											}
+											textAreaRef.current = el
+										}}
+										value={inputValue}
+										onChange={(e) => {
+											handleInputChange(e)
+											updateHighlights()
+										}}
+										onFocus={() => setIsFocused(true)}
+										onKeyDown={(e) => {
+											// Handle ESC to cancel in edit mode
+											if (isEditMode && e.key === "Escape" && !e.nativeEvent?.isComposing) {
+												e.preventDefault()
+												onCancel?.()
+												return
+											}
+											handleKeyDown(e)
+										}}
+										onKeyUp={handleKeyUp}
+										onBlur={handleBlur}
+										onPaste={handlePaste}
+										onSelect={updateCursorPosition}
+										onMouseUp={updateCursorPosition}
+										onHeightChange={(height) => {
+											if (textAreaBaseHeight === undefined || height < textAreaBaseHeight) {
+												setTextAreaBaseHeight(height)
+											}
+
+											onHeightChange?.(height)
+										}}
+										placeholder={placeholderText}
+										minRows={3}
+										maxRows={isComposer ? undefined : 15}
+										autoFocus={true}
+										className={cn(
+											"w-full",
+											"text-vscode-input-foreground",
+											"font-vscode-font-family",
+											"text-vscode-editor-font-size",
+											"leading-vscode-editor-line-height",
+											"cursor-text",
+											"py-2 pl-2",
+											isFocused
+												? "border border-vscode-focusBorder outline outline-vscode-focusBorder"
+												: isDraggingOver
+													? "border-2 border-dashed border-vscode-focusBorder"
+													: "border border-transparent",
+											isDraggingOver
+												? "bg-[color-mix(in_srgb,var(--vscode-input-background)_95%,var(--vscode-focusBorder))]"
+												: "bg-vscode-input-background",
+											"transition-background-color duration-150 ease-in-out",
+											"will-change-background-color",
+											"min-h-[94px]",
+											isComposer && "!h-full !max-h-none flex-1",
+											"box-border",
+											"rounded",
+											"resize-none",
+											"overflow-x-hidden",
+											"overflow-y-auto",
+											isEditMode ? "pr-20" : "pr-9",
+											isComposer ? "flex-1" : "flex-none",
+											"z-[2]",
+											"scrollbar-none",
+											"scrollbar-hide",
+										)}
+										onScroll={() => updateHighlights()}
+									/>
+
+									<div className="absolute bottom-2 right-1 z-30 flex flex-col items-center gap-0">
+										<StandardTooltip content={t("chat:addImages")}>
+											<button
+												aria-label={t("chat:addImages")}
+												disabled={shouldDisableImages}
+												onClick={!shouldDisableImages ? onSelectImages : undefined}
+												className={cn(
+													"relative inline-flex items-center justify-center",
+													"bg-transparent border-none p-1.5",
+													"rounded-md min-w-[28px] min-h-[28px]",
+													"text-vscode-descriptionForeground hover:text-vscode-foreground",
+													"transition-all duration-1000",
+													"cursor-pointer",
+													!shouldDisableImages
+														? "opacity-50 hover:opacity-100 delay-750 pointer-events-auto"
+														: "opacity-0 pointer-events-none duration-200 delay-0",
+													!shouldDisableImages &&
+														"hover:bg-[rgba(255,255,255,0.03)] hover:border-[rgba(255,255,255,0.15)]",
+													"focus:outline-none focus-visible:ring-1 focus-visible:ring-vscode-focusBorder",
+													!shouldDisableImages && "active:bg-[rgba(255,255,255,0.1)]",
+													shouldDisableImages &&
+														"opacity-40 cursor-not-allowed grayscale-[30%] hover:bg-transparent hover:border-[rgba(255,255,255,0.08)] active:bg-transparent",
+												)}>
+												<Image className="w-4 h-4" />
+											</button>
+										</StandardTooltip>
+										{isEditMode ? (
+											<StandardTooltip content={t("chat:cancel.title")}>
+												<button
+													aria-label={t("chat:cancel.title")}
+													disabled={false}
+													onClick={onCancel}
+													className={cn(
+														"relative inline-flex items-center justify-center",
+														"bg-transparent border-none p-1.5",
+														"rounded-md min-w-[28px] min-h-[28px]",
+														"opacity-60 hover:opacity-100 text-vscode-descriptionForeground hover:text-vscode-foreground",
+														"transition-all duration-150",
+														"hover:bg-[rgba(255,255,255,0.03)] hover:border-[rgba(255,255,255,0.15)]",
+														"focus:outline-none focus-visible:ring-1 focus-visible:ring-vscode-focusBorder",
+														"active:bg-[rgba(255,255,255,0.1)]",
+														"cursor-pointer",
+													)}>
+													<X className="w-4 h-4" />
+												</button>
+											</StandardTooltip>
+										) : (
+											<StandardTooltip content={t("chat:enhancePrompt")}>
+												<button
+													aria-label={t("chat:enhancePrompt")}
+													disabled={false}
+													onClick={handleEnhancePrompt}
+													className={cn(
+														"relative inline-flex items-center justify-center",
+														"bg-transparent border-none p-1.5",
+														"rounded-md min-w-[28px] min-h-[28px]",
+														"text-vscode-descriptionForeground hover:text-vscode-foreground",
+														"transition-all duration-1000",
+														"cursor-pointer",
+														hasInputContent
+															? "opacity-50 hover:opacity-100 delay-750 pointer-events-auto"
+															: "opacity-0 pointer-events-none duration-200 delay-0",
+														hasInputContent &&
+															"hover:bg-[rgba(255,255,255,0.03)] hover:border-[rgba(255,255,255,0.15)]",
+														"focus:outline-none focus-visible:ring-1 focus-visible:ring-vscode-focusBorder",
+														hasInputContent && "active:bg-[rgba(255,255,255,0.1)]",
+													)}>
+													<WandSparkles
+														className={cn("w-4 h-4", isEnhancingPrompt && "animate-spin")}
+													/>
+												</button>
+											</StandardTooltip>
+										)}
+										{/* Queue button - shown when streaming and user has typed content */}
+										{!isEditMode && isStreaming && hasInputContent && onEnqueueMessage && (
+											<StandardTooltip content={t("chat:enqueueMessage")}>
+												<button
+													aria-label={t("chat:enqueueMessage")}
+													disabled={false}
+													onClick={onEnqueueMessage}
+													className={cn(
+														"relative inline-flex items-center justify-center",
+														"bg-transparent border-none p-1.5",
+														"rounded-md min-w-[28px] min-h-[28px]",
+														"text-vscode-descriptionForeground hover:text-vscode-foreground",
+														"transition-all duration-200",
+														"opacity-100 hover:opacity-100 pointer-events-auto",
+														"hover:bg-[rgba(255,255,255,0.03)] hover:border-[rgba(255,255,255,0.15)]",
+														"focus:outline-none focus-visible:ring-1 focus-visible:ring-vscode-focusBorder",
+														"active:bg-[rgba(255,255,255,0.1)]",
+														"cursor-pointer",
+													)}>
+													<ListEnd className="w-4 h-4" />
+												</button>
+											</StandardTooltip>
+										)}
+										{/* Send/Stop button - stop remains available while the task can still own resources. */}
+										<StandardTooltip
+											content={
+												isEditMode
+													? t("chat:pressToSend", { keyCombination: sendKeyCombination })
+													: canStopTask
+														? t("chat:stop.title")
+														: t("chat:pressToSend", { keyCombination: sendKeyCombination })
+											}>
+											<button
+												aria-label={
+													isEditMode
+														? t("chat:pressToSend", { keyCombination: sendKeyCombination })
+														: canStopTask
+															? t("chat:stop.title")
+															: t("chat:pressToSend", {
+																	keyCombination: sendKeyCombination,
+																})
+												}
+												disabled={false}
+												onClick={canStopTask ? onStop : onSend}
+												className={cn(
+													"relative inline-flex items-center justify-center",
+													"bg-transparent border-none p-1.5",
+													"rounded-full min-w-[28px] min-h-[28px]",
+													"text-vscode-descriptionForeground hover:text-vscode-foreground",
+													"transition-all duration-200",
+													isEditMode || canStopTask || hasInputContent
+														? "opacity-100 hover:opacity-100 pointer-events-auto"
+														: "opacity-0 pointer-events-none",
+													(isEditMode || canStopTask || hasInputContent) &&
+														"hover:bg-[rgba(255,255,255,0.03)] hover:border-[rgba(255,255,255,0.15)]",
+													"focus:outline-none focus-visible:ring-1 focus-visible:ring-vscode-focusBorder",
+													(isEditMode || canStopTask || hasInputContent) &&
+														"active:bg-[rgba(255,255,255,0.1)]",
+													(isEditMode || canStopTask || hasInputContent) && "cursor-pointer",
+													canStopTask &&
+														"bg-vscode-button-background hover:bg-vscode-button-background",
+												)}>
+												{canStopTask ? (
+													<Square className="size-4 stroke-none fill-vscode-button-foreground" />
+												) : (
+													<SendHorizontal className="size-4" />
+												)}
+											</button>
+										</StandardTooltip>
+									</div>
+
+									{!inputValue && (
+										<div
+											className={cn(
+												"absolute left-2 z-30 flex items-center h-8 font-vscode-font-family text-vscode-editor-font-size leading-vscode-editor-line-height",
+												isEditMode ? "pr-20" : "pr-9",
+											)}
+											style={{
+												bottom: "0.75rem",
+												color: "color-mix(in oklab, var(--vscode-input-foreground) 50%, transparent)",
+												userSelect: "none",
+												pointerEvents: "none",
+											}}>
+											{placeholderBottomText}
+										</div>
+									)}
+								</div>
+							</div>
+						</div>
+
+						{selectedImages.length > 0 && (
+							<Thumbnails
+								images={selectedImages}
+								setImages={setSelectedImages}
+								style={{
+									left: "16px",
+									zIndex: 2,
+									marginBottom: 0,
+								}}
+							/>
+						)}
+					</>
+				)}
+
+				{!isEditMode && (!isComposer || !dedicatedIdeLayoutEnabled || controlsOnly) && (
+					<div className="flex items-center gap-2">
+						<div className="flex items-center gap-2 min-w-0 overflow-clip flex-1">
+							<ModeSelector
+								value={mode}
+								title={t("chat:selectMode")}
+								onChange={handleModeChange}
+								triggerClassName="text-ellipsis overflow-hidden flex-shrink-0"
+								modeShortcutText={modeShortcutText}
+								customModes={customModes}
+								customModePrompts={customModePrompts}
+								modeApiConfigs={modeApiConfigs}
+								listApiConfigMeta={listApiConfigMeta}
+							/>
+							<ApiConfigSelector
+								value={currentConfigId}
+								displayName={displayName}
+								disabled={selectApiConfigDisabled}
+								title={t("chat:selectApiConfig")}
+								onChange={handleApiConfigChange}
+								triggerClassName="min-w-[28px] text-ellipsis overflow-hidden flex-shrink"
+								listApiConfigMeta={listApiConfigMeta || []}
+								apiConfiguration={apiConfiguration}
+								modelId={selectedModelId}
+								modelInfo={selectedModelInfo}
+								onReasoningEffortCommit={handleReasoningEffortCommit}
+								pinnedApiConfigs={pinnedApiConfigs}
+								togglePinnedApiConfig={togglePinnedApiConfig}
+								lockApiConfigAcrossModes={!!lockApiConfigAcrossModes}
+								onToggleLockApiConfig={handleToggleLockApiConfig}
+							/>
+							<AutoApproveDropdown triggerClassName="min-w-[28px] text-ellipsis overflow-hidden flex-shrink" />
+						</div>
+						<div className={cn("flex flex-shrink-0 items-center gap-0.5 h-5 leading-none pr-2")}>
+							{isTtsPlaying && (
+								<StandardTooltip content={t("chat:stopTts")}>
 									<button
-										aria-label={t("chat:addImages")}
-										disabled={shouldDisableImages}
-										onClick={!shouldDisableImages ? onSelectImages : undefined}
+										aria-label={t("chat:stopTts")}
+										onClick={() => vscode.postMessage({ type: "stopTts" })}
 										className={cn(
 											"relative inline-flex items-center justify-center",
 											"bg-transparent border-none p-1.5",
 											"rounded-md min-w-[28px] min-h-[28px]",
-											"text-vscode-descriptionForeground hover:text-vscode-foreground",
-											"transition-all duration-1000",
+											"text-vscode-foreground opacity-85",
+											"transition-all duration-150",
+											"hover:opacity-100 hover:bg-[rgba(255,255,255,0.03)] hover:border-[rgba(255,255,255,0.15)]",
+											"focus:outline-none focus-visible:ring-1 focus-visible:ring-vscode-focusBorder",
+											"active:bg-[rgba(255,255,255,0.1)]",
 											"cursor-pointer",
-											!shouldDisableImages
-												? "opacity-50 hover:opacity-100 delay-750 pointer-events-auto"
-												: "opacity-0 pointer-events-none duration-200 delay-0",
-											!shouldDisableImages &&
-												"hover:bg-[rgba(255,255,255,0.03)] hover:border-[rgba(255,255,255,0.15)]",
-											"focus:outline-none focus-visible:ring-1 focus-visible:ring-vscode-focusBorder",
-											!shouldDisableImages && "active:bg-[rgba(255,255,255,0.1)]",
-											shouldDisableImages &&
-												"opacity-40 cursor-not-allowed grayscale-[30%] hover:bg-transparent hover:border-[rgba(255,255,255,0.08)] active:bg-transparent",
 										)}>
-										<Image className="w-4 h-4" />
+										<VolumeX className="w-4 h-4" />
 									</button>
 								</StandardTooltip>
-								{isEditMode ? (
-									<StandardTooltip content={t("chat:cancel.title")}>
-										<button
-											aria-label={t("chat:cancel.title")}
-											disabled={false}
-											onClick={onCancel}
-											className={cn(
-												"relative inline-flex items-center justify-center",
-												"bg-transparent border-none p-1.5",
-												"rounded-md min-w-[28px] min-h-[28px]",
-												"opacity-60 hover:opacity-100 text-vscode-descriptionForeground hover:text-vscode-foreground",
-												"transition-all duration-150",
-												"hover:bg-[rgba(255,255,255,0.03)] hover:border-[rgba(255,255,255,0.15)]",
-												"focus:outline-none focus-visible:ring-1 focus-visible:ring-vscode-focusBorder",
-												"active:bg-[rgba(255,255,255,0.1)]",
-												"cursor-pointer",
-											)}>
-											<X className="w-4 h-4" />
-										</button>
-									</StandardTooltip>
-								) : (
-									<StandardTooltip content={t("chat:enhancePrompt")}>
-										<button
-											aria-label={t("chat:enhancePrompt")}
-											disabled={false}
-											onClick={handleEnhancePrompt}
-											className={cn(
-												"relative inline-flex items-center justify-center",
-												"bg-transparent border-none p-1.5",
-												"rounded-md min-w-[28px] min-h-[28px]",
-												"text-vscode-descriptionForeground hover:text-vscode-foreground",
-												"transition-all duration-1000",
-												"cursor-pointer",
-												hasInputContent
-													? "opacity-50 hover:opacity-100 delay-750 pointer-events-auto"
-													: "opacity-0 pointer-events-none duration-200 delay-0",
-												hasInputContent &&
-													"hover:bg-[rgba(255,255,255,0.03)] hover:border-[rgba(255,255,255,0.15)]",
-												"focus:outline-none focus-visible:ring-1 focus-visible:ring-vscode-focusBorder",
-												hasInputContent && "active:bg-[rgba(255,255,255,0.1)]",
-											)}>
-											<WandSparkles
-												className={cn("w-4 h-4", isEnhancingPrompt && "animate-spin")}
-											/>
-										</button>
-									</StandardTooltip>
-								)}
-								{/* Queue button - shown when streaming and user has typed content */}
-								{!isEditMode && isStreaming && hasInputContent && onEnqueueMessage && (
-									<StandardTooltip content={t("chat:enqueueMessage")}>
-										<button
-											aria-label={t("chat:enqueueMessage")}
-											disabled={false}
-											onClick={onEnqueueMessage}
-											className={cn(
-												"relative inline-flex items-center justify-center",
-												"bg-transparent border-none p-1.5",
-												"rounded-md min-w-[28px] min-h-[28px]",
-												"text-vscode-descriptionForeground hover:text-vscode-foreground",
-												"transition-all duration-200",
-												"opacity-100 hover:opacity-100 pointer-events-auto",
-												"hover:bg-[rgba(255,255,255,0.03)] hover:border-[rgba(255,255,255,0.15)]",
-												"focus:outline-none focus-visible:ring-1 focus-visible:ring-vscode-focusBorder",
-												"active:bg-[rgba(255,255,255,0.1)]",
-												"cursor-pointer",
-											)}>
-											<ListEnd className="w-4 h-4" />
-										</button>
-									</StandardTooltip>
-								)}
-								{/* Send/Stop button - stop remains available while the task can still own resources. */}
-								<StandardTooltip
-									content={
-										isEditMode
-											? t("chat:pressToSend", { keyCombination: sendKeyCombination })
-											: canStopTask
-												? t("chat:stop.title")
-												: t("chat:pressToSend", { keyCombination: sendKeyCombination })
-									}>
-									<button
-										aria-label={
-											isEditMode
-												? t("chat:pressToSend", { keyCombination: sendKeyCombination })
-												: canStopTask
-													? t("chat:stop.title")
-													: t("chat:pressToSend", { keyCombination: sendKeyCombination })
-										}
-										disabled={false}
-										onClick={canStopTask ? onStop : onSend}
-										className={cn(
-											"relative inline-flex items-center justify-center",
-											"bg-transparent border-none p-1.5",
-											"rounded-full min-w-[28px] min-h-[28px]",
-											"text-vscode-descriptionForeground hover:text-vscode-foreground",
-											"transition-all duration-200",
-											isEditMode || canStopTask || hasInputContent
-												? "opacity-100 hover:opacity-100 pointer-events-auto"
-												: "opacity-0 pointer-events-none",
-											(isEditMode || canStopTask || hasInputContent) &&
-												"hover:bg-[rgba(255,255,255,0.03)] hover:border-[rgba(255,255,255,0.15)]",
-											"focus:outline-none focus-visible:ring-1 focus-visible:ring-vscode-focusBorder",
-											(isEditMode || canStopTask || hasInputContent) &&
-												"active:bg-[rgba(255,255,255,0.1)]",
-											(isEditMode || canStopTask || hasInputContent) && "cursor-pointer",
-											canStopTask &&
-												"bg-vscode-button-background hover:bg-vscode-button-background",
-										)}>
-										{canStopTask ? (
-											<Square className="size-4 stroke-none fill-vscode-button-foreground" />
-										) : (
-											<SendHorizontal className="size-4" />
-										)}
-									</button>
-								</StandardTooltip>
-							</div>
-
-							{!inputValue && (
-								<div
-									className={cn(
-										"absolute left-2 z-30 flex items-center h-8 font-vscode-font-family text-vscode-editor-font-size leading-vscode-editor-line-height",
-										isEditMode ? "pr-20" : "pr-9",
-									)}
-									style={{
-										bottom: "0.75rem",
-										color: "color-mix(in oklab, var(--vscode-input-foreground) 50%, transparent)",
-										userSelect: "none",
-										pointerEvents: "none",
-									}}>
-									{placeholderBottomText}
-								</div>
 							)}
+							{!isEditMode ? <IndexingStatusBadge /> : null}
+							{!isEditMode ? (
+								<IconButton
+									iconClass="codicon-settings-gear"
+									title={t("chat:openSettings")}
+									onClick={() => {
+										if (renderContext === "composer") {
+											vscode.postMessage({ type: "openSettingsInMainView" })
+											return
+										}
+
+										window.postMessage({ type: "action", action: "settingsButtonClicked" }, "*")
+									}}
+								/>
+							) : null}
 						</div>
 					</div>
-				</div>
-
-				{selectedImages.length > 0 && (
-					<Thumbnails
-						images={selectedImages}
-						setImages={setSelectedImages}
-						style={{
-							left: "16px",
-							zIndex: 2,
-							marginBottom: 0,
-						}}
-					/>
 				)}
-
-				<div className="flex items-center gap-2">
-					<div className="flex items-center gap-2 min-w-0 overflow-clip flex-1">
-						<ModeSelector
-							value={mode}
-							title={t("chat:selectMode")}
-							onChange={handleModeChange}
-							triggerClassName="text-ellipsis overflow-hidden flex-shrink-0"
-							modeShortcutText={modeShortcutText}
-							customModes={customModes}
-							customModePrompts={customModePrompts}
-							modeApiConfigs={modeApiConfigs}
-							listApiConfigMeta={listApiConfigMeta}
-						/>
-						<ApiConfigSelector
-							value={currentConfigId}
-							displayName={displayName}
-							disabled={selectApiConfigDisabled}
-							title={t("chat:selectApiConfig")}
-							onChange={handleApiConfigChange}
-							triggerClassName="min-w-[28px] text-ellipsis overflow-hidden flex-shrink"
-							listApiConfigMeta={listApiConfigMeta || []}
-							apiConfiguration={apiConfiguration}
-							modelId={selectedModelId}
-							modelInfo={selectedModelInfo}
-							onReasoningEffortCommit={handleReasoningEffortCommit}
-							pinnedApiConfigs={pinnedApiConfigs}
-							togglePinnedApiConfig={togglePinnedApiConfig}
-							lockApiConfigAcrossModes={!!lockApiConfigAcrossModes}
-							onToggleLockApiConfig={handleToggleLockApiConfig}
-						/>
-						<AutoApproveDropdown triggerClassName="min-w-[28px] text-ellipsis overflow-hidden flex-shrink" />
-					</div>
-					<div className={cn("flex flex-shrink-0 items-center gap-0.5 h-5 leading-none pr-2")}>
-						{isTtsPlaying && (
-							<StandardTooltip content={t("chat:stopTts")}>
-								<button
-									aria-label={t("chat:stopTts")}
-									onClick={() => vscode.postMessage({ type: "stopTts" })}
-									className={cn(
-										"relative inline-flex items-center justify-center",
-										"bg-transparent border-none p-1.5",
-										"rounded-md min-w-[28px] min-h-[28px]",
-										"text-vscode-foreground opacity-85",
-										"transition-all duration-150",
-										"hover:opacity-100 hover:bg-[rgba(255,255,255,0.03)] hover:border-[rgba(255,255,255,0.15)]",
-										"focus:outline-none focus-visible:ring-1 focus-visible:ring-vscode-focusBorder",
-										"active:bg-[rgba(255,255,255,0.1)]",
-										"cursor-pointer",
-									)}>
-									<VolumeX className="w-4 h-4" />
-								</button>
-							</StandardTooltip>
-						)}
-						{!isEditMode ? <IndexingStatusBadge /> : null}
-						{!isEditMode ? (
-							<IconButton
-								iconClass="codicon-settings-gear"
-								title={t("chat:openSettings")}
-								onClick={() =>
-									window.postMessage({ type: "action", action: "settingsButtonClicked" }, "*")
-								}
-							/>
-						) : null}
-					</div>
-				</div>
 			</div>
 		)
 	},

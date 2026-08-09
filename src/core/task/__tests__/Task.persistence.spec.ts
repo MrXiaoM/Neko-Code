@@ -152,6 +152,7 @@ vi.mock("vscode", () => {
 		Disposable: {
 			from: vi.fn(),
 		},
+		RelativePattern: vi.fn(),
 		TabInputText: vi.fn(),
 	}
 })
@@ -260,6 +261,7 @@ describe("Task persistence", () => {
 			apiKey: "test-api-key",
 		}
 
+		mockProvider.getState = vi.fn().mockResolvedValue({ mode: "code", currentApiConfigName: "default" })
 		mockProvider.postMessageToWebview = vi.fn().mockResolvedValue(undefined)
 		mockProvider.postStateToWebview = vi.fn().mockResolvedValue(undefined)
 		mockProvider.postStateToWebviewWithoutTaskHistory = vi.fn().mockResolvedValue(undefined)
@@ -362,6 +364,43 @@ describe("Task persistence", () => {
 			expect(callArgs.messages).not.toBe(task.apiConversationHistory)
 			// But the content should be the same
 			expect(callArgs.messages).toEqual(task.apiConversationHistory)
+		})
+	})
+
+	// ── persistInitialUserMessage ────────────────────────────────────────
+
+	describe("persistInitialUserMessage", () => {
+		it("persists the initial prompt once before the task loop starts", async () => {
+			const task = new Task({
+				provider: mockProvider,
+				apiConfiguration: mockApiConfig,
+				task: "durable initial prompt",
+				startTask: false,
+			})
+			const saveClineMessages = vi.fn().mockResolvedValue(true)
+			;(task as unknown as { saveClineMessages: typeof saveClineMessages }).saveClineMessages = saveClineMessages
+
+			await task.persistInitialUserMessage()
+			await task.persistInitialUserMessage()
+
+			expect(task.clineMessages).toEqual([
+				expect.objectContaining({ type: "say", say: "text", text: "durable initial prompt" }),
+			])
+			expect(saveClineMessages).toHaveBeenCalledTimes(1)
+		})
+
+		it("removes the provisional prompt and rejects when persistence fails", async () => {
+			const task = new Task({
+				provider: mockProvider,
+				apiConfiguration: mockApiConfig,
+				task: "durable initial prompt",
+				startTask: false,
+			})
+			const saveClineMessages = vi.fn().mockResolvedValue(false)
+			;(task as unknown as { saveClineMessages: typeof saveClineMessages }).saveClineMessages = saveClineMessages
+
+			await expect(task.persistInitialUserMessage()).rejects.toThrow("Failed to persist initial user message")
+			expect(task.clineMessages).toEqual([])
 		})
 	})
 

@@ -567,6 +567,7 @@ describe("ClineProvider.takeOverParentIfReturningFromChild / showTaskWithId", ()
 
 		const provider = withPrototypeMethods({
 			getCurrentTask: vi.fn(() => childTask),
+			getState: vi.fn().mockResolvedValue({ dedicatedIdeLayoutEnabled: false }),
 			getTaskWithId: vi.fn(async (id: string) => {
 				if (id === "parent-1") return { historyItem: { ...parentHistory } }
 				throw new Error("not found")
@@ -617,6 +618,7 @@ describe("ClineProvider.takeOverParentIfReturningFromChild / showTaskWithId", ()
 
 		const provider = withPrototypeMethods({
 			getCurrentTask: vi.fn(() => childTask),
+			getState: vi.fn().mockResolvedValue({ dedicatedIdeLayoutEnabled: false }),
 			getTaskWithId: vi.fn(async () => ({ historyItem: otherHistory })),
 			createTaskWithHistoryItem: vi.fn().mockResolvedValue(undefined),
 			postMessageToWebview: vi.fn().mockResolvedValue(undefined),

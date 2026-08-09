@@ -169,12 +169,31 @@ export class ClineProvider
 	// to how VSCode caches views based on their id, and updating the id would
 	// break existing instances of the extension.
 	public static readonly sideBarId = `${Package.name}.SidebarProvider`
+	public static readonly composerId = `${Package.name}.DedicatedComposerProvider`
 	public static readonly tabPanelId = `${Package.name}.TabPanelProvider`
+	public static readonly dedicatedIdeLayoutContextKey = `${Package.name}.dedicatedIdeLayoutEnabled`
+	private static readonly USER_AVATAR_DIRECTORY_NAME = "user-avatar"
+	private static readonly USER_AVATAR_CURRENT_FILE_NAME = "current"
+	private static readonly USER_AVATAR_PENDING_FILE_NAME = "pending"
+	private static readonly USER_AVATAR_BACKUP_FILE_NAME = "backup"
+	private static readonly USER_AVATAR_LEGACY_FILE_NAMES = ["avatar", "avatar-pending"]
+	private static readonly USER_AVATAR_FILE_BASE_NAMES = new Set([
+		ClineProvider.USER_AVATAR_CURRENT_FILE_NAME,
+		ClineProvider.USER_AVATAR_PENDING_FILE_NAME,
+		ClineProvider.USER_AVATAR_BACKUP_FILE_NAME,
+		...ClineProvider.USER_AVATAR_LEGACY_FILE_NAMES,
+	])
+	private static readonly USER_AVATAR_MAX_BYTES = 5 * 1024 * 1024
+	private static readonly USER_AVATAR_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp"])
 	private static activeInstances: Set<ClineProvider> = new Set()
 	private disposables: vscode.Disposable[] = []
 	private webviewDisposables: vscode.Disposable[] = []
 	private webviewMessageDisposable?: vscode.Disposable
+	private dedicatedEditorMessageDisposable?: vscode.Disposable
+	private composerMessageDisposable?: vscode.Disposable
 	private view?: vscode.WebviewView | vscode.WebviewPanel
+	private composerView?: vscode.WebviewView
+	private dedicatedEditorView?: vscode.WebviewPanel
 	private taskRegistry = new TaskRegistry()
 	private taskScheduler = new TaskScheduler()
 	private delegationTransitionLocks?: Map<string, Promise<void>>
@@ -201,6 +220,7 @@ export class ClineProvider
 	private static readonly GLOBAL_STATE_WRITE_THROUGH_DEBOUNCE_MS = 5000 // 5 seconds
 	public static readonly PENDING_OPERATION_TIMEOUT_MS = 30000 // 30 seconds
 	private static readonly WEBVIEW_HEALTH_CHECK_TIMEOUT_MS = 750
+	private static readonly WEBVIEW_CRASH_LOG_FILE_NAME = "webview-crashes.ndjson"
 	private providerProfileMutationQueue = Promise.resolve()
 
 	private runDelegationTransition<T>(parentTaskId: string, fn: () => Promise<T>): Promise<T> {
@@ -784,8 +804,11 @@ export class ClineProvider
 			this.view.dispose()
 			this.log("Disposed webview")
 		}
+		this.dedicatedEditorView?.dispose()
 
 		this.clearWebviewResources()
+		this.dedicatedEditorMessageDisposable?.dispose()
+		this.composerMessageDisposable?.dispose()
 
 		// Clean up cloud service event listener
 		if (CloudService.hasInstance()) {
@@ -819,7 +842,10 @@ export class ClineProvider
 	}
 
 	public static getVisibleInstance(): ClineProvider | undefined {
-		return findLast(Array.from(this.activeInstances), (instance) => instance.view?.visible === true)
+		return findLast(
+			Array.from(this.activeInstances),
+			(instance) => instance.view?.visible === true || instance.dedicatedEditorView?.visible === true,
+		)
 	}
 
 	public static getAllInstances(): ClineProvider[] {
@@ -941,7 +967,9 @@ export class ClineProvider
 		}
 
 		// Set up webview options with proper resource roots
-		const resourceRoots = [this.contextProxy.extensionUri]
+		const resourceRoots = [this.contextProxy.extensionUri, this.getUserAvatarDirectoryUri()].filter(
+			(uri): uri is vscode.Uri => Boolean(uri),
+		)
 
 		// Add workspace folders to allow access to workspace files
 		if (vscode.workspace.workspaceFolders) {
@@ -1068,6 +1096,450 @@ export class ClineProvider
 		void this.ensureZooGatewayProfileSeeded().catch((err) => {
 			this.log(`[ensureZooGatewayProfileSeeded] Error: ${err instanceof Error ? err.message : String(err)}`)
 		})
+	}
+
+	public async openDedicatedIdeLayout({ focusComposer = true }: { focusComposer?: boolean } = {}): Promise<void> {
+		if (!vscode.workspace.workspaceFolders?.length) {
+			return
+		}
+
+		await this.contextProxy.setValue("dedicatedIdeLayoutEnabled", true)
+		await vscode.commands.executeCommand("setContext", ClineProvider.dedicatedIdeLayoutContextKey, true)
+
+		if (!this.dedicatedEditorView) {
+			const editorView = vscode.window.createWebviewPanel(
+				ClineProvider.tabPanelId,
+				"对话",
+				vscode.ViewColumn.Active,
+				{
+					enableScripts: true,
+					retainContextWhenHidden: true,
+					localResourceRoots: [this.context.extensionUri, this.getUserAvatarDirectoryUri()].filter(
+						(uri): uri is vscode.Uri => Boolean(uri),
+					),
+				},
+			)
+			editorView.iconPath = {
+				light: vscode.Uri.joinPath(this.context.extensionUri, "assets", "icons", "panel_light.png"),
+				dark: vscode.Uri.joinPath(this.context.extensionUri, "assets", "icons", "panel_dark.png"),
+			}
+			this.dedicatedEditorView = editorView
+			await this.initializeAdditionalWebview(editorView.webview)
+
+			editorView.onDidDispose(
+				() => {
+					if (this.dedicatedEditorView !== editorView) {
+						return
+					}
+
+					this.dedicatedEditorView = undefined
+					this.dedicatedEditorMessageDisposable?.dispose()
+					this.dedicatedEditorMessageDisposable = undefined
+
+					// Closing the dedicated conversation means the paired composer no
+					// longer has a primary surface. Restore the standard sidebar layout.
+					if (!this._disposed) {
+						void this.disableDedicatedIdeLayout().catch((error) => {
+							this.log(
+								`[DedicatedIdeLayout] Failed to restore the sidebar after closing the editor: ${
+									error instanceof Error ? error.message : String(error)
+								}`,
+							)
+						})
+					}
+				},
+				null,
+				this.disposables,
+			)
+		} else {
+			this.dedicatedEditorView.reveal(undefined, false)
+		}
+
+		await vscode.commands.executeCommand("workbench.action.pinEditor")
+
+		if (focusComposer) {
+			await this.focusComposer()
+		}
+		await this.postStateToWebview()
+	}
+
+	public async disableDedicatedIdeLayout(): Promise<void> {
+		await this.contextProxy.setValue("dedicatedIdeLayoutEnabled", false)
+		await vscode.commands.executeCommand("setContext", ClineProvider.dedicatedIdeLayoutContextKey, false)
+
+		const editorView = this.dedicatedEditorView
+		this.dedicatedEditorView = undefined
+		this.dedicatedEditorMessageDisposable?.dispose()
+		this.dedicatedEditorMessageDisposable = undefined
+		editorView?.dispose()
+
+		await this.postStateToWebview()
+		await vscode.commands.executeCommand(`${ClineProvider.sideBarId}.focus`)
+	}
+
+	public async focusComposer(): Promise<void> {
+		// The dedicated editor intentionally has no text input. Ask VS Code to
+		// reveal and focus the bottom view even during the brief interval before
+		// its resolver has supplied the webview reference.
+		await vscode.commands.executeCommand(`${ClineProvider.composerId}.focus`)
+		if (this.composerView) {
+			await this.postMessageToSpecificWebview(this.composerView.webview, {
+				type: "action",
+				action: "focusInput",
+			})
+		}
+	}
+
+	public async requestComposerPrimaryButtonClick(): Promise<void> {
+		const message: ExtensionMessage = {
+			type: "invoke",
+			invoke: "primaryButtonClick",
+			values: { useComposerDraft: true },
+		}
+
+		if (this.composerView) {
+			await this.postMessageToSpecificWebview(this.composerView.webview, message)
+			return
+		}
+
+		await this.postMessageToWebview(message)
+	}
+
+	public async requestComposerSecondaryButtonClick(): Promise<void> {
+		const message: ExtensionMessage = {
+			type: "invoke",
+			invoke: "secondaryButtonClick",
+			values: { useComposerDraft: true },
+		}
+
+		if (this.composerView) {
+			await this.postMessageToSpecificWebview(this.composerView.webview, message)
+			return
+		}
+
+		await this.postMessageToWebview(message)
+	}
+
+	public async requestComposerDraftAppend(text: string): Promise<void> {
+		const message = { type: "invoke" as const, invoke: "setChatBoxMessage" as const, text, images: [] }
+
+		if (this.composerView) {
+			await this.postMessageToSpecificWebview(this.composerView.webview, message)
+			return
+		}
+
+		await this.postMessageToWebview(message)
+	}
+
+	private getUserAvatarStorageUri(): vscode.Uri | undefined {
+		return this.context.globalStorageUri ?? this.contextProxy.globalStorageUri
+	}
+
+	private getUserAvatarDirectoryUri(): vscode.Uri | undefined {
+		const globalStorageUri = this.getUserAvatarStorageUri()
+		return globalStorageUri
+			? vscode.Uri.joinPath(globalStorageUri, ClineProvider.USER_AVATAR_DIRECTORY_NAME)
+			: undefined
+	}
+
+	private getUserAvatarDirectoryPath(): string | undefined {
+		const globalStoragePath = this.getUserAvatarStorageUri()?.fsPath
+		return globalStoragePath ? path.join(globalStoragePath, ClineProvider.USER_AVATAR_DIRECTORY_NAME) : undefined
+	}
+
+	private getUserAvatarFilePath(baseName: string, extension: string): string | undefined {
+		if (
+			!ClineProvider.USER_AVATAR_FILE_BASE_NAMES.has(baseName) ||
+			!ClineProvider.USER_AVATAR_EXTENSIONS.has(extension)
+		) {
+			return undefined
+		}
+
+		const directoryPath = this.getUserAvatarDirectoryPath()
+		return directoryPath ? path.join(directoryPath, `${baseName}${extension}`) : undefined
+	}
+
+	private getUserAvatarFileUri(baseName: string, extension: string): vscode.Uri | undefined {
+		const directoryUri = this.getUserAvatarDirectoryUri()
+		if (!directoryUri || !this.getUserAvatarFilePath(baseName, extension)) {
+			return undefined
+		}
+
+		return vscode.Uri.joinPath(directoryUri, `${baseName}${extension}`)
+	}
+
+	private async findUserAvatarFile(baseName: string): Promise<{ path: string; uri: vscode.Uri } | undefined> {
+		for (const extension of ClineProvider.USER_AVATAR_EXTENSIONS) {
+			const filePath = this.getUserAvatarFilePath(baseName, extension)
+			const fileUri = this.getUserAvatarFileUri(baseName, extension)
+			if (!filePath || !fileUri) {
+				continue
+			}
+
+			try {
+				await fs.access(filePath)
+				return { path: filePath, uri: fileUri }
+			} catch {
+				// Check the next allowed image extension.
+			}
+		}
+
+		return undefined
+	}
+
+	private async removeUserAvatarFiles(baseName: string): Promise<void> {
+		await Promise.all(
+			Array.from(ClineProvider.USER_AVATAR_EXTENSIONS, (extension) => {
+				const filePath = this.getUserAvatarFilePath(baseName, extension)
+				return filePath ? fs.rm(filePath, { force: true }) : Promise.resolve()
+			}),
+		)
+	}
+
+	private async removeLegacyUserAvatarFiles(): Promise<void> {
+		await Promise.all(
+			ClineProvider.USER_AVATAR_LEGACY_FILE_NAMES.map((baseName) => this.removeUserAvatarFiles(baseName)),
+		)
+	}
+
+	private async migrateLegacyUserAvatar(): Promise<void> {
+		if (await this.findUserAvatarFile(ClineProvider.USER_AVATAR_CURRENT_FILE_NAME)) {
+			return
+		}
+
+		const legacyAvatar = await this.findUserAvatarFile("avatar")
+		if (!legacyAvatar) {
+			return
+		}
+
+		const extension = path.extname(legacyAvatar.path).toLowerCase()
+		const currentPath = this.getUserAvatarFilePath(ClineProvider.USER_AVATAR_CURRENT_FILE_NAME, extension)
+		if (!currentPath) {
+			return
+		}
+
+		try {
+			await fs.rename(legacyAvatar.path, currentPath)
+			await this.removeUserAvatarFiles("avatar-pending")
+		} catch (error) {
+			this.log(
+				`[UserAvatar] Failed to migrate legacy local user avatar: ${error instanceof Error ? error.message : String(error)}`,
+			)
+		}
+	}
+
+	private async getUserAvatarUrl(
+		webview: vscode.Webview | undefined,
+		baseName:
+			| typeof ClineProvider.USER_AVATAR_CURRENT_FILE_NAME
+			| typeof ClineProvider.USER_AVATAR_PENDING_FILE_NAME = ClineProvider.USER_AVATAR_CURRENT_FILE_NAME,
+	): Promise<string | undefined> {
+		if (!webview) {
+			return undefined
+		}
+
+		if (baseName === ClineProvider.USER_AVATAR_CURRENT_FILE_NAME) {
+			await this.migrateLegacyUserAvatar()
+		}
+
+		const avatarFile = await this.findUserAvatarFile(baseName)
+		return avatarFile ? webview.asWebviewUri(avatarFile.uri).toString() : undefined
+	}
+
+	private async sendUserAvatarResult(
+		webview: vscode.Webview | undefined,
+		status: "ready" | "cancelled" | "saved" | "cleared" | "error",
+		result: { userAvatarUrl?: string; userAvatarError?: string } = {},
+	): Promise<void> {
+		if (webview) {
+			await this.postMessageToSpecificWebview(webview, {
+				type: "userAvatarSelection",
+				userAvatarSelectionStatus: status,
+				...result,
+			})
+		}
+	}
+
+	public async selectUserAvatar(webview: vscode.Webview | undefined): Promise<void> {
+		const selectedFiles = await vscode.window.showOpenDialog({
+			canSelectFiles: true,
+			canSelectFolders: false,
+			canSelectMany: false,
+			openLabel: "Choose avatar",
+			filters: { Images: ["png", "jpg", "jpeg", "webp"] },
+		})
+		const selectedFile = selectedFiles?.[0]
+		if (!selectedFile) {
+			await this.sendUserAvatarResult(webview, "cancelled")
+			return
+		}
+
+		const extension = path.extname(selectedFile.fsPath).toLowerCase()
+		if (!ClineProvider.USER_AVATAR_EXTENSIONS.has(extension)) {
+			await this.sendUserAvatarResult(webview, "error", {
+				userAvatarError: "Choose a PNG, JPG, JPEG, or WebP image.",
+			})
+			return
+		}
+
+		try {
+			const metadata = await fs.stat(selectedFile.fsPath)
+			if (!metadata.isFile() || metadata.size > ClineProvider.USER_AVATAR_MAX_BYTES) {
+				await this.sendUserAvatarResult(webview, "error", {
+					userAvatarError: "Choose an image file no larger than 5 MB.",
+				})
+				return
+			}
+
+			const pendingPath = this.getUserAvatarFilePath(ClineProvider.USER_AVATAR_PENDING_FILE_NAME, extension)
+			const avatarDirectoryPath = this.getUserAvatarDirectoryPath()
+			if (!pendingPath || !avatarDirectoryPath) {
+				throw new Error("Avatar private storage is unavailable")
+			}
+
+			await fs.mkdir(avatarDirectoryPath, { recursive: true })
+			await this.removeUserAvatarFiles(ClineProvider.USER_AVATAR_PENDING_FILE_NAME)
+			await fs.copyFile(selectedFile.fsPath, pendingPath)
+			const userAvatarUrl = await this.getUserAvatarUrl(webview, ClineProvider.USER_AVATAR_PENDING_FILE_NAME)
+			if (!userAvatarUrl) {
+				throw new Error("The selected image could not be prepared for preview")
+			}
+
+			await this.sendUserAvatarResult(webview, "ready", { userAvatarUrl })
+		} catch (error) {
+			this.log(
+				`[UserAvatar] Failed to stage local user avatar: ${error instanceof Error ? error.message : String(error)}`,
+			)
+			await this.sendUserAvatarResult(webview, "error", {
+				userAvatarError: "Failed to prepare the selected image.",
+			})
+		}
+	}
+
+	public async commitUserAvatar(webview: vscode.Webview | undefined, clear: boolean = false): Promise<void> {
+		try {
+			const avatarDirectoryPath = this.getUserAvatarDirectoryPath()
+			if (!avatarDirectoryPath) {
+				throw new Error("Avatar private storage is unavailable")
+			}
+
+			await fs.mkdir(avatarDirectoryPath, { recursive: true })
+			await this.removeLegacyUserAvatarFiles()
+
+			if (clear) {
+				await this.removeUserAvatarFiles(ClineProvider.USER_AVATAR_CURRENT_FILE_NAME)
+				await this.removeUserAvatarFiles(ClineProvider.USER_AVATAR_PENDING_FILE_NAME)
+				await this.sendUserAvatarResult(webview, "cleared")
+				await this.postStateToWebview()
+				return
+			}
+
+			const pendingFile = await this.findUserAvatarFile(ClineProvider.USER_AVATAR_PENDING_FILE_NAME)
+			if (!pendingFile) {
+				throw new Error("No staged avatar is available to save")
+			}
+
+			const extension = path.extname(pendingFile.path).toLowerCase()
+			const currentPath = this.getUserAvatarFilePath(ClineProvider.USER_AVATAR_CURRENT_FILE_NAME, extension)
+			const backupPath = this.getUserAvatarFilePath(ClineProvider.USER_AVATAR_BACKUP_FILE_NAME, extension)
+			if (!currentPath || !backupPath) {
+				throw new Error("Unable to build a safe avatar storage path")
+			}
+
+			await this.removeUserAvatarFiles(ClineProvider.USER_AVATAR_BACKUP_FILE_NAME)
+			const previousAvatar = await this.findUserAvatarFile(ClineProvider.USER_AVATAR_CURRENT_FILE_NAME)
+			if (previousAvatar) {
+				await fs.rename(previousAvatar.path, backupPath)
+			}
+
+			try {
+				await fs.rename(pendingFile.path, currentPath)
+			} catch (error) {
+				if (previousAvatar) {
+					await fs.rename(backupPath, previousAvatar.path).catch(() => undefined)
+				}
+				throw error
+			}
+
+			await this.removeUserAvatarFiles(ClineProvider.USER_AVATAR_BACKUP_FILE_NAME)
+			await this.sendUserAvatarResult(webview, "saved")
+			await this.postStateToWebview()
+		} catch (error) {
+			this.log(
+				`[UserAvatar] Failed to save local user avatar: ${error instanceof Error ? error.message : String(error)}`,
+			)
+			await this.sendUserAvatarResult(webview, "error", {
+				userAvatarError: "Failed to save the user avatar image.",
+			})
+		}
+	}
+
+	public async discardUserAvatar(): Promise<void> {
+		try {
+			await this.removeUserAvatarFiles(ClineProvider.USER_AVATAR_PENDING_FILE_NAME)
+		} catch (error) {
+			this.log(
+				`[UserAvatar] Failed to discard staged local user avatar: ${error instanceof Error ? error.message : String(error)}`,
+			)
+		}
+	}
+
+	public async resolveComposerWebviewView(webviewView: vscode.WebviewView): Promise<void> {
+		this.composerView = webviewView
+		await this.initializeAdditionalWebview(webviewView.webview, "composer")
+		await this.postStateToWebview()
+
+		webviewView.onDidDispose(
+			() => {
+				if (this.composerView === webviewView) {
+					this.composerView = undefined
+					this.composerMessageDisposable?.dispose()
+					this.composerMessageDisposable = undefined
+				}
+			},
+			null,
+			this.disposables,
+		)
+	}
+
+	public async openSettingsInDedicatedEditor(section?: string): Promise<void> {
+		await this.openDedicatedIdeLayout({ focusComposer: false })
+		if (this.dedicatedEditorView) {
+			await this.postMessageToSpecificWebview(this.dedicatedEditorView.webview, {
+				type: "action",
+				action: "settingsButtonClicked",
+				values: section ? { section } : undefined,
+			})
+		}
+	}
+
+	private async initializeAdditionalWebview(
+		webview: vscode.Webview,
+		target: "editor" | "composer" = "editor",
+	): Promise<void> {
+		const resourceRoots = [this.contextProxy.extensionUri, this.getUserAvatarDirectoryUri()].filter(
+			(uri): uri is vscode.Uri => Boolean(uri),
+		)
+		if (vscode.workspace.workspaceFolders) {
+			resourceRoots.push(...vscode.workspace.workspaceFolders.map((folder) => folder.uri))
+		}
+
+		webview.options = { enableScripts: true, localResourceRoots: resourceRoots }
+		webview.html =
+			this.contextProxy.extensionMode === vscode.ExtensionMode.Development
+				? await this.getHMRHtmlContent(webview)
+				: await this.getHtmlContent(webview)
+
+		const onReceiveMessage = async (message: WebviewMessage) =>
+			webviewMessageHandler(this, message, this.marketplaceManager, webview)
+		const disposable = webview.onDidReceiveMessage(onReceiveMessage)
+		if (target === "composer") {
+			this.composerMessageDisposable?.dispose()
+			this.composerMessageDisposable = disposable
+		} else {
+			this.dedicatedEditorMessageDisposable?.dispose()
+			this.dedicatedEditorMessageDisposable = disposable
+		}
 	}
 
 	/**
@@ -1367,10 +1839,18 @@ export class ClineProvider
 			return
 		}
 
+		const webviews = [this.view?.webview, this.composerView?.webview, this.dedicatedEditorView?.webview].filter(
+			(webview): webview is vscode.Webview => webview !== undefined,
+		)
+
+		await Promise.all(webviews.map((webview) => this.postMessageToSpecificWebview(webview, message)))
+	}
+
+	public async postMessageToSpecificWebview(webview: vscode.Webview, message: ExtensionMessage): Promise<void> {
 		try {
-			await this.view?.webview.postMessage(message)
+			await webview.postMessage(message)
 		} catch {
-			// View disposed, drop message silently
+			// View disposed, drop message silently.
 		}
 	}
 
@@ -1563,6 +2043,47 @@ export class ClineProvider
 				? await this.getHMRHtmlContent(webview)
 				: await this.getHtmlContent(webview)
 		this.setWebviewMessageListener(webview)
+		await this.appendWebviewCrashDiagnostic("webview-load", {
+			message: "Webview content initialized; awaiting health acknowledgement.",
+		})
+	}
+
+	/**
+	 * Writes host-side Webview lifecycle diagnostics. This deliberately does not
+	 * depend on Webview postMessage: when the renderer is blank or unresponsive,
+	 * its JavaScript cannot report its own failure.
+	 */
+	private async appendWebviewCrashDiagnostic(
+		stage: "webview-load" | "webview-unresponsive",
+		details: Record<string, string>,
+	): Promise<void> {
+		const logDirectoryPath = this.context.logUri?.fsPath
+		if (!logDirectoryPath) {
+			this.log("Skipped automatic webview crash diagnostics because the extension log directory is unavailable")
+			return
+		}
+
+		const logPath = path.join(logDirectoryPath, ClineProvider.WEBVIEW_CRASH_LOG_FILE_NAME)
+		const currentTask = this.getCurrentTask()
+		const logEntry = {
+			timestamp: new Date().toISOString(),
+			extensionId: this.context.extension.id,
+			taskId: currentTask?.taskId,
+			stage,
+			...details,
+		}
+
+		try {
+			await fs.mkdir(path.dirname(logPath), { recursive: true })
+			await fs.appendFile(logPath, `${JSON.stringify(logEntry)}\n`, "utf8")
+			this.log(`Automatically saved webview crash diagnostics to ${logPath}`)
+		} catch (error) {
+			this.log(
+				`Failed to automatically save webview crash diagnostics: ${
+					error instanceof Error ? error.message : String(error)
+				}`,
+			)
+		}
 	}
 
 	public markWebviewHealthy(): void {
@@ -1597,6 +2118,9 @@ export class ClineProvider
 		}
 
 		this.log("[Zoo Code] Webview did not respond to health check; reloading webview content.")
+		await this.appendWebviewCrashDiagnostic("webview-unresponsive", {
+			message: `Webview did not acknowledge a health check within ${ClineProvider.WEBVIEW_HEALTH_CHECK_TIMEOUT_MS}ms.`,
+		})
 		await this.initializeWebviewContent(this.view.webview)
 	}
 
@@ -1608,7 +2132,7 @@ export class ClineProvider
 	 */
 	private setWebviewMessageListener(webview: vscode.Webview) {
 		const onReceiveMessage = async (message: WebviewMessage) =>
-			webviewMessageHandler(this, message, this.marketplaceManager)
+			webviewMessageHandler(this, message, this.marketplaceManager, webview)
 
 		this.clearWebviewMessageListener()
 		this.webviewMessageDisposable = webview.onDidReceiveMessage(onReceiveMessage)
@@ -2299,6 +2823,18 @@ export class ClineProvider
 			await this.createTaskWithHistoryItem(historyItem) // Clears existing task.
 		}
 
+		const { dedicatedIdeLayoutEnabled } = await this.getState()
+		if (dedicatedIdeLayoutEnabled) {
+			await this.openDedicatedIdeLayout({ focusComposer: false })
+			if (this.dedicatedEditorView) {
+				await this.postMessageToSpecificWebview(this.dedicatedEditorView.webview, {
+					type: "action",
+					action: "chatButtonClicked",
+				})
+			}
+			return
+		}
+
 		await this.postMessageToWebview({ type: "action", action: "chatButtonClicked" })
 	}
 
@@ -2481,10 +3017,38 @@ export class ClineProvider
 	}
 
 	async postStateToWebview() {
-		const state = await this.getStateToPostToWebview()
 		this.clineMessagesSeq++
-		state.clineMessagesSeq = this.clineMessagesSeq
-		await this.postMessageToWebview({ type: "state", state })
+		await this.postStateToAllWebviews()
+	}
+
+	private async postStateToAllWebviews(
+		transform: (state: ExtensionState) => Partial<ExtensionState> = (state) => state,
+	): Promise<void> {
+		if (!this.dedicatedEditorView && !this.composerView) {
+			const state = await this.getStateToPostToWebview(this.view?.webview)
+			state.clineMessagesSeq = this.clineMessagesSeq
+			await this.postMessageToWebview({ type: "state", state: transform(state) })
+			return
+		}
+
+		const endpoints: Array<[vscode.Webview | undefined, ExtensionState["renderContext"]]> = [
+			[this.view?.webview, this.renderContext],
+			[this.composerView?.webview, "composer"],
+			[this.dedicatedEditorView?.webview, "editor"],
+		]
+
+		await Promise.all(
+			endpoints.map(async ([webview, renderContext]) => {
+				if (!webview) {
+					return
+				}
+
+				const state = await this.getStateToPostToWebview(webview)
+				state.renderContext = renderContext
+				state.clineMessagesSeq = this.clineMessagesSeq
+				await this.postMessageToSpecificWebview(webview, { type: "state", state: transform(state) })
+			}),
+		)
 	}
 
 	/**
@@ -2496,11 +3060,8 @@ export class ClineProvider
 	 *   `taskHistoryUpdated` / `taskHistoryItemUpdated`.
 	 */
 	async postStateToWebviewWithoutTaskHistory(): Promise<void> {
-		const state = await this.getStateToPostToWebview()
 		this.clineMessagesSeq++
-		state.clineMessagesSeq = this.clineMessagesSeq
-		const { taskHistory: _omit, ...rest } = state
-		await this.postMessageToWebview({ type: "state", state: rest })
+		await this.postStateToAllWebviews(({ taskHistory: _omit, ...rest }) => rest)
 	}
 
 	/**
@@ -2515,9 +3076,9 @@ export class ClineProvider
 	 *   (cloud auth, org settings, profiles, etc.) without interfering with task message streaming.
 	 */
 	async postStateToWebviewWithoutClineMessages(): Promise<void> {
-		const state = await this.getStateToPostToWebview()
-		const { clineMessages: _omitMessages, taskHistory: _omitHistory, ...rest } = state
-		await this.postMessageToWebview({ type: "state", state: rest })
+		await this.postStateToAllWebviews(
+			({ clineMessages: _omitMessages, taskHistory: _omitHistory, ...rest }) => rest,
+		)
 	}
 
 	/**
@@ -2621,7 +3182,7 @@ export class ClineProvider
 		}
 	}
 
-	async getStateToPostToWebview(): Promise<ExtensionState> {
+	async getStateToPostToWebview(webview: vscode.Webview | undefined = this.view?.webview): Promise<ExtensionState> {
 		// Ensure the store is initialized before reading task history
 		await this.taskHistoryStore.initialized
 
@@ -2717,6 +3278,7 @@ export class ClineProvider
 			autoCloseZooOpenedFiles,
 			autoCloseZooOpenedFilesAfterUserEdited,
 			autoCloseZooOpenedNewFiles,
+			dedicatedIdeLayoutEnabled,
 		} = await this.getState()
 
 		let cloudOrganizations: CloudOrganizationMembership[] = []
@@ -2782,6 +3344,8 @@ export class ClineProvider
 		} catch {
 			// Keep the default unauthenticated state if the optional Zoo Code auth service is unavailable.
 		}
+
+		const userAvatarUrl = (await this.getUserAvatarUrl(webview)) ?? null
 
 		return {
 			version: this.context.extension?.packageJSON?.version ?? "",
@@ -2857,6 +3421,7 @@ export class ClineProvider
 			enableSubfolderRules: enableSubfolderRules ?? false,
 			language: language ?? formatLanguage(vscode.env.language),
 			renderContext: this.renderContext,
+			userAvatarUrl,
 			maxImageFileSize: maxImageFileSize ?? 5,
 			maxTotalImageSize: maxTotalImageSize ?? 20,
 			settingsImportedAt: this.settingsImportedAt,
@@ -2910,6 +3475,7 @@ export class ClineProvider
 			autoCloseZooOpenedFilesAfterUserEdited:
 				autoCloseZooOpenedFilesAfterUserEdited ?? DEFAULT_AUTO_CLOSE_ZOO_OPENED_FILES_AFTER_USER_EDITED,
 			autoCloseZooOpenedNewFiles: autoCloseZooOpenedNewFiles ?? DEFAULT_AUTO_CLOSE_ZOO_OPENED_NEW_FILES,
+			dedicatedIdeLayoutEnabled: dedicatedIdeLayoutEnabled ?? false,
 			openAiCodexIsAuthenticated: await (async () => {
 				try {
 					const { openAiCodexOAuthManager } = await import("../../integrations/openai-codex/oauth")
@@ -3147,6 +3713,7 @@ export class ClineProvider
 			autoCloseZooOpenedFiles: stateValues.autoCloseZooOpenedFiles,
 			autoCloseZooOpenedFilesAfterUserEdited: stateValues.autoCloseZooOpenedFilesAfterUserEdited,
 			autoCloseZooOpenedNewFiles: stateValues.autoCloseZooOpenedNewFiles,
+			dedicatedIdeLayoutEnabled: stateValues.dedicatedIdeLayoutEnabled ?? false,
 		}
 	}
 
@@ -3544,6 +4111,15 @@ export class ClineProvider
 
 		await this.addClineToStack(task)
 		if (options.startTask !== false) {
+			// Persist the initial prompt before scheduling any asynchronous work. A
+			// process restart in the former gap created a history entry without its
+			// prompt or chat timeline, which reopened as an empty unfinished task.
+			try {
+				await task.persistInitialUserMessage()
+			} catch (error) {
+				await this.removeClineFromStack()
+				throw error
+			}
 			scheduleTask(this.taskScheduler, task, "createTask")
 		}
 

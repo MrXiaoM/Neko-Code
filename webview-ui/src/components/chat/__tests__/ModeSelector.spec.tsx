@@ -6,9 +6,14 @@ import type { Mode } from "@roo/modes"
 
 import { ModeSelector } from "../ModeSelector"
 
+const { mockPostMessage, mockRenderContext } = vi.hoisted(() => ({
+	mockPostMessage: vi.fn(),
+	mockRenderContext: { value: "sidebar" as "sidebar" | "editor" | "composer" },
+}))
+
 vi.mock("@/utils/vscode", () => ({
 	vscode: {
-		postMessage: vi.fn(),
+		postMessage: mockPostMessage,
 	},
 }))
 
@@ -16,6 +21,7 @@ vi.mock("@/context/ExtensionStateContext", () => ({
 	useExtensionState: () => ({
 		hasOpenedModeSelector: false,
 		setHasOpenedModeSelector: vi.fn(),
+		renderContext: mockRenderContext.value,
 	}),
 }))
 
@@ -48,6 +54,29 @@ vi.mock("@roo/modes", async () => {
 })
 
 describe("ModeSelector", () => {
+	beforeEach(() => {
+		mockRenderContext.value = "sidebar"
+		mockPostMessage.mockClear()
+	})
+
+	it("opens the full popover from the composer without a host QuickPick", () => {
+		mockRenderContext.value = "composer"
+		mockModes = Array.from({ length: 7 }, (_, index) => ({
+			slug: `mode-${index}`,
+			name: `Mode ${index}`,
+			roleDefinition: "Test mode",
+			groups: [],
+		}))
+		render(
+			<ModeSelector title="Mode Selector" value={"code" as Mode} onChange={vi.fn()} modeShortcutText="Ctrl+M" />,
+		)
+
+		fireEvent.click(screen.getByTestId("mode-selector-trigger"))
+
+		expect(mockPostMessage).not.toHaveBeenCalledWith({ type: "openModeQuickPick" })
+		expect(screen.getByTestId("mode-search-input")).toBeInTheDocument()
+	})
+
 	test("shows custom description from customModePrompts", () => {
 		const customModePrompts = {
 			code: {

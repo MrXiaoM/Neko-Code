@@ -11,6 +11,8 @@ describe("UISettings", () => {
 	const defaultProps = {
 		reasoningBlockCollapsed: false,
 		enterBehavior: "send" as const,
+		onSelectUserAvatar: vi.fn(),
+		onClearUserAvatar: vi.fn(),
 		setCachedStateField: vi.fn(),
 	}
 
@@ -90,6 +92,78 @@ describe("UISettings", () => {
 			fireEvent.click(resetSet)
 			expect(setCachedStateField).toHaveBeenCalledWith("chatFontSize", undefined)
 			expect(telemetryClient.capture).toHaveBeenCalledWith("ui_settings_chat_font_size_reset")
+		})
+	})
+
+	describe("user avatar", () => {
+		it("is hidden until the dedicated AI IDE layout draft is enabled", () => {
+			const { queryByTestId } = render(<UISettings {...defaultProps} dedicatedIdeLayoutEnabled={false} />)
+
+			expect(queryByTestId("select-user-avatar-button")).not.toBeInTheDocument()
+		})
+
+		it("requests a local avatar picker through the settings draft callback", () => {
+			const onSelectUserAvatar = vi.fn()
+			const { getByTestId } = render(
+				<UISettings
+					{...defaultProps}
+					dedicatedIdeLayoutEnabled={true}
+					onSelectUserAvatar={onSelectUserAvatar}
+				/>,
+			)
+
+			fireEvent.click(getByTestId("select-user-avatar-button"))
+			expect(onSelectUserAvatar).toHaveBeenCalledOnce()
+		})
+
+		it("shows a pending-save selection status and disables repeated picks", () => {
+			const { getByTestId } = render(
+				<UISettings
+					{...defaultProps}
+					dedicatedIdeLayoutEnabled={true}
+					isSelectingUserAvatar={true}
+					userAvatarSelectionMessage="Image selected. Click Save to apply it."
+				/>,
+			)
+
+			expect(getByTestId("select-user-avatar-button")).toBeDisabled()
+			expect(getByTestId("user-avatar-selection-status")).toHaveTextContent(
+				"Image selected. Click Save to apply it.",
+			)
+		})
+
+		it("shows the selected avatar and requests draft removal", () => {
+			const onClearUserAvatar = vi.fn()
+			const { getByTestId } = render(
+				<UISettings
+					{...defaultProps}
+					dedicatedIdeLayoutEnabled={true}
+					userAvatarUrl="vscode-webview://avatar.png"
+					onClearUserAvatar={onClearUserAvatar}
+				/>,
+			)
+
+			expect(getByTestId("select-user-avatar-button")).toHaveTextContent("settings:ui.userAvatar.change")
+			fireEvent.click(getByTestId("clear-user-avatar-button"))
+			expect(onClearUserAvatar).toHaveBeenCalledOnce()
+		})
+	})
+
+	describe("dedicated AI IDE layout", () => {
+		it("uses the cached layout preference and updates only the cached setting", () => {
+			const setCachedStateField = vi.fn()
+			const { getByTestId } = render(
+				<UISettings
+					{...defaultProps}
+					dedicatedIdeLayoutEnabled={false}
+					setCachedStateField={setCachedStateField}
+				/>,
+			)
+
+			const checkbox = getByTestId("dedicated-ide-layout-checkbox") as HTMLInputElement
+			expect(checkbox.checked).toBe(false)
+			fireEvent.click(checkbox)
+			expect(setCachedStateField).toHaveBeenCalledWith("dedicatedIdeLayoutEnabled", true)
 		})
 	})
 

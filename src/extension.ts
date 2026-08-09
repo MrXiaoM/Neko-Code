@@ -240,6 +240,46 @@ export async function activate(context: vscode.ExtensionContext) {
 		vscode.window.registerWebviewViewProvider(ClineProvider.sideBarId, provider, {
 			webviewOptions: { retainContextWhenHidden: true },
 		}),
+		vscode.window.registerWebviewViewProvider(
+			ClineProvider.composerId,
+			{ resolveWebviewView: (webviewView) => provider.resolveComposerWebviewView(webviewView) },
+			{ webviewOptions: { retainContextWhenHidden: true } },
+		),
+	)
+
+	let restoringDedicatedLayout = false
+	const registerDedicatedLayoutWhenWorkspaceAvailable = async (): Promise<void> => {
+		if (!vscode.workspace.workspaceFolders?.length) {
+			restoringDedicatedLayout = false
+			await vscode.commands.executeCommand("setContext", ClineProvider.dedicatedIdeLayoutContextKey, false)
+			return
+		}
+
+		if (restoringDedicatedLayout) {
+			return
+		}
+
+		if (!(await provider.getState()).dedicatedIdeLayoutEnabled) {
+			await vscode.commands.executeCommand("setContext", ClineProvider.dedicatedIdeLayoutContextKey, false)
+			return
+		}
+
+		restoringDedicatedLayout = true
+		await vscode.commands.executeCommand("setContext", ClineProvider.dedicatedIdeLayoutContextKey, true)
+		void provider.openDedicatedIdeLayout().catch((error) => {
+			outputChannel.appendLine(
+				`[DedicatedIdeLayout] Failed to restore the dedicated layout: ${
+					error instanceof Error ? error.message : String(error)
+				}`,
+			)
+		})
+	}
+
+	await registerDedicatedLayoutWhenWorkspaceAvailable()
+	context.subscriptions.push(
+		vscode.workspace.onDidChangeWorkspaceFolders(() => {
+			void registerDedicatedLayoutWhenWorkspaceAvailable()
+		}),
 	)
 
 	// Check for worktree auto-open path (set when switching to a worktree)

@@ -274,7 +274,12 @@
 		"workingDirectory": "工作目录：{{cwd}}",
 		"terminalProfile": "配置：{{profile}}",
 		"terminalId": "终端：#{{id}}",
-		"focusTerminal": "跳转"
+		"focusTerminal": "跳转",
+		"hiddenLines": "已隐藏前 {{count}} 行",
+		"viewFullOutput": "查看完整输出",
+		"fullOutputTitle": "完整命令输出",
+		"loadingFullOutput": "正在加载完整输出…",
+		"fullOutputUnavailable": "无法取得完整输出，正在显示可用预览。"
 	},
 	"response": "响应",
 	"arguments": "参数",
@@ -481,7 +486,9 @@
 		"triggerDescription": "触发 {{name}} 命令"
 	},
 	"editMessage": {
-		"placeholder": "编辑消息..."
+		"placeholder": "编辑消息...",
+		"edit": "编辑消息",
+		"delete": "删除消息"
 	},
 	"slashCommands": {
 		"tooltip": "管理斜杠命令",

@@ -102,10 +102,14 @@ const FileChangesPanel = memo(({ clineMessages, className }: FileChangesPanelPro
 	const fileCount = byPath.size
 
 	return (
-		<Collapsible open={panelExpanded} onOpenChange={setPanelExpanded} className={cn("px-3", className)}>
+		<Collapsible
+			open={panelExpanded}
+			onOpenChange={setPanelExpanded}
+			className={cn("relative h-full px-3", className)}
+			data-testid="file-changes-panel">
 			<CollapsibleTrigger
 				className={cn(
-					"flex items-center gap-2 w-full py-2 rounded-md text-left text-vscode-foreground",
+					"flex h-full items-center gap-2 w-full rounded-md text-left text-vscode-foreground",
 					"hover:bg-vscode-list-hoverBackground",
 				)}>
 				{panelExpanded ? (
@@ -130,7 +134,9 @@ const FileChangesPanel = memo(({ clineMessages, className }: FileChangesPanelPro
 					</div>
 				) : null}
 			</CollapsibleTrigger>
-			<CollapsibleContent>
+			<CollapsibleContent
+				data-testid="file-changes-detail-overlay"
+				className="absolute inset-x-0 bottom-full z-30 max-h-[min(50dvh,28rem)] overflow-y-auto bg-vscode-editor-background/95 px-3 pt-2 backdrop-blur-sm">
 				<div className="flex flex-col gap-1 pb-2 pl-6">
 					{Array.from(byPath.entries()).map(([path, entries]) => {
 						const originalContent = entries[0].originalContent

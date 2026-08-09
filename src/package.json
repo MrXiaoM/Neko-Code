@@ -65,7 +65,16 @@
 				{
 					"type": "webview",
 					"id": "zoo-code.SidebarProvider",
-					"name": "%views.sidebar.name%"
+					"name": "%views.sidebar.name%",
+					"when": "!zoo-code.dedicatedIdeLayoutEnabled"
+				}
+			],
+			"panel": [
+				{
+					"type": "webview",
+					"id": "zoo-code.DedicatedComposerProvider",
+					"name": "%views.chat.name%",
+					"when": "zoo-code.dedicatedIdeLayoutEnabled"
 				}
 			]
 		},
@@ -98,6 +107,11 @@
 			{
 				"command": "zoo-code.openInNewTab",
 				"title": "%command.openInNewTab.title%",
+				"category": "%configuration.title%"
+			},
+			{
+				"command": "zoo-code.openDedicatedIdeLayout",
+				"title": "%command.openDedicatedIdeLayout.title%",
 				"category": "%configuration.title%"
 			},
 			{

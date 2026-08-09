@@ -138,9 +138,14 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 		uriScheme,
 		settingsImportedAt,
 		mode,
+		userAvatarUrl,
 	} = extensionState
 
 	const [isDiscardDialogShow, setDiscardDialogShow] = useState(false)
+	const [pendingUserAvatarUrl, setPendingUserAvatarUrl] = useState<string | undefined>()
+	const [pendingUserAvatarAction, setPendingUserAvatarAction] = useState<"save" | "remove" | undefined>()
+	const [userAvatarSelectionMessage, setUserAvatarSelectionMessage] = useState<string | undefined>()
+	const [isSelectingUserAvatar, setIsSelectingUserAvatar] = useState(false)
 	const [isChangeDetected, setChangeDetected] = useState(false)
 	const [errorMessage, setErrorMessage] = useState<string | undefined>(undefined)
 	const [activeTab, setActiveTab] = useState<SectionName>(
@@ -247,6 +252,7 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 		backgroundImagePosition,
 		backgroundImageOffset,
 		backgroundImageOpacity,
+		dedicatedIdeLayoutEnabled,
 	} = cachedState
 
 	const apiConfiguration = useMemo(() => cachedState.apiConfiguration ?? {}, [cachedState.apiConfiguration])
@@ -388,6 +394,61 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 			return { ...prevState, [field]: value }
 		})
 	}, [])
+
+	useEffect(() => {
+		const handleUserAvatarSelection = (event: MessageEvent) => {
+			const message = event.data
+			if (message?.type !== "userAvatarSelection") {
+				return
+			}
+
+			setIsSelectingUserAvatar(false)
+			if (message.userAvatarSelectionStatus === "ready" && message.userAvatarUrl) {
+				setPendingUserAvatarUrl(message.userAvatarUrl)
+				setPendingUserAvatarAction("save")
+				setUserAvatarSelectionMessage(t("settings:ui.userAvatar.pendingSave"))
+				setChangeDetected(true)
+				return
+			}
+
+			if (message.userAvatarSelectionStatus === "saved") {
+				setPendingUserAvatarUrl(undefined)
+				setPendingUserAvatarAction(undefined)
+				setUserAvatarSelectionMessage(t("settings:ui.userAvatar.saved"))
+				return
+			}
+
+			if (message.userAvatarSelectionStatus === "cleared") {
+				setPendingUserAvatarUrl(undefined)
+				setPendingUserAvatarAction(undefined)
+				setUserAvatarSelectionMessage(t("settings:ui.userAvatar.removed"))
+				return
+			}
+
+			if (message.userAvatarSelectionStatus === "cancelled") {
+				setUserAvatarSelectionMessage(t("settings:ui.userAvatar.selectionCancelled"))
+				return
+			}
+
+			setUserAvatarSelectionMessage(message.userAvatarError ?? t("settings:ui.userAvatar.selectionFailed"))
+		}
+
+		window.addEventListener("message", handleUserAvatarSelection)
+		return () => window.removeEventListener("message", handleUserAvatarSelection)
+	}, [t])
+
+	const selectUserAvatar = useCallback(() => {
+		setIsSelectingUserAvatar(true)
+		setUserAvatarSelectionMessage(t("settings:ui.userAvatar.selecting"))
+		vscode.postMessage({ type: "selectUserAvatar" })
+	}, [t])
+
+	const clearUserAvatar = useCallback(() => {
+		setPendingUserAvatarUrl(undefined)
+		setPendingUserAvatarAction("remove")
+		setUserAvatarSelectionMessage(t("settings:ui.userAvatar.removalPending"))
+		setChangeDetected(true)
+	}, [t])
 
 	const setApiConfigurationField = useCallback(
 		<K extends keyof ProviderSettings>(field: K, value: ProviderSettings[K], isUserAction: boolean = true) => {
@@ -578,6 +639,7 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 					autoCloseZooOpenedFilesAfterUserEdited:
 						autoCloseZooOpenedFilesAfterUserEdited ?? DEFAULT_AUTO_CLOSE_ZOO_OPENED_FILES_AFTER_USER_EDITED,
 					autoCloseZooOpenedNewFiles: autoCloseZooOpenedNewFiles ?? DEFAULT_AUTO_CLOSE_ZOO_OPENED_NEW_FILES,
+					dedicatedIdeLayoutEnabled: dedicatedIdeLayoutEnabled ?? false,
 					profileThresholds,
 					imageGenerationProvider,
 					openRouterImageApiKey,
@@ -601,6 +663,9 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 			}
 			vscode.postMessage({ type: "telemetrySetting", text: telemetrySetting })
 			vscode.postMessage({ type: "debugSetting", bool: cachedState.debug })
+			if (pendingUserAvatarAction) {
+				vscode.postMessage({ type: "commitUserAvatar", bool: pendingUserAvatarAction === "remove" })
+			}
 
 			setChangeDetected(false)
 		}
@@ -623,14 +688,20 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 	const onConfirmDialogResult = useCallback(
 		(confirm: boolean) => {
 			if (confirm) {
-				// Discard changes: Reset state and flag
-				setCachedState(extensionState) // Revert to original state
-				setChangeDetected(false) // Reset change flag
-				confirmDialogHandler.current?.() // Execute the pending action (e.g., tab switch)
+				// Discard changes: reset the settings draft and discard any privately staged avatar.
+				if (pendingUserAvatarAction) {
+					vscode.postMessage({ type: "discardUserAvatar" })
+				}
+				setCachedState(extensionState)
+				setPendingUserAvatarUrl(undefined)
+				setPendingUserAvatarAction(undefined)
+				setUserAvatarSelectionMessage(undefined)
+				setChangeDetected(false)
+				confirmDialogHandler.current?.()
 			}
 			// If confirm is false (Cancel), do nothing, dialog closes automatically
 		},
-		[extensionState], // Depend on extensionState to get the latest original state
+		[extensionState, pendingUserAvatarAction],
 	)
 
 	// Handle tab changes with unsaved changes check
@@ -1103,6 +1174,17 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>(({ onDone, t
 								backgroundImagePosition={backgroundImagePosition}
 								backgroundImageOffset={backgroundImageOffset}
 								backgroundImageOpacity={backgroundImageOpacity}
+								dedicatedIdeLayoutEnabled={dedicatedIdeLayoutEnabled}
+								userAvatarUrl={
+									pendingUserAvatarAction === "remove"
+										? undefined
+										: (pendingUserAvatarUrl ?? userAvatarUrl)
+								}
+								isUserAvatarRemovalPending={pendingUserAvatarAction === "remove"}
+								userAvatarSelectionMessage={userAvatarSelectionMessage}
+								isSelectingUserAvatar={isSelectingUserAvatar}
+								onSelectUserAvatar={selectUserAvatar}
+								onClearUserAvatar={clearUserAvatar}
 								setCachedStateField={setCachedStateField}
 							/>
 						)}

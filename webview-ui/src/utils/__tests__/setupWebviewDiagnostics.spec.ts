@@ -1,29 +1,17 @@
-import { setupWebviewDiagnostics } from "../setupWebviewDiagnostics"
+import { getWebviewErrorDetails } from "../setupWebviewDiagnostics"
 
-const { reportWebviewDiagnostic } = vi.hoisted(() => ({ reportWebviewDiagnostic: vi.fn() }))
+describe("getWebviewErrorDetails", () => {
+	it("keeps error name, message, and stack for automatic crash logging", () => {
+		const error = new Error("input crashed")
 
-vi.mock("../webviewDiagnostics", () => ({
-	reportWebviewDiagnostic,
-}))
-
-describe("setupWebviewDiagnostics", () => {
-	beforeEach(() => {
-		vi.clearAllMocks()
+		expect(getWebviewErrorDetails(error)).toEqual({
+			name: "Error",
+			message: "input crashed",
+			stack: error.stack,
+		})
 	})
 
-	it("reports global errors without including error contents", () => {
-		setupWebviewDiagnostics()
-
-		window.dispatchEvent(new ErrorEvent("error", { error: new Error("sensitive file path") }))
-
-		expect(reportWebviewDiagnostic).toHaveBeenCalledWith("global-error", { hasError: true })
-	})
-
-	it("reports unhandled rejections without including rejection contents", () => {
-		setupWebviewDiagnostics()
-
-		window.dispatchEvent(new Event("unhandledrejection"))
-
-		expect(reportWebviewDiagnostic).toHaveBeenCalledWith("unhandled-rejection", { hasReason: false })
+	it("converts an unhandled rejection reason into a diagnostic message", () => {
+		expect(getWebviewErrorDetails("input failed")).toEqual({ message: "input failed" })
 	})
 })

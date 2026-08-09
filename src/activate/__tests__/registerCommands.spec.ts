@@ -302,6 +302,25 @@ describe("registerCommands handlers", () => {
 		})
 	})
 
+	it("focusInput routes to the bottom composer when the dedicated layout is active", async () => {
+		const focusComposer = vi.fn().mockResolvedValue(undefined)
+		const dedicatedProvider = {
+			postMessageToWebview: vi.fn(),
+			getState: vi.fn().mockResolvedValue({ dedicatedIdeLayoutEnabled: true }),
+			focusComposer,
+		}
+		registerCommands({
+			context: mockContext,
+			outputChannel: mockOutputChannel,
+			provider: dedicatedProvider as unknown as ClineProvider,
+		})
+
+		await handlers["zoo-code.focusInput"]()
+
+		expect(focusComposer).toHaveBeenCalledTimes(1)
+		expect(dedicatedProvider.postMessageToWebview).not.toHaveBeenCalled()
+	})
+
 	it("focusInput does not post when no sidebar panel is active", async () => {
 		await handlers["zoo-code.focusInput"]()
 

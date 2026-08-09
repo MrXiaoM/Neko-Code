@@ -97,6 +97,7 @@ const mockFetchOpenAiCodexRateLimitInfo = vi.mocked(fetchOpenAiCodexRateLimitInf
 const mockClineProvider = {
 	getState: vi.fn(),
 	postMessageToWebview: vi.fn(),
+	postMessageToSpecificWebview: vi.fn(),
 	customModesManager: {
 		getCustomModes: vi.fn(),
 		deleteCustomMode: vi.fn(),
@@ -104,6 +105,8 @@ const mockClineProvider = {
 	context: {
 		extensionPath: "/mock/extension/path",
 		globalStorageUri: { fsPath: "/mock/global/storage" },
+		logUri: { fsPath: "/mock/extension/logs" },
+		extension: { id: "zoo-code.zoo-code" },
 	},
 	contextProxy: {
 		context: {
@@ -116,6 +119,17 @@ const mockClineProvider = {
 	},
 	log: vi.fn(),
 	postStateToWebview: vi.fn(),
+	selectUserAvatar: vi.fn(),
+	commitUserAvatar: vi.fn(),
+	discardUserAvatar: vi.fn(),
+	openDedicatedIdeLayout: vi.fn(),
+	disableDedicatedIdeLayout: vi.fn(),
+	openSettingsInDedicatedEditor: vi.fn(),
+	requestComposerPrimaryButtonClick: vi.fn(),
+	requestComposerSecondaryButtonClick: vi.fn(),
+	requestComposerDraftAppend: vi.fn(),
+	handleModeSwitch: vi.fn(),
+	activateProviderProfile: vi.fn(),
 	getCurrentTask: vi.fn(),
 	getTaskWithId: vi.fn(),
 	createTaskWithHistoryItem: vi.fn(),
@@ -128,13 +142,21 @@ import { t } from "../../../i18n"
 vi.mock("vscode", () => {
 	const showInformationMessage = vi.fn()
 	const showErrorMessage = vi.fn()
+	const showQuickPick = vi.fn()
 	const openTextDocument = vi.fn().mockResolvedValue({})
 	const showTextDocument = vi.fn().mockResolvedValue(undefined)
 
 	return {
+		env: {
+			openExternal: vi.fn(),
+		},
+		Uri: {
+			parse: vi.fn((url: string) => url),
+		},
 		window: {
 			showInformationMessage,
 			showErrorMessage,
+			showQuickPick,
 			showTextDocument,
 		},
 		workspace: {
@@ -149,7 +171,7 @@ vi.mock("vscode", () => {
 })
 
 vi.mock("../../../i18n", () => ({
-	t: vi.fn((key: string, args?: Record<string, any>) => {
+	t: vi.fn((key: string, args?: Record<string, unknown>) => {
 		// For the delete confirmation with rules, we need to return the interpolated string
 		if (key === "common:confirmation.delete_custom_mode_with_rules" && args) {
 			return `Are you sure you want to delete this ${args.scope} mode?\n\nThis will also delete the associated rules folder at:\n${args.rulesFolderPath}`
@@ -171,6 +193,7 @@ vi.mock("fs/promises", () => {
 	const mockMkdir = vi.fn().mockResolvedValue(undefined)
 	const mockReadFile = vi.fn().mockResolvedValue("[]")
 	const mockWriteFile = vi.fn().mockResolvedValue(undefined)
+	const mockAppendFile = vi.fn().mockResolvedValue(undefined)
 
 	return {
 		default: {
@@ -178,11 +201,13 @@ vi.mock("fs/promises", () => {
 			mkdir: mockMkdir,
 			readFile: mockReadFile,
 			writeFile: mockWriteFile,
+			appendFile: mockAppendFile,
 		},
 		rm: mockRm,
 		mkdir: mockMkdir,
 		readFile: mockReadFile,
 		writeFile: mockWriteFile,
+		appendFile: mockAppendFile,
 	}
 })
 
@@ -293,7 +318,7 @@ describe("webviewMessageHandler - image mentions", () => {
 			cwd: "/mock/workspace",
 			rooIgnoreController: undefined,
 			handleWebviewAskResponse: mockHandleWebviewAskResponse,
-		} as any)
+		} as unknown as ReturnType<ClineProvider["getCurrentTask"]>)
 
 		await webviewMessageHandler(mockClineProvider, {
 			type: "askResponse",
@@ -545,10 +570,19 @@ describe("webviewMessageHandler - requestRouterModels", () => {
 		// Must be fetched despite no configured key, forwarding apiKey: undefined.
 		expect(mockGetModels).toHaveBeenCalledWith({ provider: "opencode-go", apiKey: undefined })
 
-		const routerModelsCall = (mockClineProvider.postMessageToWebview as any).mock.calls.find(
-			([msg]: [{ type: string }]) => msg.type === "routerModels",
-		)
-		expect(routerModelsCall?.[0].routerModels["opencode-go"]).toEqual(mockModels)
+		const routerModelsCall = vi
+			.mocked(mockClineProvider.postMessageToWebview)
+			.mock.calls.find(([message]) => message.type === "routerModels")
+		expect(routerModelsCall).toBeDefined()
+		if (!routerModelsCall) {
+			throw new Error("Expected a routerModels response")
+		}
+		const routerModels = routerModelsCall[0].routerModels
+		expect(routerModels).toBeDefined()
+		if (!routerModels) {
+			throw new Error("Expected routerModels data in the response")
+		}
+		expect(routerModels["opencode-go"]).toEqual(mockModels)
 	})
 
 	it("flushes and fetches Opencode Go models when an explicit API key is supplied", async () => {
@@ -865,7 +899,9 @@ describe("webviewMessageHandler - requestOpenAiCodexRateLimits", () => {
 	})
 
 	it("posts error when not authenticated", async () => {
-		await webviewMessageHandler(mockClineProvider, { type: "requestOpenAiCodexRateLimits" } as any)
+		await webviewMessageHandler(mockClineProvider, {
+			type: "requestOpenAiCodexRateLimits",
+		} as unknown as Parameters<typeof webviewMessageHandler>[1])
 
 		expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledWith({
 			type: "openAiCodexRateLimits",
@@ -881,7 +917,9 @@ describe("webviewMessageHandler - requestOpenAiCodexRateLimits", () => {
 			fetchedAt: 1700000000000,
 		})
 
-		await webviewMessageHandler(mockClineProvider, { type: "requestOpenAiCodexRateLimits" } as any)
+		await webviewMessageHandler(mockClineProvider, {
+			type: "requestOpenAiCodexRateLimits",
+		} as unknown as Parameters<typeof webviewMessageHandler>[1])
 
 		expect(mockFetchOpenAiCodexRateLimitInfo).toHaveBeenCalledWith("token", { accountId: "acct_123" })
 		expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledWith({
@@ -1015,7 +1053,7 @@ describe("webviewMessageHandler - message dialog preferences", () => {
 			taskId: "test-task-id",
 			apiConversationHistory: [],
 			clineMessages: [],
-		} as any)
+		} as unknown as ReturnType<ClineProvider["getCurrentTask"]>)
 		// Reset getValue mock
 		vi.mocked(mockClineProvider.contextProxy.getValue).mockReturnValue(false)
 	})
@@ -1025,7 +1063,7 @@ describe("webviewMessageHandler - message dialog preferences", () => {
 			vi.mocked(mockClineProvider.getCurrentTask).mockReturnValue({
 				clineMessages: [],
 				apiConversationHistory: [],
-			} as any) // Mock current cline with proper structure
+			} as unknown as ReturnType<ClineProvider["getCurrentTask"]>) // Mock current cline with proper structure
 
 			await webviewMessageHandler(mockClineProvider, {
 				type: "deleteMessage",
@@ -1038,6 +1076,27 @@ describe("webviewMessageHandler - message dialog preferences", () => {
 				hasCheckpoint: false,
 			})
 		})
+		it("sends an editor-initiated confirmation only to the originating Webview", async () => {
+			const editorWebview = { postMessage: vi.fn() } as unknown as vscode.Webview
+			vi.mocked(mockClineProvider.getCurrentTask).mockReturnValue({
+				clineMessages: [],
+				apiConversationHistory: [],
+			} as unknown as ReturnType<ClineProvider["getCurrentTask"]>)
+
+			await webviewMessageHandler(
+				mockClineProvider,
+				{ type: "deleteMessage", value: 123456789 },
+				undefined,
+				editorWebview,
+			)
+
+			expect(mockClineProvider.postMessageToSpecificWebview).toHaveBeenCalledWith(editorWebview, {
+				type: "showDeleteMessageDialog",
+				messageTs: 123456789,
+				hasCheckpoint: false,
+			})
+			expect(mockClineProvider.postMessageToWebview).not.toHaveBeenCalled()
+		})
 	})
 
 	describe("submitEditedMessage", () => {
@@ -1045,7 +1104,7 @@ describe("webviewMessageHandler - message dialog preferences", () => {
 			vi.mocked(mockClineProvider.getCurrentTask).mockReturnValue({
 				clineMessages: [],
 				apiConversationHistory: [],
-			} as any) // Mock current cline with proper structure
+			} as unknown as ReturnType<ClineProvider["getCurrentTask"]>) // Mock current cline with proper structure
 
 			await webviewMessageHandler(mockClineProvider, {
 				type: "submitEditedMessage",
@@ -1061,11 +1120,35 @@ describe("webviewMessageHandler - message dialog preferences", () => {
 				images: undefined,
 			})
 		})
+		it("sends an editor-initiated edit confirmation only to the originating Webview", async () => {
+			const editorWebview = { postMessage: vi.fn() } as unknown as vscode.Webview
+			vi.mocked(mockClineProvider.getCurrentTask).mockReturnValue({
+				clineMessages: [],
+				apiConversationHistory: [],
+			} as unknown as ReturnType<ClineProvider["getCurrentTask"]>)
+
+			await webviewMessageHandler(
+				mockClineProvider,
+				{ type: "submitEditedMessage", value: 123456789, editedMessageContent: "edited content" },
+				undefined,
+				editorWebview,
+			)
+
+			expect(mockClineProvider.postMessageToSpecificWebview).toHaveBeenCalledWith(editorWebview, {
+				type: "showEditMessageDialog",
+				messageTs: 123456789,
+				text: "edited content",
+				hasCheckpoint: false,
+				images: undefined,
+			})
+			expect(mockClineProvider.postMessageToWebview).not.toHaveBeenCalled()
+		})
 	})
 })
 
 describe("webviewMessageHandler - mcpEnabled", () => {
-	let mockMcpHub: any
+	let mockMcpHub: { handleMcpEnabledChange: Mock }
+	let getMcpHub: Mock
 
 	beforeEach(() => {
 		vi.clearAllMocks()
@@ -1076,7 +1159,8 @@ describe("webviewMessageHandler - mcpEnabled", () => {
 		}
 
 		// Ensure provider exposes getMcpHub and returns our mock
-		;(mockClineProvider as any).getMcpHub = vi.fn().mockReturnValue(mockMcpHub)
+		getMcpHub = vi.fn().mockReturnValue(mockMcpHub)
+		Reflect.set(mockClineProvider, "getMcpHub", getMcpHub)
 	})
 
 	it("delegates enable=true to McpHub and posts updated state", async () => {
@@ -1085,7 +1169,7 @@ describe("webviewMessageHandler - mcpEnabled", () => {
 			updatedSettings: { mcpEnabled: true },
 		})
 
-		expect((mockClineProvider as any).getMcpHub).toHaveBeenCalledTimes(1)
+		expect(getMcpHub).toHaveBeenCalledTimes(1)
 		expect(mockMcpHub.handleMcpEnabledChange).toHaveBeenCalledTimes(1)
 		expect(mockMcpHub.handleMcpEnabledChange).toHaveBeenCalledWith(true)
 		expect(mockClineProvider.postStateToWebview).toHaveBeenCalledTimes(1)
@@ -1097,22 +1181,104 @@ describe("webviewMessageHandler - mcpEnabled", () => {
 			updatedSettings: { mcpEnabled: false },
 		})
 
-		expect((mockClineProvider as any).getMcpHub).toHaveBeenCalledTimes(1)
+		expect(getMcpHub).toHaveBeenCalledTimes(1)
 		expect(mockMcpHub.handleMcpEnabledChange).toHaveBeenCalledTimes(1)
 		expect(mockMcpHub.handleMcpEnabledChange).toHaveBeenCalledWith(false)
 		expect(mockClineProvider.postStateToWebview).toHaveBeenCalledTimes(1)
 	})
 
 	it("handles missing McpHub instance gracefully and still posts state", async () => {
-		;(mockClineProvider as any).getMcpHub = vi.fn().mockReturnValue(undefined)
+		getMcpHub = vi.fn().mockReturnValue(undefined)
+		Reflect.set(mockClineProvider, "getMcpHub", getMcpHub)
 
 		await webviewMessageHandler(mockClineProvider, {
 			type: "updateSettings",
 			updatedSettings: { mcpEnabled: true },
 		})
 
-		expect((mockClineProvider as any).getMcpHub).toHaveBeenCalledTimes(1)
+		expect(getMcpHub).toHaveBeenCalledTimes(1)
 		expect(mockClineProvider.postStateToWebview).toHaveBeenCalledTimes(1)
+	})
+})
+
+describe("webviewMessageHandler - dedicated IDE layout", () => {
+	beforeEach(() => {
+		vi.clearAllMocks()
+	})
+
+	it("persists and opens the dedicated layout when the setting is enabled", async () => {
+		await webviewMessageHandler(mockClineProvider, {
+			type: "updateSettings",
+			updatedSettings: { dedicatedIdeLayoutEnabled: true },
+		})
+
+		expect(mockClineProvider.contextProxy.setValue).toHaveBeenCalledWith("dedicatedIdeLayoutEnabled", true)
+		expect(mockClineProvider.openDedicatedIdeLayout).toHaveBeenCalledTimes(1)
+		expect(mockClineProvider.disableDedicatedIdeLayout).not.toHaveBeenCalled()
+		expect(mockClineProvider.postStateToWebview).not.toHaveBeenCalled()
+	})
+
+	it("persists and disables the dedicated layout without closing the editor view", async () => {
+		await webviewMessageHandler(mockClineProvider, {
+			type: "updateSettings",
+			updatedSettings: { dedicatedIdeLayoutEnabled: false },
+		})
+
+		expect(mockClineProvider.contextProxy.setValue).toHaveBeenCalledWith("dedicatedIdeLayoutEnabled", false)
+		expect(mockClineProvider.disableDedicatedIdeLayout).toHaveBeenCalledTimes(1)
+		expect(mockClineProvider.openDedicatedIdeLayout).not.toHaveBeenCalled()
+	})
+
+	it("routes dedicated editor approval actions to the composer", async () => {
+		await webviewMessageHandler(mockClineProvider, { type: "requestComposerPrimaryButtonClick" })
+		await webviewMessageHandler(mockClineProvider, { type: "requestComposerSecondaryButtonClick" })
+
+		expect(mockClineProvider.requestComposerPrimaryButtonClick).toHaveBeenCalledTimes(1)
+		expect(mockClineProvider.requestComposerSecondaryButtonClick).toHaveBeenCalledTimes(1)
+	})
+
+	it("routes a dedicated editor suggestion to the composer draft", async () => {
+		await webviewMessageHandler(mockClineProvider, {
+			type: "requestComposerDraftAppend",
+			text: "Use the existing sidebar behavior",
+		})
+
+		expect(mockClineProvider.requestComposerDraftAppend).toHaveBeenCalledWith("Use the existing sidebar behavior")
+	})
+
+	it("routes the composer settings request and section to the dedicated editor", async () => {
+		await webviewMessageHandler(mockClineProvider, {
+			type: "openSettingsInMainView",
+			values: { section: "providers" },
+		})
+
+		expect(mockClineProvider.openSettingsInDedicatedEditor).toHaveBeenCalledWith("providers")
+	})
+})
+
+describe("webviewMessageHandler - user avatar", () => {
+	beforeEach(() => {
+		vi.clearAllMocks()
+	})
+
+	it("keeps avatar commits out of the general settings payload", async () => {
+		await webviewMessageHandler(mockClineProvider, { type: "commitUserAvatar" })
+
+		expect(mockClineProvider.commitUserAvatar).toHaveBeenCalledWith(undefined, false)
+		expect(mockClineProvider.contextProxy.setValue).not.toHaveBeenCalled()
+	})
+
+	it("commits a pending avatar removal only after settings save", async () => {
+		await webviewMessageHandler(mockClineProvider, { type: "commitUserAvatar", bool: true })
+
+		expect(mockClineProvider.commitUserAvatar).toHaveBeenCalledWith(undefined, true)
+	})
+
+	it("discards a staged avatar without changing the saved avatar", async () => {
+		await webviewMessageHandler(mockClineProvider, { type: "discardUserAvatar" })
+
+		expect(mockClineProvider.discardUserAvatar).toHaveBeenCalledTimes(1)
+		expect(mockClineProvider.contextProxy.setValue).not.toHaveBeenCalled()
 	})
 })
 
@@ -1255,7 +1421,7 @@ describe("webviewMessageHandler - terminalProfile", () => {
 
 		await webviewMessageHandler(mockClineProvider, {
 			type: "updateSettings",
-			updatedSettings: { terminalProfile: 42 as any },
+			updatedSettings: { terminalProfile: 42 as unknown as string },
 		})
 
 		expect(Terminal.getTerminalProfile()).toBeUndefined()
@@ -1489,7 +1655,7 @@ describe("webviewMessageHandler - rules", () => {
 	beforeEach(() => {
 		vi.clearAllMocks()
 		vi.mocked(mockClineProvider.getCurrentTask).mockReturnValue(undefined)
-		;(mockClineProvider as any).cwd = "/mock/workspace"
+		Reflect.set(mockClineProvider, "cwd", "/mock/workspace")
 	})
 
 	it("routes rules management messages with the current workspace", async () => {
@@ -1502,7 +1668,7 @@ describe("webviewMessageHandler - rules", () => {
 		] as const
 
 		for (const message of messages) {
-			await webviewMessageHandler(mockClineProvider, message as any)
+			await webviewMessageHandler(mockClineProvider, message as Parameters<typeof webviewMessageHandler>[1])
 		}
 
 		expect(handleRequestRules).toHaveBeenCalledWith(mockClineProvider, "/mock/workspace")
@@ -1518,9 +1684,40 @@ describe("webviewMessageHandler - rules", () => {
 		} as unknown as ReturnType<ClineProvider["getCurrentTask"]>)
 
 		const message = { type: "requestRules" } as const
-		await webviewMessageHandler(mockClineProvider, message as any)
+		await webviewMessageHandler(mockClineProvider, message as Parameters<typeof webviewMessageHandler>[1])
 
 		expect(handleRequestRules).toHaveBeenCalledWith(mockClineProvider, "/mock/task-workspace")
+	})
+})
+
+describe("webviewMessageHandler - automatic webview crash logging", () => {
+	beforeEach(() => {
+		vi.clearAllMocks()
+		vi.mocked(mockClineProvider.getCurrentTask).mockReturnValue({
+			taskId: "active-task-id",
+		} as unknown as ReturnType<ClineProvider["getCurrentTask"]>)
+	})
+
+	it("automatically appends crash diagnostics to the extension log directory", async () => {
+		await webviewMessageHandler(mockClineProvider, {
+			type: "webviewCrash",
+			webviewCrash: {
+				stage: "error-boundary",
+				name: "Error",
+				message: "input crashed",
+				stack: "stack trace",
+				componentStack: "ChatTextArea",
+			},
+		})
+
+		expect(fs.appendFile).toHaveBeenCalledWith(
+			path.join("/mock/extension/logs", "webview-crashes.ndjson"),
+			expect.stringContaining('"message":"input crashed"'),
+			"utf8",
+		)
+		expect(mockClineProvider.log).toHaveBeenCalledWith(
+			expect.stringContaining("Automatically saved webview crash diagnostics to"),
+		)
 	})
 })
 
@@ -1529,12 +1726,12 @@ describe("webviewMessageHandler - downloadErrorDiagnostics", () => {
 		vi.clearAllMocks()
 
 		// Ensure contextProxy has a globalStorageUri for the handler
-		;(mockClineProvider as any).contextProxy.globalStorageUri = { fsPath: "/mock/global/storage" }
+		Reflect.set(mockClineProvider.contextProxy, "globalStorageUri", { fsPath: "/mock/global/storage" })
 
 		// Provide a current task with a stable ID
 		vi.mocked(mockClineProvider.getCurrentTask).mockReturnValue({
 			taskId: "test-task-id",
-		} as any)
+		} as unknown as ReturnType<ClineProvider["getCurrentTask"]>)
 	})
 
 	it("calls generateErrorDiagnostics with correct parameters", async () => {
@@ -1547,7 +1744,7 @@ describe("webviewMessageHandler - downloadErrorDiagnostics", () => {
 				model: "test-model",
 				details: "Sample error details",
 			},
-		} as any)
+		} as Parameters<typeof webviewMessageHandler>[1])
 
 		// Verify generateErrorDiagnostics was called with the correct parameters
 		expect(generateErrorDiagnostics).toHaveBeenCalledTimes(1)
@@ -1566,12 +1763,14 @@ describe("webviewMessageHandler - downloadErrorDiagnostics", () => {
 	})
 
 	it("shows error when no active task", async () => {
-		vi.mocked(mockClineProvider.getCurrentTask).mockReturnValue(null as any)
+		vi.mocked(mockClineProvider.getCurrentTask).mockReturnValue(
+			null as unknown as ReturnType<ClineProvider["getCurrentTask"]>,
+		)
 
 		await webviewMessageHandler(mockClineProvider, {
 			type: "downloadErrorDiagnostics",
 			values: {},
-		} as any)
+		} as Parameters<typeof webviewMessageHandler>[1])
 
 		expect(vscode.window.showErrorMessage).toHaveBeenCalledWith("No active task to generate diagnostics for")
 		expect(generateErrorDiagnostics).not.toHaveBeenCalled()
@@ -1588,12 +1787,12 @@ describe("zooCodeSignOut", () => {
 		const upsertProviderProfile = vi.fn().mockResolvedValue(undefined)
 		const saveConfig = vi.fn().mockResolvedValue(undefined)
 
-		;(mockClineProvider as any).contextProxy = {
+		Reflect.set(mockClineProvider, "contextProxy", {
 			...mockClineProvider.contextProxy,
 			getProviderSettings: vi.fn().mockReturnValue({ apiProvider: "zoo-gateway" }),
 			getValues: vi.fn().mockReturnValue({ currentApiConfigName: "Zoo Gateway" }),
-		}
-		;(mockClineProvider as any).providerSettingsManager = {
+		})
+		Reflect.set(mockClineProvider, "providerSettingsManager", {
 			listConfig: vi.fn().mockResolvedValue([
 				{ name: "Zoo Gateway", apiProvider: "zoo-gateway" },
 				{ name: "Backup Zoo", apiProvider: "zoo-gateway" },
@@ -1610,8 +1809,8 @@ describe("zooCodeSignOut", () => {
 					zooSessionToken: "token-backup",
 				}),
 			saveConfig,
-		}
-		;(mockClineProvider as any).upsertProviderProfile = upsertProviderProfile
+		})
+		Reflect.set(mockClineProvider, "upsertProviderProfile", upsertProviderProfile)
 
 		await webviewMessageHandler(mockClineProvider, { type: "zooCodeSignOut" })
 
@@ -1631,20 +1830,20 @@ describe("zooCodeSignOut", () => {
 	it("still clears the in-memory handler when the active profile token is already empty on disk", async () => {
 		const upsertProviderProfile = vi.fn().mockResolvedValue(undefined)
 
-		;(mockClineProvider as any).contextProxy = {
+		Reflect.set(mockClineProvider, "contextProxy", {
 			...mockClineProvider.contextProxy,
 			getProviderSettings: vi.fn().mockReturnValue({ apiProvider: "zoo-gateway" }),
 			getValues: vi.fn().mockReturnValue({ currentApiConfigName: "Zoo Gateway" }),
-		}
-		;(mockClineProvider as any).providerSettingsManager = {
+		})
+		Reflect.set(mockClineProvider, "providerSettingsManager", {
 			listConfig: vi.fn().mockResolvedValue([{ name: "Zoo Gateway", apiProvider: "zoo-gateway" }]),
 			getProfile: vi.fn().mockResolvedValue({
 				apiProvider: "zoo-gateway",
 				zooGatewayModelId: "anthropic/claude-sonnet-4",
 			}),
 			saveConfig: vi.fn(),
-		}
-		;(mockClineProvider as any).upsertProviderProfile = upsertProviderProfile
+		})
+		Reflect.set(mockClineProvider, "upsertProviderProfile", upsertProviderProfile)
 
 		await webviewMessageHandler(mockClineProvider, { type: "zooCodeSignOut" })
 
@@ -1682,9 +1881,7 @@ describe("webviewMessageHandler - kimiCodeSignIn", () => {
 			},
 		}))
 
-		const mockOpenExternal = vi.fn().mockResolvedValue(true)
-		;(vscode as any).env = { openExternal: mockOpenExternal }
-		;(vscode as any).Uri = { parse: vi.fn((url: string) => url) }
+		const mockOpenExternal = vi.mocked(vscode.env.openExternal).mockResolvedValue(true)
 
 		await webviewMessageHandler(mockClineProvider, { type: "kimiCodeSignIn" })
 
@@ -1713,9 +1910,7 @@ describe("webviewMessageHandler - kimiCodeSignIn", () => {
 			},
 		}))
 
-		const mockOpenExternal = vi.fn().mockResolvedValue(true)
-		;(vscode as any).env = { openExternal: mockOpenExternal }
-		;(vscode as any).Uri = { parse: vi.fn((url: string) => url) }
+		vi.mocked(vscode.env.openExternal).mockResolvedValue(true)
 
 		await webviewMessageHandler(mockClineProvider, { type: "kimiCodeSignIn" })
 		await new Promise((resolve) => setTimeout(resolve, 10))
@@ -1738,9 +1933,7 @@ describe("webviewMessageHandler - kimiCodeSignIn", () => {
 			},
 		}))
 
-		const mockOpenExternal = vi.fn().mockResolvedValue(true)
-		;(vscode as any).env = { openExternal: mockOpenExternal }
-		;(vscode as any).Uri = { parse: vi.fn((url: string) => url) }
+		vi.mocked(vscode.env.openExternal).mockResolvedValue(true)
 
 		await webviewMessageHandler(mockClineProvider, { type: "kimiCodeSignIn" })
 		await new Promise((resolve) => setTimeout(resolve, 10))

@@ -32,6 +32,13 @@ interface UISettingsProps extends HTMLAttributes<HTMLDivElement> {
 	backgroundImagePosition?: "left" | "center" | "right"
 	backgroundImageOffset?: number
 	backgroundImageOpacity?: number
+	dedicatedIdeLayoutEnabled?: boolean
+	userAvatarUrl?: string | null
+	isUserAvatarRemovalPending?: boolean
+	userAvatarSelectionMessage?: string
+	isSelectingUserAvatar?: boolean
+	onSelectUserAvatar?: () => void
+	onClearUserAvatar?: () => void
 	setCachedStateField: SetCachedStateField<keyof ExtensionStateContextType>
 }
 
@@ -48,6 +55,13 @@ export const UISettings = ({
 	backgroundImagePosition = "right",
 	backgroundImageOffset = 0,
 	backgroundImageOpacity = 0.25,
+	dedicatedIdeLayoutEnabled = false,
+	userAvatarUrl,
+	isUserAvatarRemovalPending = false,
+	userAvatarSelectionMessage,
+	isSelectingUserAvatar = false,
+	onSelectUserAvatar = () => {},
+	onClearUserAvatar = () => {},
 	setCachedStateField,
 	...props
 }: UISettingsProps) => {
@@ -262,6 +276,83 @@ export const UISettings = ({
 							</div>
 						</div>
 					</SearchableSetting>
+
+					<SearchableSetting
+						settingId="ui-dedicated-ide-layout"
+						section="ui"
+						label={t("settings:ui.dedicatedIdeLayout.label")}>
+						<div className="flex flex-col gap-1">
+							<VSCodeCheckbox
+								checked={dedicatedIdeLayoutEnabled}
+								onChange={(e: any) =>
+									setCachedStateField("dedicatedIdeLayoutEnabled", e.target.checked)
+								}
+								data-testid="dedicated-ide-layout-checkbox">
+								<span className="font-medium">{t("settings:ui.dedicatedIdeLayout.label")}</span>
+							</VSCodeCheckbox>
+							<div className="text-vscode-descriptionForeground text-sm ml-5 mt-1">
+								{t("settings:ui.dedicatedIdeLayout.description")}
+							</div>
+						</div>
+					</SearchableSetting>
+
+					{dedicatedIdeLayoutEnabled ? (
+						<SearchableSetting
+							settingId="ui-user-avatar"
+							section="ui"
+							label={t("settings:ui.userAvatar.label")}>
+							<div className="flex flex-col gap-2">
+								<div>
+									<div className="font-medium">{t("settings:ui.userAvatar.label")}</div>
+									<div className="text-vscode-descriptionForeground text-sm mt-1">
+										{t("settings:ui.userAvatar.description")}
+									</div>
+								</div>
+								<div className="flex flex-col items-start gap-2">
+									<div className="flex items-center gap-3">
+										{userAvatarUrl ? (
+											<img
+												src={userAvatarUrl}
+												alt=""
+												className="size-10 rounded-full object-cover border border-vscode-editorWidget-border"
+											/>
+										) : null}
+										<Button
+											variant="secondary"
+											size="sm"
+											disabled={isSelectingUserAvatar}
+											onClick={onSelectUserAvatar}
+											data-testid="select-user-avatar-button">
+											{isSelectingUserAvatar
+												? t("settings:ui.userAvatar.selecting")
+												: t(
+														userAvatarUrl
+															? "settings:ui.userAvatar.change"
+															: "settings:ui.userAvatar.choose",
+													)}
+										</Button>
+										{userAvatarUrl && !isUserAvatarRemovalPending ? (
+											<Button
+												variant="secondary"
+												size="sm"
+												disabled={isSelectingUserAvatar}
+												onClick={onClearUserAvatar}
+												data-testid="clear-user-avatar-button">
+												{t("settings:ui.userAvatar.clear")}
+											</Button>
+										) : null}
+									</div>
+									{userAvatarSelectionMessage ? (
+										<p
+											className="m-0 text-sm text-vscode-descriptionForeground"
+											data-testid="user-avatar-selection-status">
+											{userAvatarSelectionMessage}
+										</p>
+									) : null}
+								</div>
+							</div>
+						</SearchableSetting>
+					) : null}
 
 					{/* --- Background Image Settings --- */}
 					<SectionHeader className="mt-4">{t("settings:ui.backgroundImage.sectionTitle")}</SectionHeader>
