@@ -1,6 +1,8 @@
-import { act, render, screen, fireEvent, waitFor, configure } from "@testing-library/react"
+import { act, screen, fireEvent, waitFor, configure } from "@testing-library/react"
+
+import { renderWithExtensionState } from "@/utils/test-utils"
 import { vi, describe, it, expect, beforeEach, beforeAll } from "vitest"
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { QueryClient } from "@tanstack/react-query"
 import React from "react"
 
 // Increase timeout for slow CI environments
@@ -23,6 +25,7 @@ import { useExtensionState } from "@src/context/ExtensionStateContext"
 
 // Mock the extension state context
 vi.mock("@src/context/ExtensionStateContext", () => ({
+	ExtensionStateContextProvider: ({ children }: any) => children,
 	useExtensionState: vi.fn(),
 }))
 
@@ -466,11 +469,7 @@ describe("SettingsView - Change Detection Fix", () => {
 		const onDone = vi.fn()
 		;(useExtensionState as any).mockReturnValue(createExtensionState())
 
-		render(
-			<QueryClientProvider client={queryClient}>
-				<SettingsView onDone={onDone} />
-			</QueryClientProvider>,
-		)
+		renderWithExtensionState(<SettingsView onDone={onDone} />, { queryClient })
 
 		// Wait for initial render
 		await waitFor(() => {
@@ -525,11 +524,7 @@ describe("SettingsView - Change Detection Fix", () => {
 
 		;(useExtensionState as any).mockImplementation(() => extensionState)
 
-		const { rerender } = render(
-			<QueryClientProvider client={queryClient}>
-				<SettingsView onDone={onDone} />
-			</QueryClientProvider>,
-		)
+		const { rerender } = renderWithExtensionState(<SettingsView onDone={onDone} />, { queryClient })
 
 		await waitFor(() => {
 			expect(screen.getByTestId("provider-value")).toHaveTextContent("openai")
@@ -565,11 +560,7 @@ describe("SettingsView - Change Detection Fix", () => {
 			})
 			;(useExtensionState as any).mockImplementation(() => extensionState)
 
-			rerender(
-				<QueryClientProvider client={queryClient}>
-					<SettingsView onDone={onDone} />
-				</QueryClientProvider>,
-			)
+			rerender(<SettingsView onDone={onDone} />)
 		})
 
 		// Let the import cache-busting effect run. With the old implementation,
@@ -604,11 +595,7 @@ describe("SettingsView - Change Detection Fix", () => {
 
 		;(useExtensionState as any).mockImplementation(() => extensionState)
 
-		const { rerender } = render(
-			<QueryClientProvider client={queryClient}>
-				<SettingsView onDone={onDone} />
-			</QueryClientProvider>,
-		)
+		const { rerender } = renderWithExtensionState(<SettingsView onDone={onDone} />, { queryClient })
 
 		await waitFor(() => {
 			expect(screen.getByTestId("provider-value")).toHaveTextContent("openai")
@@ -628,11 +615,7 @@ describe("SettingsView - Change Detection Fix", () => {
 			})
 			;(useExtensionState as any).mockImplementation(() => extensionState)
 
-			rerender(
-				<QueryClientProvider client={queryClient}>
-					<SettingsView onDone={onDone} />
-				</QueryClientProvider>,
-			)
+			rerender(<SettingsView onDone={onDone} />)
 		})
 
 		await waitFor(() => {
@@ -657,11 +640,7 @@ describe("SettingsView - Change Detection Fix", () => {
 
 			;(useExtensionState as any).mockImplementation(() => extensionState)
 
-			const { rerender } = render(
-				<QueryClientProvider client={queryClient}>
-					<SettingsView onDone={onDone} />
-				</QueryClientProvider>,
-			)
+			const { rerender } = renderWithExtensionState(<SettingsView onDone={onDone} />, { queryClient })
 
 			await waitFor(() => {
 				expect(screen.getByTestId("provider-value")).toHaveTextContent("openai")
@@ -685,11 +664,7 @@ describe("SettingsView - Change Detection Fix", () => {
 					apiModelId: "claude-3.5-sonnet",
 				}
 
-				rerender(
-					<QueryClientProvider client={queryClient}>
-						<SettingsView onDone={onDone} />
-					</QueryClientProvider>,
-				)
+				rerender(<SettingsView onDone={onDone} />)
 			})
 
 			// Let the mode sync effect run
@@ -725,11 +700,7 @@ describe("SettingsView - Change Detection Fix", () => {
 				})
 				;(useExtensionState as any).mockImplementation(() => extensionState)
 
-				rerender(
-					<QueryClientProvider client={queryClient}>
-						<SettingsView onDone={onDone} />
-					</QueryClientProvider>,
-				)
+				rerender(<SettingsView onDone={onDone} />)
 			})
 
 			await act(async () => {
@@ -752,11 +723,7 @@ describe("SettingsView - Change Detection Fix", () => {
 
 			;(useExtensionState as any).mockImplementation(() => extensionState)
 
-			const { rerender } = render(
-				<QueryClientProvider client={queryClient}>
-					<SettingsView onDone={onDone} />
-				</QueryClientProvider>,
-			)
+			const { rerender } = renderWithExtensionState(<SettingsView onDone={onDone} />, { queryClient })
 
 			await waitFor(() => {
 				expect(screen.getByTestId("provider-value")).toHaveTextContent("openai")
@@ -779,11 +746,7 @@ describe("SettingsView - Change Detection Fix", () => {
 				})
 				;(useExtensionState as any).mockImplementation(() => extensionState)
 
-				rerender(
-					<QueryClientProvider client={queryClient}>
-						<SettingsView onDone={onDone} />
-					</QueryClientProvider>,
-				)
+				rerender(<SettingsView onDone={onDone} />)
 			})
 
 			// Provider value should remain unchanged from the dirty state

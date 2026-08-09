@@ -2447,10 +2447,14 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 
 		// Persist chat history before tearing down resources. Closing the window
 		// mid-abort must not lose the last messages (completion / manual stop).
-		try {
-			await this.saveClineMessages()
-		} catch (error) {
-			console.error(`Error saving messages during abort for task ${this.taskId}.${this.instanceId}:`, error)
+		// A history task can be aborted while its messages are still loading; saving
+		// an empty list at that point would overwrite its persisted title.
+		if (!(this._isHistoryTask && this.clineMessages.length === 0)) {
+			try {
+				await this.saveClineMessages()
+			} catch (error) {
+				console.error(`Error saving messages during abort for task ${this.taskId}.${this.instanceId}:`, error)
+			}
 		}
 
 		this.emit(RooCodeEventName.TaskAborted)

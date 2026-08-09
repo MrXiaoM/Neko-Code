@@ -13,6 +13,8 @@ import type { ModeConfig } from "@roo-code/types"
 import { fileExistsAtPath } from "../../../utils/fs"
 import { getWorkspacePath } from "../../../utils/path"
 import { GlobalFileNames } from "../../../shared/globalFileNames"
+import { clearAllMocks } from "../../../test-utils/reset"
+import { makeExtensionContext, makeUri } from "../../../test-utils/vscode"
 
 import { CustomModesManager } from "../CustomModesManager"
 
@@ -60,19 +62,10 @@ describe("CustomModesManager - YAML Edge Cases", () => {
 
 	beforeEach(() => {
 		mockOnUpdate = vi.fn()
-		mockContext = {
-			globalState: {
-				get: vi.fn(),
-				update: vi.fn(),
-				keys: vi.fn(() => []),
-				setKeysForSync: vi.fn(),
-			},
-			globalStorageUri: {
-				fsPath: mockStoragePath,
-			},
-		} as unknown as vscode.ExtensionContext
+		mockContext = makeExtensionContext({ globalStorageUri: makeUri(mockStoragePath) })
+		mockContext.globalState.setKeysForSync = vi.fn()
 
-		mockWorkspaceFolders = [{ uri: { fsPath: mockWorkspacePath } }]
+		mockWorkspaceFolders = [{ uri: makeUri(mockWorkspacePath) }]
 		;(vscode.workspace as any).workspaceFolders = mockWorkspaceFolders
 		;(vscode.workspace.onDidSaveTextDocument as Mock).mockReturnValue({ dispose: vi.fn() })
 		;(getWorkspacePath as Mock).mockReturnValue(mockWorkspacePath)
@@ -106,7 +99,7 @@ describe("CustomModesManager - YAML Edge Cases", () => {
 	})
 
 	afterEach(() => {
-		vi.clearAllMocks()
+		clearAllMocks()
 	})
 
 	describe("BOM (Byte Order Mark) handling", () => {
