@@ -1555,8 +1555,11 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 	}
 
 	handleWebviewAskResponse(askResponse: ClineAskResponse, text?: string, images?: string[]) {
-		if (askResponse === "messageResponse") {
-			// A new user message takes over scheduling from any previously created child.
+		if (askResponse === "messageResponse" && !this.parentTaskId) {
+			// A new direct user message to a parent task takes over scheduling from any
+			// previously created child. A resumed child can also receive a messageResponse
+			// (with or without a new instruction); it must keep its parent's callback
+			// authorization so attempt_completion can still return its result.
 			// Some narrow test and compatibility providers do not implement this optional capability.
 			const provider = this.providerRef.deref()
 			if (typeof provider?.clearSubtaskCallback === "function") {

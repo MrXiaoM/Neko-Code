@@ -86,6 +86,51 @@ describe("TaskHistoryStore", () => {
 			expect(store.get("task-1")).toBeDefined()
 			expect(store.get("task-2")).toBeDefined()
 		})
+		it("prefers current per-task metadata over a stale index after restart", async () => {
+			const tasksDir = path.join(tmpDir, "tasks")
+			const parentInStaleIndex = makeHistoryItem({
+				id: "parent-task",
+				status: "active",
+				childIds: ["child-task"],
+			})
+			const parentOnDisk = {
+				...parentInStaleIndex,
+				callbackSubtaskId: "child-task",
+			}
+			const childOnDisk = makeHistoryItem({
+				id: "child-task",
+				status: "interrupted",
+				parentTaskId: "parent-task",
+				rootTaskId: "parent-task",
+			})
+
+			await fs.mkdir(path.join(tasksDir, parentOnDisk.id), { recursive: true })
+			await fs.mkdir(path.join(tasksDir, childOnDisk.id), { recursive: true })
+			await fs.writeFile(
+				path.join(tasksDir, parentOnDisk.id, GlobalFileNames.historyItem),
+				JSON.stringify(parentOnDisk),
+			)
+			await fs.writeFile(
+				path.join(tasksDir, childOnDisk.id, GlobalFileNames.historyItem),
+				JSON.stringify(childOnDisk),
+			)
+			await fs.writeFile(
+				path.join(tasksDir, GlobalFileNames.historyIndex),
+				JSON.stringify({ version: 1, updatedAt: Date.now(), entries: [parentInStaleIndex, childOnDisk] }),
+			)
+
+			await store.initialize()
+
+			expect(store.get("parent-task")).toMatchObject({
+				id: "parent-task",
+				callbackSubtaskId: "child-task",
+			})
+			expect(store.get("child-task")).toMatchObject({
+				id: "child-task",
+				status: "interrupted",
+				parentTaskId: "parent-task",
+			})
+		})
 	})
 
 	describe("get()", () => {

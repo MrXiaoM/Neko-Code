@@ -287,6 +287,10 @@ export class TaskHistoryStore {
 	/**
 	 * Scan task directories vs index and fix any drift.
 	 *
+	 * Per-task `history_item.json` files are authoritative. The index is debounced,
+	 * so it can be stale when VS Code closes before a pending index write finishes.
+	 *
+	 * - Refresh every cache entry from its valid on-disk task file
 	 * - Tasks on disk but missing from cache: read and add
 	 * - Tasks in cache but missing from disk: remove
 	 */
@@ -309,18 +313,17 @@ export class TaskHistoryStore {
 			const cacheIds = new Set(this.cache.keys())
 			let changed = false
 
-			// Tasks on disk but not in cache: read their history_item.json
+			// Always refresh from the per-task file. This preserves metadata written
+			// after the last debounced index flush, including callbackSubtaskId.
 			for (const taskId of onDiskIds) {
-				if (!cacheIds.has(taskId)) {
-					try {
-						const item = await this.readTaskFile(taskId)
-						if (item) {
-							this.cache.set(taskId, item)
-							changed = true
-						}
-					} catch {
-						// Corrupted or missing file, skip
+				try {
+					const item = await this.readTaskFile(taskId)
+					if (item && JSON.stringify(this.cache.get(taskId)) !== JSON.stringify(item)) {
+						this.cache.set(taskId, item)
+						changed = true
 					}
+				} catch {
+					// Corrupted or missing file: retain an existing index entry as a fallback.
 				}
 			}
 

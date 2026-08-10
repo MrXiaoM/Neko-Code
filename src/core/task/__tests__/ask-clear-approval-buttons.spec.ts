@@ -17,6 +17,7 @@ import { Task } from "../Task"
 type ProviderStub = {
 	getState: () => Promise<Partial<RooCodeSettings>>
 	postMessageToWebview: ReturnType<typeof vi.fn>
+	clearSubtaskCallback?: ReturnType<typeof vi.fn>
 }
 
 type AddToClineMessagesMock = {
@@ -199,6 +200,20 @@ describe("Task.ask auto-approval stamping", () => {
 		expect(historicalCommand.approvalState).toBeUndefined()
 		expect(resumeAsk.isAnswered).toBeUndefined()
 		expect(getTaskField(task, "askResponse")).toBe("yesButtonClicked")
+	})
+
+	it("keeps the parent callback when a resumed subtask continues with a new instruction", () => {
+		const clearSubtaskCallback = vi.fn()
+		const task = buildTask({
+			getState: async () => ({}),
+			postMessageToWebview: vi.fn(),
+			clearSubtaskCallback,
+		})
+		setTaskField(task, "parentTaskId", "parent-task")
+
+		task.handleWebviewAskResponse("messageResponse", "继续处理剩余工作")
+
+		expect(clearSubtaskCallback).not.toHaveBeenCalled()
 	})
 
 	it("stamps rejected when the user sends a message instead of approving a command", async () => {
