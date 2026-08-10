@@ -345,13 +345,7 @@ const renderSettingsView = (initialState: any = {}) => {
 
 	// Helper to re-render with different state for isolation testing
 	const rerenderWithState = (newState: any = {}) => {
-		const ret = render(
-			<ExtensionStateContextProvider>
-				<QueryClientProvider client={queryClient}>
-					<SettingsView onDone={onDone} />
-				</QueryClientProvider>
-			</ExtensionStateContextProvider>,
-		)
+		const ret = renderWithExtensionState(<SettingsView onDone={onDone} />)
 		act(() => {
 			mockPostMessage(newState)
 		})

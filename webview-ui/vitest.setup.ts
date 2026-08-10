@@ -1,5 +1,6 @@
 import "@testing-library/jest-dom"
 import "@testing-library/jest-dom/vitest"
+import { cleanup } from "@testing-library/react"
 
 // Mock the VSCode webview-ui-toolkit to avoid dual React instance issues caused
 // by FAST Foundation web component registration. Registered here (rather than via
@@ -63,8 +64,11 @@ Object.defineProperty(window, "matchMedia", {
 // Mock scrollIntoView which is not available in jsdom
 Element.prototype.scrollIntoView = vi.fn()
 
-// Ensure all dynamic imports are settled before jsdom teardown to prevent
-// EnvironmentTeardownError. See https://github.com/vitest-dev/vitest/issues/9872
+// Unmount every rendered tree so window-level event listeners from one test
+// cannot receive state messages dispatched by a later test.
 afterEach(async () => {
+	cleanup()
+	// Ensure all dynamic imports are settled before jsdom teardown to prevent
+	// EnvironmentTeardownError. See https://github.com/vitest-dev/vitest/issues/9872
 	await vi.dynamicImportSettled()
 })

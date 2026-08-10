@@ -36,6 +36,13 @@ const mockSelection = class extends mockRange {
 	}
 }
 
+export const RelativePattern = class {
+	constructor(base, pattern) {
+		this.base = base
+		this.pattern = pattern
+	}
+}
+
 export const workspace = {
 	workspaceFolders: [],
 	getWorkspaceFolder: () => null,
@@ -170,6 +177,7 @@ export default {
 	DiagnosticSeverity,
 	OverviewRulerLane,
 	EventEmitter,
+	RelativePattern,
 	CodeAction,
 	CodeActionKind,
 }

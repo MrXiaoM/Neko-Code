@@ -84,7 +84,7 @@ describe("ApplyPatchTool.execute - delete file success path", () => {
 		})
 
 		expect(mockAskApproval).toHaveBeenCalled()
-		expect(mockPushToolResult).toHaveBeenCalledWith(expect.stringContaining("Successfully deleted"))
+		expect(mockPushToolResult).toHaveBeenCalledWith(expect.stringContaining("已成功删除 src/obsolete.ts"))
 		expect(mockTask.didEditFile).toBe(true)
 		expect(mockHandleError).not.toHaveBeenCalled()
 

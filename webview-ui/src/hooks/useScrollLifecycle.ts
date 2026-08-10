@@ -13,7 +13,7 @@
  *   re-enable following; content measurement must never steal scroll control.
  */
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import React, { useCallback, useEffect, useInsertionEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { useEvent } from "react-use"
 import debounce from "debounce"
 import type { VirtuosoHandle } from "react-virtuoso"
@@ -52,6 +52,7 @@ export interface UseScrollLifecycleOptions {
 	virtuosoRef: React.RefObject<VirtuosoHandle | null>
 	scrollContainerRef: React.RefObject<HTMLDivElement | null>
 	taskTs: number | undefined
+	contentChangeKey: string
 	isStreaming: boolean
 	isHidden: boolean
 	hasTask: boolean
@@ -62,6 +63,7 @@ export interface UseScrollLifecycleReturn {
 	scrollPhase: ScrollPhase
 	showScrollToBottom: boolean
 	handleRowHeightChange: (isTaller: boolean) => void
+	handleContentHeightChange: () => void
 	handleScrollToBottomClick: () => void
 	enterUserBrowsingHistory: (source: ScrollFollowDisengageSource) => void
 	followOutputCallback: () => "auto" | false
@@ -79,6 +81,7 @@ export function useScrollLifecycle({
 	virtuosoRef,
 	scrollContainerRef,
 	taskTs,
+	contentChangeKey,
 	isStreaming,
 	isHidden,
 	hasTask,
@@ -108,6 +111,9 @@ export function useScrollLifecycle({
 
 	// --- Re-anchor frame ---
 	const reanchorAnimationFrameRef = useRef<number | null>(null)
+	const previousContentChangeKeyRef = useRef<string | null>(null)
+	const previousContentTaskTsRef = useRef<number | undefined>(undefined)
+	const shouldReanchorAfterContentChangeRef = useRef(false)
 
 	// -----------------------------------------------------------------------
 	// Phase transitions
@@ -259,29 +265,66 @@ export function useScrollLifecycle({
 	}, [cancelReanchorFrame, clearHydrationWindow, startHydrationWindow, taskTs, transitionScrollPhase])
 
 	// -----------------------------------------------------------------------
-	// Row height change handler
+	// Content and layout changes
 	// -----------------------------------------------------------------------
+
+	const canFollowContentChanges = useCallback(() => {
+		return scrollPhaseRef.current === "ANCHORED_FOLLOWING"
+	}, [])
+
+	// A list update is already committed by the time Virtuoso emits its next
+	// atBottomStateChange(false). Capture the physical bottom position from an
+	// insertion-effect cleanup, which React runs before it mutates the DOM for
+	// the next commit, then restore it from the next layout effect.
+	useInsertionEffect(() => {
+		const scrollContainer = scrollContainerRef.current
+		return () => {
+			const scroller = scrollContainer?.querySelector<HTMLElement>(".scrollable")
+			const distanceFromBottom = scroller
+				? scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop
+				: Number.POSITIVE_INFINITY
+			shouldReanchorAfterContentChangeRef.current =
+				canFollowContentChanges() && (isAtBottomRef.current || distanceFromBottom <= bottomTolerance)
+		}
+	}, [bottomTolerance, canFollowContentChanges, contentChangeKey, scrollContainerRef, taskTs])
+
+	useLayoutEffect(() => {
+		const isTaskChange = previousContentTaskTsRef.current !== taskTs
+		const previousContentChangeKey = previousContentChangeKeyRef.current
+		previousContentTaskTsRef.current = taskTs
+		previousContentChangeKeyRef.current = contentChangeKey
+
+		if (
+			!isTaskChange &&
+			previousContentChangeKey !== null &&
+			previousContentChangeKey !== contentChangeKey &&
+			shouldReanchorAfterContentChangeRef.current &&
+			canFollowContentChanges()
+		) {
+			scrollToBottomAuto()
+		}
+	}, [canFollowContentChanges, contentChangeKey, scrollToBottomAuto, taskTs])
 
 	const handleRowHeightChange = useCallback(
 		(isTaller: boolean) => {
-			if (
-				scrollPhaseRef.current === "USER_BROWSING_HISTORY" ||
-				scrollPhaseRef.current === "HYDRATING_PINNED_TO_BOTTOM"
-			) {
+			if (!canFollowContentChanges()) {
 				return
 			}
 
-			const shouldForcePinForAnchoredContent = scrollPhaseRef.current === "ANCHORED_FOLLOWING"
-			if (isAtBottomRef.current || shouldForcePinForAnchoredContent) {
-				if (isTaller) {
-					scrollToBottomSmooth()
-				} else {
-					scrollToBottomAuto()
-				}
+			if (isTaller) {
+				scrollToBottomSmooth()
+			} else {
+				scrollToBottomAuto()
 			}
 		},
-		[scrollToBottomSmooth, scrollToBottomAuto],
+		[canFollowContentChanges, scrollToBottomSmooth, scrollToBottomAuto],
 	)
+
+	const handleContentHeightChange = useCallback(() => {
+		if (canFollowContentChanges()) {
+			scrollToBottomAuto()
+		}
+	}, [canFollowContentChanges, scrollToBottomAuto])
 
 	// -----------------------------------------------------------------------
 	// Scroll-to-bottom click handler
@@ -496,6 +539,7 @@ export function useScrollLifecycle({
 		scrollPhase,
 		showScrollToBottom,
 		handleRowHeightChange,
+		handleContentHeightChange,
 		handleScrollToBottomClick,
 		enterUserBrowsingHistory,
 		followOutputCallback,

@@ -642,6 +642,23 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 			return false
 		}
 
+		const lastApiRequest = findLast(modifiedMessages, (message: ClineMessage) => message.say === "api_req_started")
+		const hasStreamingFailure = (() => {
+			if (!lastApiRequest?.text) {
+				return false
+			}
+
+			try {
+				return JSON.parse(lastApiRequest.text).cancelReason === "streaming_failed"
+			} catch {
+				return false
+			}
+		})()
+
+		if (hasStreamingFailure) {
+			return true
+		}
+
 		const lastMessage = messages.at(-1)
 		if (
 			(lastMessage?.type === "say" && lastMessage.say === "task_manually_stopped") ||
@@ -656,7 +673,7 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 			clineAsk === "followup" || (clineAsk !== undefined && enableButtons && primaryButtonText !== undefined)
 
 		return !isWaitingForUserInteraction
-	}, [task, messages, clineAsk, enableButtons, primaryButtonText])
+	}, [task, messages, modifiedMessages, clineAsk, enableButtons, primaryButtonText])
 
 	const markFollowUpAsAnswered = useCallback(() => {
 		const lastFollowUpMessage = messagesRef.current.findLast((msg: ClineMessage) => msg.ask === "followup")
@@ -1413,6 +1430,11 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 		return indices
 	}, [groupedMessages])
 
+	const contentChangeKey = useMemo(
+		() => groupedMessages.map((message) => `${message.ts}:${message.partial}:${message.text ?? ""}`).join("|"),
+		[groupedMessages],
+	)
+
 	const hasLatestCheckpoint = checkpointIndices.length > 0
 	const checkpointJumpCursorRef = useRef<number | null>(null)
 
@@ -1425,17 +1447,16 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 	const {
 		showScrollToBottom,
 		handleRowHeightChange,
+		handleContentHeightChange,
 		handleScrollToBottomClick,
 		enterUserBrowsingHistory,
 		followOutputCallback,
 		atBottomStateChangeCallback,
-		scrollToBottomAuto,
-		isAtBottomRef,
-		scrollPhaseRef,
 	} = useScrollLifecycle({
 		virtuosoRef,
 		scrollContainerRef,
 		taskTs: task?.ts,
+		contentChangeKey,
 		isStreaming,
 		isHidden,
 		hasTask: !!task,
@@ -2094,11 +2115,7 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 							onSend={() => handleSendMessage(inputValue, selectedImages)}
 							onSelectImages={selectImages}
 							shouldDisableImages={shouldDisableImages}
-							onHeightChange={() => {
-								if (isAtBottomRef.current && scrollPhaseRef.current !== "USER_BROWSING_HISTORY") {
-									scrollToBottomAuto()
-								}
-							}}
+							onHeightChange={handleContentHeightChange}
 							mode={mode}
 							setMode={setMode}
 							modeShortcutText={modeShortcutText}

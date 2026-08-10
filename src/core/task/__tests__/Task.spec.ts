@@ -181,6 +181,9 @@ vi.mock("vscode", () => {
 		Disposable: {
 			from: vi.fn(),
 		},
+		RelativePattern: vi.fn().mockImplementation(function (base: string, pattern: string) {
+			return { base, pattern }
+		}),
 		TabInputText: vi.fn(),
 	}
 })

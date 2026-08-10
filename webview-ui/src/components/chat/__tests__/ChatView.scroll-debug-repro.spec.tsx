@@ -266,7 +266,7 @@ const resolveFollowOutput = (isAtBottom: boolean): "auto" | false => {
 	return followOutput === "auto" ? "auto" : false
 }
 
-const postState = (clineMessages: ClineMessage[]) => {
+const postState = (clineMessages: ClineMessage[], stateOverrides: Record<string, unknown> = {}) => {
 	const message: ExtensionStateMessage = {
 		type: "state",
 		state: {
@@ -278,6 +278,7 @@ const postState = (clineMessages: ClineMessage[]) => {
 			alwaysAllowExecute: false,
 			cloudIsAuthenticated: false,
 			telemetrySetting: "enabled",
+			...stateOverrides,
 		},
 	}
 
@@ -641,6 +642,57 @@ describe("ChatView scroll behavior regression coverage", () => {
 
 		expect(resolveFollowOutput(false)).toBe("auto")
 		expect(document.querySelector(".codicon-chevron-down")).toBeNull()
+	})
+
+	it("reanchors after a new chat row when the viewport was physically at the bottom", async () => {
+		const initialMessages = buildMessages(Date.now() - 3_000)
+		await hydrate(2, initialMessages)
+		await waitForCalls(2)
+		await waitForCallsSettled()
+
+		const scrollable = getScrollable()
+		Object.defineProperties(scrollable, {
+			clientHeight: { configurable: true, value: 100 },
+			scrollHeight: { configurable: true, value: 500 },
+		})
+		scrollable.scrollTop = 400
+		await act(async () => {
+			harness.emitAtBottom(true)
+		})
+
+		const callsBeforeMessage = harness.scrollCalls
+		await act(async () => {
+			postState([
+				...initialMessages,
+				{ type: "say", say: "text", ts: initialMessages.at(-1)!.ts + 1, text: "new chat row" },
+			])
+		})
+		await flushEffects()
+
+		expect(harness.scrollCalls).toBe(callsBeforeMessage + 1)
+		expect(harness.scrollToIndexArgs.at(-1)).toMatchObject({ index: "LAST", align: "end", behavior: "auto" })
+	})
+
+	it("does not reanchor new chat rows after the user starts browsing history", async () => {
+		const initialMessages = buildMessages(Date.now() - 3_000)
+		await hydrate(2, initialMessages)
+		await waitForCalls(2)
+		await waitForCallsSettled()
+
+		await act(async () => {
+			fireEvent.wheel(getScrollable(), { deltaY: -120 })
+		})
+
+		const callsBeforeMessage = harness.scrollCalls
+		await act(async () => {
+			postState([
+				...initialMessages,
+				{ type: "say", say: "text", ts: initialMessages.at(-1)!.ts + 1, text: "history update" },
+			])
+		})
+		await flushEffects()
+
+		expect(harness.scrollCalls).toBe(callsBeforeMessage)
 	})
 
 	it("uses a stable item key when a message moves after grouping changes above it", async () => {
