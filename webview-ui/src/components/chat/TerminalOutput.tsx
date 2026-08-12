@@ -43,10 +43,18 @@ const createAnsiConverter = (preserveAnsiState: boolean) =>
 	})
 
 /**
+ * ANSI backgrounds from command output often conflict with the webview's terminal
+ * theme. Keep all other ANSI formatting, especially foreground text colors, while
+ * removing only generated background-color declarations.
+ */
+const removeAnsiBackgroundStyles = (html: string): string => html.replace(/\s*background-color\s*:[^;"']*;?/gi, "")
+
+/**
  * Renders terminal output with ANSI color/formatting support.
  *
  * Uses ansi-to-html to convert ANSI escape sequences into styled <span> elements.
  * Colors are mapped to VSCode terminal theme CSS variables for consistent theming.
+ * ANSI background colors are intentionally omitted for readability.
  *
  * The component uses a monospace font and preserves whitespace/newlines
  * to match terminal rendering behavior.
@@ -56,10 +64,10 @@ export const TerminalOutput: React.FC<TerminalOutputProps> = ({ content, classNa
 		try {
 			// ansi-to-html tracks active SGR styles on each converter. A converter
 			// must therefore never be shared between independently rendered command
-			// outputs or streaming updates, otherwise an unterminated background
-			// color can contaminate the following output. When a preview starts part
-			// way through output, consume its hidden prefix with this fresh converter
-			// so the visible tail keeps its original ANSI foreground/background state.
+			// outputs or streaming updates, otherwise an unterminated ANSI sequence
+			// can contaminate the following output. When a preview starts part way
+			// through output, consume its hidden prefix with this fresh converter so
+			// the visible tail keeps its original ANSI foreground state.
 			const converter = createAnsiConverter(Boolean(ansiContext))
 			if (ansiContext) {
 				converter.toHtml(`\x1b[0m${ansiContext}`)
@@ -68,9 +76,9 @@ export const TerminalOutput: React.FC<TerminalOutputProps> = ({ content, classNa
 				// that control sequence as visible text after replaying sticky styles.
 				// The converter is local to this render, so its remaining state cannot
 				// contaminate another command output.
-				return converter.toHtml(content)
+				return removeAnsiBackgroundStyles(converter.toHtml(content))
 			}
-			return converter.toHtml(`\x1b[0m${content}\x1b[0m`)
+			return removeAnsiBackgroundStyles(converter.toHtml(`\x1b[0m${content}\x1b[0m`))
 		} catch {
 			// Fallback: if conversion fails, show raw text (stripped of ANSI)
 			// eslint-disable-next-line no-control-regex

@@ -27,6 +27,7 @@ import { executeCommandTool } from "../tools/ExecuteCommandTool"
 import { useMcpToolTool } from "../tools/UseMcpToolTool"
 import { accessMcpResourceTool } from "../tools/accessMcpResourceTool"
 import { askFollowupQuestionTool } from "../tools/AskFollowupQuestionTool"
+import { waitForUserConfirmationTool } from "../tools/WaitForUserConfirmationTool"
 import { switchModeTool } from "../tools/SwitchModeTool"
 import { attemptCompletionTool, AttemptCompletionCallbacks } from "../tools/AttemptCompletionTool"
 import { newTaskTool } from "../tools/NewTaskTool"
@@ -384,6 +385,8 @@ export async function presentAssistantMessage(cline: Task) {
 						return `[${block.name} for '${block.params.server_name}']`
 					case "ask_followup_question":
 						return `[${block.name} for '${block.params.question}']`
+					case "wait_for_user_confirmation":
+						return `[${block.name} for '${block.params.reason}']`
 					case "attempt_completion":
 						return `[${block.name}]`
 					case "switch_mode":
@@ -838,6 +841,13 @@ export async function presentAssistantMessage(cline: Task) {
 					break
 				case "ask_followup_question":
 					await askFollowupQuestionTool.handle(cline, block as ToolUse<"ask_followup_question">, {
+						askApproval,
+						handleError,
+						pushToolResult,
+					})
+					break
+				case "wait_for_user_confirmation":
+					await waitForUserConfirmationTool.handle(cline, block as ToolUse<"wait_for_user_confirmation">, {
 						askApproval,
 						handleError,
 						pushToolResult,

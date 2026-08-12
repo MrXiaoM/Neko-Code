@@ -37,6 +37,7 @@ export const toolNames = [
 	"use_mcp_tool",
 	"access_mcp_resource",
 	"ask_followup_question",
+	"wait_for_user_confirmation",
 	"attempt_completion",
 	"switch_mode",
 	"new_task",

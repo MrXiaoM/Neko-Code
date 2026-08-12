@@ -106,6 +106,7 @@ vi.mock("react-i18next", () => ({
 }))
 
 const RUN_BUTTON_LABEL = "chat:runCommand.title"
+const CONTINUE_BUTTON_LABEL = "chat:proceedAnyways.title"
 const DENY_BUTTON_LABEL = "chat:reject.title"
 const START_NEW_TASK_BUTTON_LABEL = "chat:startNewTask.title"
 const SEE_NEW_CHANGES_BUTTON_LABEL = "chat:seeNewChanges.title"
@@ -147,6 +148,11 @@ const commandAsk = (): ClineMessage[] => [
 const autoApprovedCommandAsk = (): ClineMessage[] => [
 	{ type: "say", say: "task", ts: 1, text: "Initial task" },
 	{ type: "ask", ask: "command", ts: 2, text: "echo hi", partial: false, isAnswered: true },
+]
+
+const waitForConfirmationAsk = (): ClineMessage[] => [
+	{ type: "say", say: "task", ts: 1, text: "Initial task" },
+	{ type: "ask", ask: "wait_for_user_confirmation", ts: 2, text: "测试仍在运行，需要等待完成。", partial: false },
 ]
 
 const completionAskWithoutCheckpoint = (): ClineMessage[] => [
@@ -193,6 +199,22 @@ describe("ChatView approval button behavior", () => {
 			expect(queryByText(RUN_BUTTON_LABEL)).toBeInTheDocument()
 			expect(queryByText(DENY_BUTTON_LABEL)).toBeInTheDocument()
 		})
+	})
+
+	it("shows only Continue for a wait-for-confirmation ask and sends explicit confirmation", async () => {
+		const { getByText, queryByText } = renderChatView()
+
+		await act(async () => {
+			hydrateState(waitForConfirmationAsk())
+		})
+
+		await waitFor(() => {
+			expect(getByText(CONTINUE_BUTTON_LABEL)).toBeInTheDocument()
+			expect(queryByText(DENY_BUTTON_LABEL)).not.toBeInTheDocument()
+		})
+
+		fireEvent.click(getByText(CONTINUE_BUTTON_LABEL))
+		expect(vscode.postMessage).toHaveBeenCalledWith({ type: "askResponse", askResponse: "yesButtonClicked" })
 	})
 
 	it("never shows Run/Deny buttons when the command ask is already answered (auto-approved)", async () => {

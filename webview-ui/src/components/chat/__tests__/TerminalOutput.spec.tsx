@@ -14,14 +14,26 @@ describe("TerminalOutput", () => {
 		expect(span?.textContent).toBe("green")
 	})
 
-	it("preserves ANSI color state from a hidden output prefix", () => {
+	it("preserves foreground ANSI color state from a hidden output prefix without its background", () => {
 		const { container } = render(
-			<TerminalOutput ansiContext={"\x1B[46mhidden prefix\n"} content="visible preview" />,
+			<TerminalOutput ansiContext={"\x1B[31;46mhidden prefix\n"} content="visible preview" />,
 		)
 
 		const span = container.querySelector("span")
+		const style = span?.getAttribute("style")
 		expect(span?.textContent).toBe("visible preview")
-		expect(span?.getAttribute("style")).toContain("background-color")
+		expect(style).toContain("color")
+		expect(style).not.toContain("background-color")
+	})
+
+	it("removes ANSI background colors while retaining foreground colors", () => {
+		const { container } = render(<TerminalOutput content={"\x1B[32;45mgreen\x1B[0m"} />)
+
+		const span = container.querySelector("span")
+		const style = span?.getAttribute("style")
+		expect(span?.textContent).toBe("green")
+		expect(style).toContain("color")
+		expect(style).not.toContain("background-color")
 	})
 
 	it("escapes HTML in terminal output to prevent XSS", () => {
@@ -30,7 +42,7 @@ describe("TerminalOutput", () => {
 		expect(container.textContent).toContain('<script>alert("xss")</script>')
 	})
 
-	it("does not leak an unterminated background color into a subsequent output render", () => {
+	it("does not leak an unterminated ANSI style into a subsequent output render", () => {
 		const { container, rerender } = render(<TerminalOutput content={"\x1B[46m RUN "} />)
 
 		expect(container.querySelector("span")).toBeTruthy()

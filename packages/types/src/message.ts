@@ -27,6 +27,7 @@ import { z } from "zod"
  */
 export const clineAsks = [
 	"followup",
+	"wait_for_user_confirmation",
 	"command",
 	"command_output",
 	"completion_result",
@@ -85,6 +86,7 @@ export function isResumableAsk(ask: ClineAsk): ask is ResumableAsk {
 
 export const interactiveAsks = [
 	"followup",
+	"wait_for_user_confirmation",
 	"command",
 	"tool",
 	"use_mcp_server",
@@ -301,6 +303,8 @@ export const clineMessageSchema = z.object({
 	 */
 	approvalState: approvalStateSchema.optional(),
 	autoApprovalDecision: z.union([z.literal("approve"), z.literal("deny")]).optional(),
+	/** Identifies the command execution that produced a command_output message. */
+	commandExecutionId: z.string().optional(),
 })
 
 export type ClineMessage = z.infer<typeof clineMessageSchema>

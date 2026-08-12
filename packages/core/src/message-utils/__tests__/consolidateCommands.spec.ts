@@ -63,6 +63,26 @@ describe("consolidateCommands", () => {
 		})
 	})
 
+	it("associates delayed background output with its original command execution", () => {
+		const messages: ClineMessage[] = [
+			{ type: "ask", ask: "command", text: "pnpm test", ts: 1000 },
+			{ type: "ask", ask: "command", text: "git diff", ts: 2000 },
+			{
+				type: "say",
+				say: "command_output",
+				text: "tests completed",
+				ts: 2001,
+				commandExecutionId: "1000",
+			},
+		]
+
+		const result = consolidateCommands(messages)
+
+		expect(result).toHaveLength(2)
+		expect(result[0]!.text).toBe(`pnpm test\n${COMMAND_OUTPUT_STRING}tests completed`)
+		expect(result[1]!.text).toBe("git diff")
+	})
+
 	describe("MCP server sequences", () => {
 		it("should consolidate use_mcp_server and mcp_server_response messages", () => {
 			const messages: ClineMessage[] = [

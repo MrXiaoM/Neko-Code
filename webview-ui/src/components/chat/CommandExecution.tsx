@@ -256,15 +256,21 @@ export const CommandExecution = ({
 			title
 		)
 
+	const displayTitle = showRunningIndicator ? (
+		<span className="font-bold">{t("chat:commandExecution.running")}</span>
+	) : (
+		approvalTitle
+	)
+
 	return (
 		<>
 			<div className="flex flex-row items-center justify-between gap-2 mb-1">
 				<div className="flex flex-row items-center gap-2">
 					{icon}
 					{approvalTooltipKey ? (
-						<StandardTooltip content={t(approvalTooltipKey)}>{approvalTitle}</StandardTooltip>
+						<StandardTooltip content={t(approvalTooltipKey)}>{displayTitle}</StandardTooltip>
 					) : (
-						approvalTitle
+						displayTitle
 					)}
 					{showRunningIndicator && (
 						<StandardTooltip content={t("chat:commandExecution.running")}>

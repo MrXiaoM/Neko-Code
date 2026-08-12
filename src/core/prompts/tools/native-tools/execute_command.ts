@@ -7,7 +7,7 @@ const EXECUTE_COMMAND_DESCRIPTION = `请求在系统上执行 CLI 命令。当�
 参数：
 - command：（必需）要执行的 CLI 命令。此命令应对当前操作系统有效。确保命令格式正确且不包含任何有害指令。
 - cwd：（可选）执行命令的工作目录
-- timeout：（可选）超时时间（秒）。超时后，命令继续在后台运行，你可以收到目前为止的输出。对于可能无限期运行的命令（如开发服务器或文件监视器）设置此项，以便你无需等待它们退出即可继续。
+- timeout：（可选）超时时间（秒）。超时后，命令继续在后台运行，你可以收到目前为止的输出。对于可能无限期运行的命令（如开发服务器或文件监视器）设置此项，以便你无需等待它们退出即可继续。当命令转入后台且你必须等待其完成才能继续时，使用 wait_for_user_confirmation 工具并说明原因；不要执行无关命令、轮询或占位命令来人为等待。
 
 示例：执行 npm run dev
 { "command": "npm run dev", "cwd": null, "timeout": null }
@@ -25,7 +25,7 @@ const COMMAND_PARAMETER_DESCRIPTION = `要执行的 Shell 命令`
 
 const CWD_PARAMETER_DESCRIPTION = `命令的可选工作目录，相对或绝对路径。使用此参数后，不要在 command 中重复 cd 到同一目录`
 
-const TIMEOUT_PARAMETER_DESCRIPTION = `超时时间（秒）。超时后，命令继续在后台运行，返回目前为止收集的输出。用于长时间运行的进程，如开发服务器、文件监视器或任何可能不会自行退出的命令`
+const TIMEOUT_PARAMETER_DESCRIPTION = `超时时间（秒）。超时后，命令继续在后台运行，返回目前为止收集的输出。用于长时间运行的进程，如开发服务器、文件监视器或任何可能不会自行退出的命令。若必须等待完成，使用 wait_for_user_confirmation，不要运行无关的占位命令。`
 
 export default {
 	type: "function",

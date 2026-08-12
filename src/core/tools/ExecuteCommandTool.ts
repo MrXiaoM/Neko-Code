@@ -209,7 +209,22 @@ export class ExecuteCommandTool extends BaseTool<"execute_command"> {
 				return
 			}
 
-			const executionId = task.lastMessageTs?.toString() ?? Date.now().toString()
+			// The command ask row's timestamp is the stable execution identity used by
+			// the webview. User feedback supplied alongside approval can create a newer
+			// chat row, so `lastMessageTs` alone is not reliable after askApproval().
+			let commandAskTs: number | undefined
+			for (let index = task.clineMessages?.length ?? 0; index-- > 0; ) {
+				const message = task.clineMessages[index]
+				if (
+					message.type === "ask" &&
+					message.ask === "command" &&
+					(message.approvalState === "approved" || message.approvalState === "auto_approved")
+				) {
+					commandAskTs = message.ts
+					break
+				}
+			}
+			const executionId = commandAskTs?.toString() ?? task.lastMessageTs?.toString() ?? Date.now().toString()
 			const providerState = await provider?.getState()
 			const { terminalShellIntegrationDisabled = true } = providerState ?? {}
 
@@ -476,6 +491,7 @@ export async function executeCommandInTerminal(
 			.then(async () => {
 				await task.say("command_output", text, undefined, partial, undefined, undefined, {
 					isNonInteractive: true,
+					commandExecutionId: executionId,
 				})
 			})
 			.catch((error) => {
@@ -692,7 +708,7 @@ export async function executeCommandInTerminal(
 
 			return [
 				false,
-				`命令执行后的 ${commandExecutionTimeoutSeconds}s 后，因为超过了用户配置的超时时间而被终止。不要尝试重新运行命令。`,
+				`命令在 ${commandExecutionTimeoutSeconds}s 后因超过用户配置的超时时间而被终止。不要尝试重新运行或等待该命令完成。`,
 			]
 		}
 		throw error
@@ -724,7 +740,7 @@ export async function executeCommandInTerminal(
 			[
 				`命令已被提交到终端，工作目录为 '${currentWorkingDir}'，但终端没有在预期时间内报告它的完成状态（可能是终端整合的问题）。`,
 				result.length > 0 ? `这是目前为止的输出截取内容：\n${result}\n` : "\n",
-				"命令可能实际上已经完成。不要自动重新运行；如果你需要确认结果，请检查终端或者询问用户。",
+				"命令可能实际上已经完成。不要自动重新运行；如果后续步骤必须等待或确认结果，请使用 wait_for_user_confirmation 说明原因，而不是运行占位命令。",
 			].join("\n"),
 		]
 	}
@@ -769,7 +785,7 @@ export async function executeCommandInTerminal(
 			[
 				`${workingDir ? `来自 '${workingDir.toPosix()}' 的` : ""}终端依然在运行命令。`,
 				result.length > 0 ? `这是目前为止的输出：\n${result}\n` : "\n",
-				"你将会在未来收到新的终端状态和新的输出更新。",
+				"你将会在未来收到新的终端状态和新的输出更新。如果后续步骤必须等待命令完成，请使用 wait_for_user_confirmation 说明原因，而不是运行占位命令。",
 			].join("\n"),
 		]
 	}

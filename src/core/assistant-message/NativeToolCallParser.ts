@@ -582,6 +582,12 @@ export class NativeToolCallParser {
 				}
 				break
 
+			case "wait_for_user_confirmation":
+				if (partialArgs.reason !== undefined) {
+					nativeArgs = { reason: partialArgs.reason }
+				}
+				break
+
 			case "apply_diff": {
 				let applyDiffPath = partialArgs.path
 				let applyDiffContent = partialArgs.diff
@@ -950,6 +956,12 @@ export class NativeToolCallParser {
 							new_string: args.new_string,
 							replace_all: this.coerceOptionalBoolean(args.replace_all),
 						} as NativeArgsFor<TName>
+					}
+					break
+
+				case "wait_for_user_confirmation":
+					if (args.reason !== undefined) {
+						nativeArgs = { reason: args.reason } as NativeArgsFor<TName>
 					}
 					break
 

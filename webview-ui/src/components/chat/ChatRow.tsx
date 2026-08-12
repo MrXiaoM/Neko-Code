@@ -18,7 +18,6 @@ import type {
 
 import { Mode } from "@roo/modes"
 
-import { COMMAND_OUTPUT_STRING } from "@roo/combineCommandSequences"
 import { safeJsonParse } from "@roo/core"
 
 import { useExtensionState } from "@src/context/ExtensionStateContext"
@@ -337,16 +336,6 @@ export const ChatRowContent = ({
 			? lastModifiedMessage?.text
 			: undefined
 
-	// Only treat a command as "executing" once it has produced output (i.e. it was
-	// approved and the terminal started streaming). A pending approval ask must
-	// never show the running spinner/title — that was confusing for consecutive
-	// command approvals where the latest row is still waiting for the user.
-	const isCommandExecuting =
-		isLast &&
-		lastModifiedMessage?.ask === "command" &&
-		!!lastModifiedMessage?.text?.includes(COMMAND_OUTPUT_STRING) &&
-		lastModifiedMessage?.approvalState !== "rejected"
-
 	const isMcpServerResponding = isLast && lastModifiedMessage?.say === "mcp_server_request_started"
 
 	const type = message.type === "ask" ? message.ask : message.say
@@ -375,13 +364,9 @@ export const ChatRowContent = ({
 					]
 				}
 				return [
-					isCommandExecuting ? (
-						<ProgressIndicator />
-					) : (
-						<SquareTerminal className="size-4" aria-label="Terminal icon" />
-					),
+					<SquareTerminal className="size-4" aria-label="Terminal icon" />,
 					<span style={{ color: normalColor, fontWeight: "bold" }}>
-						{isCommandExecuting ? t("chat:commandExecution.running") : t("chat:commandExecution.pending")}
+						{t("chat:commandExecution.pending")}
 					</span>,
 				]
 			case "use_mcp_server":
@@ -488,17 +473,7 @@ export const ChatRowContent = ({
 			default:
 				return [null, null]
 		}
-	}, [
-		type,
-		isCommandExecuting,
-		message,
-		isMcpServerResponding,
-		apiReqCancelReason,
-		cost,
-		apiRequestFailedMessage,
-		t,
-		isLast,
-	])
+	}, [type, message, isMcpServerResponding, apiReqCancelReason, cost, apiRequestFailedMessage, t, isLast])
 
 	const headerStyle: React.CSSProperties = {
 		display: "flex",
@@ -1970,6 +1945,12 @@ export const ChatRowContent = ({
 					} else {
 						return null // Don't render anything when we get a completion_result ask without text
 					}
+				case "wait_for_user_confirmation":
+					return (
+						<div className="flex flex-col gap-2 ml-6">
+							<Markdown markdown={message.text} partial={message.partial} />
+						</div>
+					)
 				case "followup":
 					return isEditorConversation ? (
 						<div data-testid="agent-question" className="flex items-end justify-start gap-2">

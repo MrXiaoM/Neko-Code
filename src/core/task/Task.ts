@@ -1396,7 +1396,11 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 		// conversational asks (e.g. followup) so the task does not hang on an
 		// unanswered prompt.
 		const shouldDrainQueuedMessageForAsk =
-			type !== "command" && type !== "tool" && type !== "use_mcp_server" && type !== "external_tool_result"
+			type !== "command" &&
+			type !== "tool" &&
+			type !== "use_mcp_server" &&
+			type !== "external_tool_result" &&
+			type !== "wait_for_user_confirmation"
 		const isStatusMutable = !partial && isBlocking && !isMessageQueued && approval.decision === "ask"
 
 		if (isStatusMutable) {
@@ -1875,6 +1879,7 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 		progressStatus?: ToolProgressStatus,
 		options: {
 			isNonInteractive?: boolean
+			commandExecutionId?: string
 		} = {},
 		contextCondense?: ContextCondense,
 		contextTruncation?: ContextTruncation,
@@ -1887,7 +1892,11 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 			const lastMessage = this.clineMessages.at(-1)
 
 			const isUpdatingPreviousPartial =
-				lastMessage && lastMessage.partial && lastMessage.type === "say" && lastMessage.say === type
+				lastMessage &&
+				lastMessage.partial &&
+				lastMessage.type === "say" &&
+				lastMessage.say === type &&
+				lastMessage.commandExecutionId === options.commandExecutionId
 
 			if (partial) {
 				if (isUpdatingPreviousPartial) {
@@ -1896,6 +1905,7 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 					lastMessage.images = images
 					lastMessage.partial = partial
 					lastMessage.progressStatus = progressStatus
+					lastMessage.commandExecutionId = options.commandExecutionId
 					// Fire-and-forget: webview post is internally guarded, but the
 					// `RooCodeEventName.Message` emit can synchronously throw via a
 					// consumer-attached listener. Surface that as a log, not an
@@ -1920,6 +1930,7 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 						partial,
 						contextCondense,
 						contextTruncation,
+						commandExecutionId: options.commandExecutionId,
 					})
 				}
 			} else {
@@ -1935,6 +1946,7 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 					lastMessage.images = images
 					lastMessage.partial = false
 					lastMessage.progressStatus = progressStatus
+					lastMessage.commandExecutionId = options.commandExecutionId
 
 					// Instead of streaming partialMessage events, we do a save
 					// and post like normal to persist to disk.
@@ -1962,6 +1974,7 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 						images,
 						contextCondense,
 						contextTruncation,
+						commandExecutionId: options.commandExecutionId,
 					})
 				}
 			}
@@ -1986,6 +1999,7 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 				checkpoint,
 				contextCondense,
 				contextTruncation,
+				commandExecutionId: options.commandExecutionId,
 			})
 		}
 	}

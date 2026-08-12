@@ -103,6 +103,7 @@ export type NativeToolArgs = {
 	apply_patch: { patch: string }
 	list_files: { path: string; recursive?: boolean }
 	new_task: { mode: string; message: string; todos?: string }
+	wait_for_user_confirmation: { reason: string }
 	ask_followup_question: {
 		question: string
 		follow_up: Array<{ text: string; mode?: string }>
@@ -228,6 +229,11 @@ export interface AskFollowupQuestionToolUse extends ToolUse<"ask_followup_questi
 	params: Partial<Pick<Record<ToolParamName, string>, "question" | "follow_up">>
 }
 
+export interface WaitForUserConfirmationToolUse extends ToolUse<"wait_for_user_confirmation"> {
+	name: "wait_for_user_confirmation"
+	params: Partial<Pick<Record<ToolParamName, string>, "reason">>
+}
+
 export interface AttemptCompletionToolUse extends ToolUse<"attempt_completion"> {
 	name: "attempt_completion"
 	params: Partial<Pick<Record<ToolParamName, string>, "result">>
@@ -281,6 +287,7 @@ export const TOOL_DISPLAY_NAMES: Record<ToolName, string> = {
 	use_mcp_tool: "use mcp tools",
 	access_mcp_resource: "access mcp resources",
 	ask_followup_question: "ask questions",
+	wait_for_user_confirmation: "wait for user confirmation",
 	attempt_completion: "complete tasks",
 	switch_mode: "switch modes",
 	new_task: "create new task",
@@ -317,6 +324,7 @@ export const TOOL_GROUPS: Record<ToolGroup, ToolGroupConfig> = {
 // Tools that are always available to all modes.
 export const ALWAYS_AVAILABLE_TOOLS: ToolName[] = [
 	"ask_followup_question",
+	"wait_for_user_confirmation",
 	"attempt_completion",
 	"switch_mode",
 	"new_task",

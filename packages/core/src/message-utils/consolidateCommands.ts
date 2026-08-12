@@ -76,58 +76,61 @@ export function consolidateCommands(messages: ClineMessage[]): ClineMessage[] {
 				consolidatedMessages.set(msg.ts, { ...msg })
 			}
 		}
-		// Handle command sequences
+		// Handle command sequences. New command_output messages carry a stable
+		// execution ID, so a background command's delayed output can be associated
+		// with its original command even after newer commands have been requested.
+		// Legacy messages without an ID retain the historical adjacent-sequence
+		// behavior for backwards compatibility.
 		else if (msg.type === "ask" && msg.ask === "command") {
 			let consolidatedText = msg.text || ""
-			let j = i + 1
 			let previous: { type: "ask" | "say"; text: string } | undefined
-			let lastProcessedIndex = i
+			const executionId = msg.commandExecutionId ?? msg.ts.toString()
+			let canConsumeLegacyOutput = true
 
-			while (j < messages.length) {
+			for (let j = i + 1; j < messages.length; j++) {
 				const currentMsg = messages[j]
 				if (!currentMsg) {
-					j++
 					continue
 				}
+
 				const { type, ask, say, text = "" } = currentMsg
-
 				if (type === "ask" && ask === "command") {
-					break // Stop if we encounter the next command.
+					canConsumeLegacyOutput = false
+					continue
 				}
 
-				if (ask === "command_output" || say === "command_output") {
-					if (!previous) {
-						consolidatedText += `\n${COMMAND_OUTPUT_STRING}`
-					}
-
-					const isDuplicate = previous && previous.type !== type && previous.text === text
-
-					if (text.length > 0 && !isDuplicate) {
-						// Add a newline before adding the text if there's already content
-						if (
-							previous &&
-							consolidatedText.length >
-								consolidatedText.indexOf(COMMAND_OUTPUT_STRING) + COMMAND_OUTPUT_STRING.length
-						) {
-							consolidatedText += "\n"
-						}
-						consolidatedText += text
-					}
-
-					previous = { type, text }
-					processedIndices.add(j)
-					lastProcessedIndex = j
+				if (ask !== "command_output" && say !== "command_output") {
+					continue
 				}
 
-				j++
+				const belongsToCommand = currentMsg.commandExecutionId
+					? currentMsg.commandExecutionId === executionId
+					: canConsumeLegacyOutput
+				if (!belongsToCommand) {
+					continue
+				}
+
+				if (!previous) {
+					consolidatedText += `\n${COMMAND_OUTPUT_STRING}`
+				}
+
+				const isDuplicate = previous && previous.type !== type && previous.text === text
+				if (text.length > 0 && !isDuplicate) {
+					if (
+						previous &&
+						consolidatedText.length >
+							consolidatedText.indexOf(COMMAND_OUTPUT_STRING) + COMMAND_OUTPUT_STRING.length
+					) {
+						consolidatedText += "\n"
+					}
+					consolidatedText += text
+				}
+
+				previous = { type, text }
+				processedIndices.add(j)
 			}
 
 			consolidatedMessages.set(msg.ts, { ...msg, text: consolidatedText })
-
-			// Only skip ahead if we actually processed command outputs
-			if (lastProcessedIndex > i) {
-				i = lastProcessedIndex
-			}
 		}
 	}
 
@@ -142,8 +145,9 @@ export function consolidateCommands(messages: ClineMessage[]): ClineMessage[] {
 			continue
 		}
 
-		// Skip command_output and mcp_server_response messages
-		if (msg.ask === "command_output" || msg.say === "command_output" || msg.say === "mcp_server_response") {
+		// Command output is removed only after it has been attached to its owning
+		// command. Preserve unmatched output rather than silently losing it.
+		if (msg.say === "mcp_server_response") {
 			continue
 		}
 

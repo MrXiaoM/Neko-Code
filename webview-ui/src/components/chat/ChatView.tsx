@@ -388,6 +388,13 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 							setPrimaryButtonText(undefined)
 							setSecondaryButtonText(undefined)
 							break
+						case "wait_for_user_confirmation":
+							setSendingDisabled(isPartial)
+							setClineAsk("wait_for_user_confirmation")
+							setEnableButtons(!isPartial)
+							setPrimaryButtonText(t("chat:proceedAnyways.title"))
+							setSecondaryButtonText(undefined)
+							break
 						case "tool":
 							setSendingDisabled(isPartial)
 							setClineAsk("tool")
@@ -764,6 +771,7 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 						clineAskRef.current // Use clineAskRef.current
 					) {
 						case "followup":
+						case "wait_for_user_confirmation":
 						case "tool":
 						case "command": // User can provide feedback to a tool or command use.
 						case "use_mcp_server":
@@ -876,6 +884,7 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 
 			switch (clineAsk) {
 				case "api_req_failed":
+				case "wait_for_user_confirmation":
 				case "command":
 				case "tool":
 				case "use_mcp_server":
