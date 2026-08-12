@@ -298,10 +298,12 @@ const TaskHeader = ({
 							<>
 								<div
 									ref={textContainerRef}
-									className="text-vscode-font-size overflow-y-auto break-words break-anywhere relative">
+									className="text-vscode-font-size break-words break-anywhere relative"
+									data-testid="task-prompt-container">
 									<div
 										ref={textRef}
 										className="overflow-auto max-h-80 whitespace-pre-wrap break-words break-anywhere cursor-text py-0.5"
+										data-testid="task-prompt-scrollbox"
 										style={{
 											display: "-webkit-box",
 											WebkitLineClamp: "unset",

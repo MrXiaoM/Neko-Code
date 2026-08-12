@@ -159,6 +159,18 @@ describe("TaskHeader", () => {
 		expect(todoSlot.className).toContain("relative")
 	})
 
+	it("keeps long prompt scrolling within the prompt box instead of the outer container", () => {
+		renderTaskHeader({ task: { ...defaultProps.task, text: "Long prompt".repeat(1_000) } })
+
+		fireEvent.click(screen.getByTestId("task-summary-panel"))
+
+		const promptContainer = screen.getByTestId("task-prompt-container")
+		const promptScrollbox = screen.getByTestId("task-prompt-scrollbox")
+		expect(promptContainer).toContainElement(promptScrollbox)
+		expect(promptContainer).not.toHaveClass("overflow-y-auto")
+		expect(promptScrollbox).toHaveClass("overflow-auto", "max-h-80")
+	})
+
 	it("should render the condense context button in the collapsed state", () => {
 		renderTaskHeader()
 		// Button is visible without expanding the task header
