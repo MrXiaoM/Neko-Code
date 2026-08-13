@@ -1,4 +1,4 @@
-import { ANTHROPIC_API_PROTOCOL, OPENAI_API_PROTOCOL, providerIdentifiers } from "../index.js"
+import { ANTHROPIC_API_PROTOCOL, OPENAI_API_PROTOCOL, providerIdentifiers, providerNames } from "../index.js"
 import {
 	getApiProtocol,
 	OPEN_AI_CODEX_SERVICE_TIER_KEY,
@@ -7,6 +7,37 @@ import {
 	providerSettingsSchemaDiscriminated,
 } from "../provider-settings.js"
 import { OpenAiCodexServiceTier, OpenAiServiceTier } from "../model.js"
+import { providerDefinitionList } from "../provider-settings/index.js"
+
+describe("provider settings discriminated union", () => {
+	it("composes exactly one provider-specific definition for every provider", () => {
+		const registeredProviders = providerDefinitionList.map(({ apiProvider }) => apiProvider)
+
+		expect([...registeredProviders].sort()).toEqual([...providerNames].sort())
+		expect(new Set(registeredProviders).size).toBe(providerNames.length)
+	})
+
+	it.each(providerNames)("accepts the %s provider branch", (apiProvider) => {
+		expect(providerSettingsSchemaDiscriminated.safeParse({ apiProvider }).success).toBe(true)
+	})
+})
+
+describe("Anthropic provider settings", () => {
+	it("preserves custom context window and pricing overrides in both schemas", () => {
+		const settings = {
+			apiProvider: providerIdentifiers.anthropic,
+			apiModelId: "claude-3-5-sonnet-20241022",
+			anthropicCustomContextWindow: 64_000,
+			anthropicCustomInputPrice: 1.5,
+			anthropicCustomOutputPrice: 7.5,
+			anthropicCustomCacheWritesPrice: 2.25,
+			anthropicCustomCacheReadsPrice: 0.3,
+		}
+
+		expect(providerSettingsSchema.parse(settings)).toEqual(settings)
+		expect(providerSettingsSchemaDiscriminated.parse(settings)).toEqual(settings)
+	})
+})
 
 describe("OpenAI Codex provider settings", () => {
 	it("preserves the Fast preference in general and provider-specific schemas", () => {
