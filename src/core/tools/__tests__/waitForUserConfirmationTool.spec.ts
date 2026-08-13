@@ -62,6 +62,52 @@ describe("WaitForUserConfirmationTool", () => {
 		)
 	})
 
+	it("does not create a user feedback row for a plain confirmation", async () => {
+		;(mockTask.ask as ReturnType<typeof vi.fn>).mockResolvedValue({
+			response: "yesButtonClicked",
+			text: undefined,
+			images: [],
+		})
+
+		await tool.execute({ reason: "命令仍在后台运行。" }, mockTask, mockCallbacks)
+
+		expect(mockTask.say).not.toHaveBeenCalled()
+		expect(mockCallbacks.pushToolResult).toHaveBeenCalledWith(
+			formatResponse.toolResult("<user_message>\n\n</user_message>", []),
+		)
+	})
+
+	it("does not create a user feedback row for whitespace-only feedback", async () => {
+		;(mockTask.ask as ReturnType<typeof vi.fn>).mockResolvedValue({
+			response: "yesButtonClicked",
+			text: "  \n\t  ",
+			images: [],
+		})
+
+		await tool.execute({ reason: "命令仍在后台运行。" }, mockTask, mockCallbacks)
+
+		expect(mockTask.say).not.toHaveBeenCalled()
+		expect(mockCallbacks.pushToolResult).toHaveBeenCalledWith(
+			formatResponse.toolResult("<user_message>\n\n</user_message>", []),
+		)
+	})
+
+	it("records image-only feedback", async () => {
+		const images = ["data:image/png;base64,iVBORw0KGgo="]
+		;(mockTask.ask as ReturnType<typeof vi.fn>).mockResolvedValue({
+			response: "yesButtonClicked",
+			text: undefined,
+			images,
+		})
+
+		await tool.execute({ reason: "命令仍在后台运行。" }, mockTask, mockCallbacks)
+
+		expect(mockTask.say).toHaveBeenCalledWith("user_feedback", "", images)
+		expect(mockCallbacks.pushToolResult).toHaveBeenCalledWith(
+			formatResponse.toolResult("<user_message>\n\n</user_message>", images),
+		)
+	})
+
 	it("renders the reason while the native tool call is streaming", async () => {
 		const block = {
 			type: "tool_use",

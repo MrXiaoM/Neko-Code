@@ -32,8 +32,15 @@ export class WaitForUserConfirmationTool extends BaseTool<"wait_for_user_confirm
 
 			task.consecutiveMistakeCount = 0
 			const { text, images } = await task.ask("wait_for_user_confirmation", reason, false)
-			const safeText = text ?? ""
-			await task.say("user_feedback", safeText, images)
+			const safeText = text?.trim() ?? ""
+			const hasImages = Boolean(images?.length)
+
+			// A plain confirmation has no user-authored content, so avoid adding an
+			// empty user_feedback row to the chat timeline. The empty tool result still
+			// conveys confirmation to the model and allows the task to continue.
+			if (safeText || hasImages) {
+				await task.say("user_feedback", safeText, images)
+			}
 			pushToolResult(formatResponse.toolResult(`<user_message>\n${safeText}\n</user_message>`, images))
 		} catch (error) {
 			await handleError("waiting for user confirmation", error as Error)
