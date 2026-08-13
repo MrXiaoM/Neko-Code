@@ -9,16 +9,16 @@ vi.mock("@roo-code/ipc", () => ({
 }))
 
 describe("API - configuration", () => {
-	it("persists every supplied mode API config mapping", async () => {
+	it("replaces the current workspace mapping with every supplied mode API config", async () => {
 		const setValues = vi.fn().mockResolvedValue(undefined)
 		const saveConfig = vi.fn().mockResolvedValue("default-id")
-		const setModeConfig = vi.fn().mockResolvedValue(undefined)
+		const setModeConfigs = vi.fn().mockResolvedValue(undefined)
 		const postStateToWebview = vi.fn().mockResolvedValue(undefined)
 		const provider = {
 			context: {},
 			on: vi.fn(),
 			contextProxy: { setValues },
-			providerSettingsManager: { saveConfig, setModeConfig },
+			providerSettingsManager: { saveConfig, setModeConfigs },
 			postStateToWebview,
 		} as unknown as ClineProvider
 		const outputChannel = { appendLine: vi.fn() } as unknown as vscode.OutputChannel
@@ -36,22 +36,20 @@ describe("API - configuration", () => {
 				modeApiConfigs: expect.anything(),
 			}),
 		)
-		expect(setModeConfig).toHaveBeenCalledTimes(2)
-		expect(setModeConfig).toHaveBeenCalledWith("code", "code-config")
-		expect(setModeConfig).toHaveBeenCalledWith("architect", "architect-config")
+		expect(setModeConfigs).toHaveBeenCalledWith({ code: "code-config", architect: "architect-config" })
 		expect(postStateToWebview).toHaveBeenCalledOnce()
 	})
 
 	it("does not persist mode mappings when none are supplied", async () => {
 		const setValues = vi.fn().mockResolvedValue(undefined)
 		const saveConfig = vi.fn().mockResolvedValue("default-id")
-		const setModeConfig = vi.fn().mockResolvedValue(undefined)
+		const setModeConfigs = vi.fn().mockResolvedValue(undefined)
 		const postStateToWebview = vi.fn().mockResolvedValue(undefined)
 		const provider = {
 			context: {},
 			on: vi.fn(),
 			contextProxy: { setValues },
-			providerSettingsManager: { saveConfig, setModeConfig },
+			providerSettingsManager: { saveConfig, setModeConfigs },
 			postStateToWebview,
 		} as unknown as ClineProvider
 		const outputChannel = { appendLine: vi.fn() } as unknown as vscode.OutputChannel
@@ -59,7 +57,7 @@ describe("API - configuration", () => {
 
 		await api.setConfiguration({ currentApiConfigName: "default" })
 
-		expect(setModeConfig).not.toHaveBeenCalled()
+		expect(setModeConfigs).not.toHaveBeenCalled()
 		expect(postStateToWebview).toHaveBeenCalledOnce()
 	})
 })

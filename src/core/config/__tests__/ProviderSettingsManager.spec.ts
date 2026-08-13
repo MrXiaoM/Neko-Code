@@ -446,26 +446,103 @@ describe("ProviderSettingsManager", () => {
 	})
 
 	describe("GetModeConfigs", () => {
-		it("returns a copy of all persisted mode associations", async () => {
-			mockSecrets.get.mockResolvedValue(
-				JSON.stringify({
-					currentApiConfigName: "default",
-					apiConfigs: { default: { id: "default" } },
-					modeApiConfigs: {
-						code: "code-config-id",
-						architect: "architect-config-id",
-					},
+		const makeState = (initialValues: Record<string, unknown> = {}) => {
+			const values = new Map(Object.entries(initialValues))
+			return {
+				get: vi.fn(<T>(key: string) => values.get(key) as T | undefined),
+				update: vi.fn(async (key: string, value: unknown) => {
+					if (value === undefined) {
+						values.delete(key)
+					} else {
+						values.set(key, value)
+					}
 				}),
-			)
+				keys: vi.fn(() => [...values.keys()]),
+				setKeysForSync: vi.fn(),
+			}
+		}
 
-			const modeConfigs = await providerSettingsManager.getModeConfigs()
-			modeConfigs.code = "modified"
+		it("inherits the latest global mapping for a new workspace and persists an independent copy", async () => {
+			const globalState = makeState({
+				latestModeApiConfigs: { code: "code-config-id", architect: "architect-config-id" },
+			})
+			const workspaceState = makeState()
+			const context = makeExtensionContext({ globalState, workspaceState })
+			const manager = new ProviderSettingsManager(context)
 
-			expect(modeConfigs).toEqual({ code: "modified", architect: "architect-config-id" })
-			expect(await providerSettingsManager.getModeConfigs()).toEqual({
+			const modeConfigs = await manager.getModeConfigs()
+			modeConfigs.code = "mutated-by-caller"
+
+			expect(await manager.getModeConfigs()).toEqual({
 				code: "code-config-id",
 				architect: "architect-config-id",
 			})
+			expect(workspaceState.update).toHaveBeenCalledWith("modeApiConfigs", {
+				code: "code-config-id",
+				architect: "architect-config-id",
+			})
+			expect(globalState.update).not.toHaveBeenCalled()
+		})
+
+		it("keeps workspace mappings isolated while each update replaces the latest global mapping", async () => {
+			const globalState = makeState({ latestModeApiConfigs: { code: "shared-code" } })
+			const firstWorkspaceState = makeState()
+			const secondWorkspaceState = makeState()
+			const firstManager = new ProviderSettingsManager(
+				makeExtensionContext({ globalState, workspaceState: firstWorkspaceState }),
+			)
+			const secondManager = new ProviderSettingsManager(
+				makeExtensionContext({ globalState, workspaceState: secondWorkspaceState }),
+			)
+
+			await firstManager.setModeConfig("code", "first-workspace-code")
+			expect(await secondManager.getModeConfigs()).toEqual({ code: "first-workspace-code" })
+
+			await secondManager.setModeConfig("architect", "second-workspace-architect")
+
+			expect(await firstManager.getModeConfigs()).toEqual({ code: "first-workspace-code" })
+			expect(await secondManager.getModeConfigs()).toEqual({
+				code: "first-workspace-code",
+				architect: "second-workspace-architect",
+			})
+			expect(globalState.update).toHaveBeenLastCalledWith("latestModeApiConfigs", {
+				code: "first-workspace-code",
+				architect: "second-workspace-architect",
+			})
+		})
+
+		it("uses the legacy global mapping once when no latest mapping exists", async () => {
+			const legacyProviderProfiles = JSON.stringify({
+				currentApiConfigName: "default",
+				apiConfigs: { default: { id: "default" } },
+				modeApiConfigs: { code: "legacy-code-config" },
+			})
+			const legacySecrets = {
+				...baseContext.secrets,
+				get: vi.fn().mockResolvedValue(legacyProviderProfiles),
+				store: vi.fn().mockResolvedValue(undefined),
+				delete: vi.fn().mockResolvedValue(undefined),
+			}
+			const globalState = makeState()
+			const workspaceState = makeState()
+			const manager = new ProviderSettingsManager(
+				makeExtensionContext({ globalState, workspaceState, secrets: legacySecrets }),
+			)
+
+			expect(await manager.getModeConfigs()).toEqual({ code: "legacy-code-config" })
+			expect(workspaceState.update).toHaveBeenCalledWith("modeApiConfigs", { code: "legacy-code-config" })
+			expect(globalState.update).toHaveBeenCalledWith("latestModeApiConfigs", { code: "legacy-code-config" })
+		})
+
+		it("replaces the current workspace and latest mapping through the bulk setter", async () => {
+			const globalState = makeState({ latestModeApiConfigs: { code: "old-code" } })
+			const workspaceState = makeState({ modeApiConfigs: { code: "workspace-code", ask: "workspace-ask" } })
+			const manager = new ProviderSettingsManager(makeExtensionContext({ globalState, workspaceState }))
+
+			await manager.setModeConfigs({ architect: "new-architect" })
+
+			expect(await manager.getModeConfigs()).toEqual({ architect: "new-architect" })
+			expect(globalState.update).toHaveBeenLastCalledWith("latestModeApiConfigs", { architect: "new-architect" })
 		})
 	})
 

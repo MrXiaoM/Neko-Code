@@ -56,6 +56,8 @@ export type ProviderProfiles = z.infer<typeof providerProfilesSchema>
 
 export class ProviderSettingsManager {
 	private static readonly SCOPE_PREFIX = "roo_cline_config_"
+	private static readonly WORKSPACE_MODE_API_CONFIGS_KEY = "modeApiConfigs"
+	private static readonly LATEST_MODE_API_CONFIGS_KEY = "latestModeApiConfigs"
 	private readonly defaultConfigId = this.generateId()
 
 	private readonly defaultModeApiConfigs: Record<string, string> = Object.fromEntries(
@@ -593,19 +595,14 @@ export class ProviderSettingsManager {
 	}
 
 	/**
-	 * Set the API config for a specific mode.
+	 * 为指定模式设置当前工作区的 API 档案，并将完整映射更新为全局最近方案。
 	 */
-	public async setModeConfig(mode: Mode, configId: string) {
+	public async setModeConfig(mode: Mode, configId: string): Promise<void> {
 		try {
 			return await this.lock(async () => {
-				const providerProfiles = await this.load()
-				// Ensure the per-mode config map exists
-				if (!providerProfiles.modeApiConfigs) {
-					providerProfiles.modeApiConfigs = {}
-				}
-				// Assign the chosen config ID to this mode
-				providerProfiles.modeApiConfigs[mode] = configId
-				await this.store(providerProfiles)
+				const modeApiConfigs = await this.getWorkspaceModeConfigsUnlocked()
+				modeApiConfigs[mode] = configId
+				await this.storeWorkspaceAndLatestModeConfigsUnlocked(modeApiConfigs)
 			})
 		} catch (error) {
 			throw new Error(`Failed to set mode config: ${error}`)
@@ -613,25 +610,75 @@ export class ProviderSettingsManager {
 	}
 
 	/**
-	 * Get all mode-to-config associations.
+	 * 完整覆盖当前工作区的模式到档案映射，并同步更新全局最近方案。
+	 */
+	public async setModeConfigs(modeApiConfigs: Record<string, string>): Promise<void> {
+		try {
+			return await this.lock(async () => {
+				await this.storeWorkspaceAndLatestModeConfigsUnlocked(modeApiConfigs)
+			})
+		} catch (error) {
+			throw new Error(`Failed to set mode configs: ${error}`)
+		}
+	}
+
+	/**
+	 * 获取当前工作区的模式到档案映射。
+	 *
+	 * 未配置过的工作区会继承全局最近方案并立即保存，之后不再受其他工作区的修改影响。
 	 */
 	public async getModeConfigs(): Promise<Record<string, string>> {
 		try {
-			return await this.lock(async () => {
-				const { modeApiConfigs } = await this.load()
-				return { ...(modeApiConfigs ?? {}) }
-			})
+			return await this.lock(async () => ({ ...(await this.getWorkspaceModeConfigsUnlocked()) }))
 		} catch (error) {
 			throw new Error(`Failed to get mode configs: ${error}`)
 		}
 	}
 
 	/**
-	 * Get the API config ID for a specific mode.
+	 * 获取指定模式在当前工作区关联的 API 档案 ID。
 	 */
 	public async getModeConfigId(mode: Mode) {
 		const modeApiConfigs = await this.getModeConfigs()
 		return modeApiConfigs[mode]
+	}
+
+	private async getWorkspaceModeConfigsUnlocked(): Promise<Record<string, string>> {
+		const workspaceModeApiConfigs = this.context.workspaceState.get<Record<string, string>>(
+			ProviderSettingsManager.WORKSPACE_MODE_API_CONFIGS_KEY,
+		)
+
+		if (workspaceModeApiConfigs !== undefined) {
+			return { ...workspaceModeApiConfigs }
+		}
+
+		const latestModeApiConfigs = this.context.globalState.get<Record<string, string>>(
+			ProviderSettingsManager.LATEST_MODE_API_CONFIGS_KEY,
+		)
+		const inheritedModeApiConfigs =
+			latestModeApiConfigs === undefined ? ((await this.load()).modeApiConfigs ?? {}) : latestModeApiConfigs
+
+		await this.context.workspaceState.update(
+			ProviderSettingsManager.WORKSPACE_MODE_API_CONFIGS_KEY,
+			inheritedModeApiConfigs,
+		)
+
+		if (latestModeApiConfigs === undefined) {
+			await this.context.globalState.update(
+				ProviderSettingsManager.LATEST_MODE_API_CONFIGS_KEY,
+				inheritedModeApiConfigs,
+			)
+		}
+
+		return { ...inheritedModeApiConfigs }
+	}
+
+	private async storeWorkspaceAndLatestModeConfigsUnlocked(modeApiConfigs: Record<string, string>): Promise<void> {
+		const modeConfigsCopy = { ...modeApiConfigs }
+		await Promise.all([
+			this.context.workspaceState.update(ProviderSettingsManager.WORKSPACE_MODE_API_CONFIGS_KEY, modeConfigsCopy),
+			this.context.globalState.update(ProviderSettingsManager.LATEST_MODE_API_CONFIGS_KEY, modeConfigsCopy),
+		])
 	}
 
 	public async export() {
