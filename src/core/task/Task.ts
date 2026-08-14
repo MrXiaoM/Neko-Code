@@ -367,6 +367,11 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 	presentAssistantMessageLocked = false
 	presentAssistantMessageHasPendingUpdates = false
 	userMessageContent: (Anthropic.TextBlockParam | Anthropic.ImageBlockParam | Anthropic.ToolResultBlockParam)[] = []
+	/**
+	 * User-authored notes supplied together with an approval decision. These must
+	 * remain distinct from tool output when the next model request is assembled.
+	 */
+	private pendingApprovalUserMessages: Array<{ text?: string; images?: string[] }> = []
 	userMessageContentReady = false
 
 	/**
@@ -427,6 +432,41 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 		this.userMessageContent.push(toolResult)
 		return true
 	}
+	/**
+	 * Queue user-authored approval feedback until all tool results for the
+	 * assistant turn are available. Native tool protocols require matching
+	 * `tool_result` blocks to remain contiguous before user text can follow.
+	 */
+	public queueApprovalUserMessage(text?: string, images?: string[]): void {
+		if (!text && !images?.length) {
+			return
+		}
+
+		this.pendingApprovalUserMessages.push({ text, images })
+	}
+
+	/**
+	 * Append queued approval feedback as explicit user content after all pending
+	 * tool results. This preserves the provenance of instructions supplied with
+	 * an approval instead of serializing them as tool output.
+	 */
+	public appendPendingApprovalUserMessages(): void {
+		for (const { text, images } of this.pendingApprovalUserMessages) {
+			if (text) {
+				this.userMessageContent.push({
+					type: "text",
+					text: `<user_message>\n${text}\n</user_message>`,
+				})
+			}
+
+			if (images?.length) {
+				this.userMessageContent.push(...formatResponse.imageBlocks(images))
+			}
+		}
+
+		this.pendingApprovalUserMessages = []
+	}
+
 	didRejectTool = false
 	didAlreadyUseTool = false
 	didToolFailInCurrentTurn = false
@@ -936,8 +976,9 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 	 * So we usually only need to flush the pending user message with tool_results.
 	 */
 	public async flushPendingToolResultsToHistory(): Promise<boolean> {
-		// Only flush if there's actually pending content to save
-		if (this.userMessageContent.length === 0) {
+		// Only flush if there's actually pending content to save.
+		// Approval feedback is queued separately until tool results are contiguous.
+		if (this.userMessageContent.length === 0 && this.pendingApprovalUserMessages.length === 0) {
 			return true
 		}
 
@@ -970,6 +1011,10 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 		if (this.abort) {
 			return false
 		}
+
+		// Keep tool results contiguous, then append any user-authored approval
+		// feedback as distinct `<user_message>` blocks before persisting.
+		this.appendPendingApprovalUserMessages()
 
 		// Save the user message with tool_result blocks
 		const userMessage: Anthropic.MessageParam = {
@@ -3906,6 +3951,7 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 					// system events, not synthetic user feedback or duplicate tool results.
 					this.consumeBackgroundSystemEvents()
 					await this.consumeQueuedMessagesForNextTurn()
+					this.appendPendingApprovalUserMessages()
 
 					// If the model did not tool use, then we need to tell it to
 					// either use a tool or attempt_completion.

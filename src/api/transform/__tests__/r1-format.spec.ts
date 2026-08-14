@@ -445,6 +445,28 @@ describe("convertToR1Format", () => {
 				})
 			})
 
+			it("should keep explicit approval feedback as a user message when merging is enabled", () => {
+				const input: Anthropic.Messages.MessageParam[] = [
+					{
+						role: "user",
+						content: [
+							{ type: "tool_result", tool_use_id: "call_approval", content: "Command completed" },
+							{
+								type: "text",
+								text: "<user_message>\\nUse lowercase keys only\\n</user_message>",
+							},
+						],
+					},
+				]
+
+				const result = convertToR1Format(input, { mergeToolResultText: true })
+
+				expect(result).toEqual([
+					{ role: "tool", tool_call_id: "call_approval", content: "Command completed" },
+					{ role: "user", content: "<user_message>\\nUse lowercase keys only\\n</user_message>" },
+				])
+			})
+
 			it("should NOT merge text when mergeToolResultText is false (default behavior)", () => {
 				const input: Anthropic.Messages.MessageParam[] = [
 					{

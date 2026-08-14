@@ -59,6 +59,7 @@ vi.mock("vscode", () => {
 	const mockTabGroup = { tabs: [mockTab] }
 
 	return {
+		RelativePattern: vi.fn(),
 		TabInputTextDiff: vi.fn(),
 		CodeActionKind: {
 			QuickFix: { value: "quickfix" },
@@ -126,7 +127,18 @@ vi.mock("../../environment/getEnvironmentDetails", () => ({
 	getEnvironmentDetails: vi.fn().mockResolvedValue(""),
 }))
 
-vi.mock("../../ignore/RooIgnoreController")
+vi.mock("../../ignore/RooIgnoreController", () => ({
+	RooIgnoreController: class {
+		async initialize(): Promise<void> {}
+		validateAccess(): boolean {
+			return true
+		}
+		validateCommand(): undefined {
+			return undefined
+		}
+		dispose(): void {}
+	},
+}))
 
 vi.mock("../../condense", async (importOriginal) => {
 	const actual = (await importOriginal()) as any
@@ -273,6 +285,52 @@ describe("flushPendingToolResultsToHistory", () => {
 		expect((userMessage.content as any[])[0].tool_use_id).toBe("tool-123")
 	})
 
+	it("should persist approval feedback after tool results as separate user content", async () => {
+		const task = new Task({
+			provider: mockProvider,
+			apiConfiguration: mockApiConfig,
+			task: "test task",
+			startTask: false,
+		})
+
+		task.userMessageContent = [
+			{
+				type: "tool_result",
+				tool_use_id: "command-approval",
+				content: "Command completed",
+			},
+		]
+		task.queueApprovalUserMessage("Use lowercase keys only", ["data:image/png;base64,approvalImage"])
+		const taskTestAccess = task as unknown as {
+			saveApiConversationHistory: () => Promise<boolean>
+		}
+		taskTestAccess.saveApiConversationHistory = vi.fn().mockResolvedValue(true)
+
+		await task.flushPendingToolResultsToHistory()
+
+		const userMessage = task.apiConversationHistory[0]
+		expect(userMessage.role).toBe("user")
+		expect(userMessage.content).toEqual([
+			{
+				type: "tool_result",
+				tool_use_id: "command-approval",
+				content: "Command completed",
+			},
+			{
+				type: "text",
+				text: "<user_message>\nUse lowercase keys only\n</user_message>",
+			},
+			{
+				type: "image",
+				source: {
+					type: "base64",
+					media_type: "image/png",
+					data: "approvalImage",
+				},
+			},
+		])
+	})
+
 	it("should clear userMessageContent after flushing", async () => {
 		const task = new Task({
 			provider: mockProvider,
@@ -289,6 +347,11 @@ describe("flushPendingToolResultsToHistory", () => {
 				content: "Command executed",
 			},
 		]
+
+		const taskTestAccess = task as unknown as {
+			saveApiConversationHistory: () => Promise<boolean>
+		}
+		taskTestAccess.saveApiConversationHistory = vi.fn().mockResolvedValue(true)
 
 		await task.flushPendingToolResultsToHistory()
 

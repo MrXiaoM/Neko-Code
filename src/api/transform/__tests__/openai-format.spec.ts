@@ -572,6 +572,30 @@ describe("convertToOpenAiMessages", () => {
 			)
 		})
 
+		it("should keep explicit approval feedback as a user message when merging is enabled", () => {
+			const anthropicMessages: Anthropic.Messages.MessageParam[] = [
+				{
+					role: "user",
+					content: [
+						{ type: "tool_result", tool_use_id: "tool-123", content: "Command completed" },
+						{
+							type: "text",
+							text: "<user_message>\\nUse lowercase keys only\\n</user_message>",
+						},
+					],
+				},
+			]
+
+			const openAiMessages = convertToOpenAiMessages(anthropicMessages, { mergeToolResultText: true })
+
+			expect(openAiMessages).toHaveLength(2)
+			expect(openAiMessages[0]).toMatchObject({ role: "tool", content: "Command completed" })
+			expect(openAiMessages[1]).toMatchObject({
+				role: "user",
+				content: [{ type: "text", text: "<user_message>\\nUse lowercase keys only\\n</user_message>" }],
+			})
+		})
+
 		it("should merge text into last tool message when multiple tool results exist", () => {
 			const anthropicMessages: Anthropic.Messages.MessageParam[] = [
 				{

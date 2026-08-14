@@ -458,8 +458,11 @@ export function convertToOpenAiMessages(
 					// after tool results causes the model to drop all previous reasoning_content
 					const hasOnlyTextContent = filteredNonToolMessages.every((part) => part.type === "text")
 					const hasToolMessages = toolMessages.length > 0
+					const hasExplicitUserMessage = filteredNonToolMessages.some(
+						(part) => part.type === "text" && part.text.includes("<user_message>"),
+					)
 					const shouldMergeIntoToolMessage =
-						options?.mergeToolResultText && hasToolMessages && hasOnlyTextContent
+						options?.mergeToolResultText && hasToolMessages && hasOnlyTextContent && !hasExplicitUserMessage
 
 					if (shouldMergeIntoToolMessage) {
 						// Merge text content into the last tool message

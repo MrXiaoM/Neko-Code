@@ -94,6 +94,25 @@ describe("mergeEnvironmentDetailsForMiniMax", () => {
 		)
 	})
 
+	it("keeps explicit approval feedback outside tool results", () => {
+		const messages: Anthropic.Messages.MessageParam[] = [
+			{
+				role: "user",
+				content: [
+					{ type: "tool_result", tool_use_id: "tool-approval", content: "Command completed" },
+					{
+						type: "text",
+						text: "<user_message>\nUse lowercase keys only\n</user_message>",
+					},
+				],
+			},
+		]
+
+		const result = mergeEnvironmentDetailsForMiniMax(messages)
+
+		expect(result).toEqual(messages)
+	})
+
 	it("should merge multiple text blocks into last tool_result", () => {
 		const messages: Anthropic.Messages.MessageParam[] = [
 			{

@@ -157,9 +157,6 @@ export async function presentAssistantMessage(cline: Task) {
 			let hasToolResult = false
 			const toolCallId = mcpBlock.id
 
-			// Store approval feedback to merge into tool result (GitHub #10465)
-			let approvalFeedback: { text: string; images?: string[] } | undefined
-
 			const pushToolResult = (content: ToolResponse, feedbackImages?: string[]) => {
 				if (hasToolResult) {
 					console.warn(
@@ -179,18 +176,6 @@ export async function presentAssistantMessage(cline: Task) {
 					resultContent =
 						textBlocks.map((item) => (item as Anthropic.TextBlockParam).text).join("\n") ||
 						"(tool did not return anything)"
-				}
-
-				// Merge approval feedback into tool result (GitHub #10465)
-				if (approvalFeedback) {
-					const feedbackText = formatResponse.toolApprovedWithFeedback(approvalFeedback.text)
-					resultContent = `${feedbackText}\n\n${resultContent}`
-
-					// Add feedback images to the image blocks
-					if (approvalFeedback.images) {
-						const feedbackImageBlocks = formatResponse.imageBlocks(approvalFeedback.images)
-						imageBlocks = [...feedbackImageBlocks, ...imageBlocks]
-					}
 				}
 
 				if (toolCallId) {
@@ -225,22 +210,18 @@ export async function presentAssistantMessage(cline: Task) {
 				)
 
 				if (response !== "yesButtonClicked") {
-					if (text) {
+					if (text || images?.length) {
 						await cline.say("user_feedback", text, images)
-						pushToolResult(formatResponse.toolResult(formatResponse.toolDeniedWithFeedback(text), images))
-					} else {
-						pushToolResult(formatResponse.toolDenied())
+						cline.queueApprovalUserMessage(text, images)
 					}
+					pushToolResult(formatResponse.toolDenied())
 					cline.didRejectTool = true
 					return false
 				}
 
-				// Store approval feedback to be merged into tool result (GitHub #10465)
-				// Don't push it as a separate tool_result here - that would create duplicates.
-				// The tool will call pushToolResult, which will merge the feedback into the actual result.
-				if (text) {
+				if (text || images?.length) {
 					await cline.say("user_feedback", text, images)
-					approvalFeedback = { text, images }
+					cline.queueApprovalUserMessage(text, images)
 				}
 
 				return true
@@ -469,9 +450,6 @@ export async function presentAssistantMessage(cline: Task) {
 				}
 			}
 
-			// Store approval feedback to merge into tool result (GitHub #10465)
-			let approvalFeedback: { text: string; images?: string[] } | undefined
-
 			const pushToolResult = (content: ToolResponse) => {
 				// Native tool calling: only allow ONE tool_result per tool call
 				if (hasToolResult) {
@@ -492,16 +470,6 @@ export async function presentAssistantMessage(cline: Task) {
 					resultContent =
 						textBlocks.map((item) => (item as Anthropic.TextBlockParam).text).join("\n") ||
 						"(tool did not return anything)"
-				}
-
-				// Merge approval feedback into tool result (GitHub #10465)
-				if (approvalFeedback) {
-					const feedbackText = formatResponse.toolApprovedWithFeedback(approvalFeedback.text)
-					resultContent = `${feedbackText}\n\n${resultContent}`
-					if (approvalFeedback.images) {
-						const feedbackImageBlocks = formatResponse.imageBlocks(approvalFeedback.images)
-						imageBlocks = [...feedbackImageBlocks, ...imageBlocks]
-					}
 				}
 
 				cline.pushToolResultToUserContent({
@@ -549,23 +517,20 @@ export async function presentAssistantMessage(cline: Task) {
 				)
 
 				if (response !== "yesButtonClicked") {
-					// Handle both messageResponse and noButtonClicked with text.
-					if (text) {
+					// A response with text or images is a user-authored instruction,
+					// not part of the rejected tool's result.
+					if (text || images?.length) {
 						await cline.say("user_feedback", text, images)
-						pushToolResult(formatResponse.toolResult(formatResponse.toolDeniedWithFeedback(text), images))
-					} else {
-						pushToolResult(formatResponse.toolDenied())
+						cline.queueApprovalUserMessage(text, images)
 					}
+					pushToolResult(formatResponse.toolDenied())
 					cline.didRejectTool = true
 					return false
 				}
 
-				// Store approval feedback to be merged into tool result (GitHub #10465)
-				// Don't push it as a separate tool_result here - that would create duplicates.
-				// The tool will call pushToolResult, which will merge the feedback into the actual result.
-				if (text) {
+				if (text || images?.length) {
 					await cline.say("user_feedback", text, images)
-					approvalFeedback = { text, images }
+					cline.queueApprovalUserMessage(text, images)
 				}
 
 				return true

@@ -109,8 +109,12 @@ export function convertToR1Format(
 					// tool results followed by text, merge the text into the last tool message to avoid
 					// creating a user message that would cause reasoning_content to be dropped.
 					// This is critical because DeepSeek drops all reasoning_content when it sees a user message.
+					const hasExplicitUserMessage = textParts.some((text) => text.includes("<user_message>"))
 					const shouldMergeIntoToolMessage =
-						options?.mergeToolResultText && toolResults.length > 0 && imageParts.length === 0
+						options?.mergeToolResultText &&
+						toolResults.length > 0 &&
+						imageParts.length === 0 &&
+						!hasExplicitUserMessage
 
 					if (shouldMergeIntoToolMessage) {
 						// Merge text content into the last tool message

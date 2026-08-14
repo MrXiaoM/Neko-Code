@@ -70,6 +70,28 @@ describe("convertToZAiFormat", () => {
 		expect(result[0]).toEqual({ role: "tool", tool_call_id: "tool-1", content: "Result text" })
 	})
 
+	it("keeps explicit approval feedback as a user message when merging is enabled", () => {
+		const messages: Anthropic.Messages.MessageParam[] = [
+			{
+				role: "user",
+				content: [
+					{ type: "tool_result", tool_use_id: "tool-approval", content: "Command completed" },
+					{
+						type: "text",
+						text: "<user_message>\\nUse lowercase keys only\\n</user_message>",
+					},
+				],
+			},
+		]
+
+		const result = convertToZAiFormat(messages, { mergeToolResultText: true })
+
+		expect(result).toEqual([
+			{ role: "tool", tool_call_id: "tool-approval", content: "Command completed" },
+			{ role: "user", content: "<user_message>\\nUse lowercase keys only\\n</user_message>" },
+		])
+	})
+
 	it("should convert assistant messages with text", () => {
 		const messages: Anthropic.Messages.MessageParam[] = [{ role: "assistant", content: "I can help with that." }]
 

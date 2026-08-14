@@ -48,7 +48,9 @@ export function mergeEnvironmentDetailsForMiniMax(
 				const hasTextBlocks = textBlocks.length > 0
 				const hasImageBlocks = imageBlocks.length > 0
 
-				if (hasToolResults && hasTextBlocks && !hasImageBlocks) {
+				const hasExplicitUserMessage = textBlocks.some((block) => block.text.includes("<user_message>"))
+
+				if (hasToolResults && hasTextBlocks && !hasImageBlocks && !hasExplicitUserMessage) {
 					// Merge text content into the last tool_result
 					const textContent = textBlocks.map((b) => b.text).join("\n\n")
 					const modifiedToolResults = [...toolResultBlocks]
